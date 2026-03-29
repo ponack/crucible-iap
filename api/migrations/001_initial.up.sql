@@ -165,16 +165,17 @@ CREATE TABLE stack_policies (
 -- ── Audit Log ─────────────────────────────────────────────────────────────────
 
 CREATE TABLE audit_events (
-    id              BIGSERIAL PRIMARY KEY,
+    id              BIGINT GENERATED ALWAYS AS IDENTITY,
     occurred_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     actor_id        UUID,
-    actor_type      TEXT NOT NULL DEFAULT 'user', -- user | system | runner
-    action          TEXT NOT NULL,                -- e.g. run.created, stack.updated
+    actor_type      TEXT        NOT NULL DEFAULT 'user', -- user | system | runner
+    action          TEXT        NOT NULL,                -- e.g. run.created, stack.updated
     resource_id     TEXT,
     resource_type   TEXT,
     org_id          UUID REFERENCES organizations(id),
     ip_address      INET,
-    context         JSONB NOT NULL DEFAULT '{}'
+    context         JSONB       NOT NULL DEFAULT '{}',
+    PRIMARY KEY (id, occurred_at)
 ) PARTITION BY RANGE (occurred_at);
 
 -- Initial partition (current month + next)
