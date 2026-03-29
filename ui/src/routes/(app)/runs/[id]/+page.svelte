@@ -47,8 +47,9 @@
 				return;
 			}
 			logLines = [...logLines, e.data];
-			if (autoScroll && logEl) {
-				requestAnimationFrame(() => logEl.scrollTo({ top: logEl.scrollHeight }));
+			const el = logEl;
+			if (autoScroll && el) {
+				requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight }));
 			}
 		};
 
