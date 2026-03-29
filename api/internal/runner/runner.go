@@ -24,6 +24,10 @@ type JobSpec struct {
 	RunnerImage string
 	JobToken    string // short-lived JWT scoped to this run
 	APIURL      string // Crucible API base URL for callbacks
+	RepoURL     string
+	RepoBranch  string
+	ProjectRoot string
+	RunType     string // tracked | proposed | destroy
 }
 
 type Runner struct {
@@ -55,6 +59,10 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		"CRUCIBLE_API_URL=" + spec.APIURL,
 		"CRUCIBLE_JOB_TOKEN=" + spec.JobToken,
 		"CRUCIBLE_TOOL=" + spec.Tool,
+		"CRUCIBLE_REPO_URL=" + spec.RepoURL,
+		"CRUCIBLE_REPO_BRANCH=" + spec.RepoBranch,
+		"CRUCIBLE_PROJECT_ROOT=" + spec.ProjectRoot,
+		"CRUCIBLE_RUN_TYPE=" + spec.RunType,
 	}
 
 	resp, err := r.docker.ContainerCreate(ctx,

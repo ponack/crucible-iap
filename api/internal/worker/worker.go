@@ -47,7 +47,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 
 	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
-			river.QueueDefault: {MaxWorkers: int32(cfg.RunnerMaxConcurrent)},
+			river.QueueDefault: {MaxWorkers: cfg.RunnerMaxConcurrent},
 		},
 		Workers: workers,
 	})
