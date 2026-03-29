@@ -1,13 +1,15 @@
 <script lang="ts">
 	import '../app.css';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 
-	const isAuthRoute = $derived($page.url.pathname.startsWith('/login'));
+	const { children } = $props();
+
+	const isAuthRoute = $derived(page.url.pathname.startsWith('/login'));
 </script>
 
 {#if isAuthRoute}
-	<slot />
+	{@render children()}
 {:else if auth.loading}
 	<div class="flex h-screen items-center justify-center">
 		<span class="text-zinc-400 text-sm">Loading…</span>
@@ -15,7 +17,6 @@
 {:else if !auth.isAuthenticated}
 	{@html '<script>window.location.href="/login"</script>'}
 {:else}
-	<!-- App shell -->
 	<div class="flex h-screen overflow-hidden">
 		<!-- Sidebar -->
 		<aside class="w-56 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col">
@@ -39,7 +40,7 @@
 
 		<!-- Main content -->
 		<main class="flex-1 overflow-auto">
-			<slot />
+			{@render children()}
 		</main>
 	</div>
 {/if}
