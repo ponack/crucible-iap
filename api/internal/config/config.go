@@ -47,8 +47,18 @@ func Load() (*Config, error) {
 	v := viper.New()
 
 	// Defaults
+	// Core
 	v.SetDefault("CRUCIBLE_ENV", "production")
-	v.SetDefault("CRUCIBLE_UI_BASE_URL", "") // falls back to BaseURL at runtime
+	v.SetDefault("CRUCIBLE_BASE_URL", "")
+	v.SetDefault("CRUCIBLE_UI_BASE_URL", "")
+	v.SetDefault("CRUCIBLE_LISTEN_ADDR", ":8080")
+	v.SetDefault("CRUCIBLE_SECRET_KEY", "")
+
+	// OIDC
+	v.SetDefault("OIDC_ISSUER_URL", "")
+	v.SetDefault("OIDC_CLIENT_ID", "")
+	v.SetDefault("OIDC_CLIENT_SECRET", "")
+	v.SetDefault("OIDC_REDIRECT_URL", "")
 	v.SetDefault("CRUCIBLE_LISTEN_ADDR", ":8080")
 	v.SetDefault("POSTGRES_HOST", "localhost")
 	v.SetDefault("POSTGRES_PORT", 5432)
