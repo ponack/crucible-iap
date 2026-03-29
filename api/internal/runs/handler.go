@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/worker"
 )
 
@@ -17,10 +18,11 @@ type Handler struct {
 	pool       *pgxpool.Pool
 	queue      *queue.Client
 	dispatcher *worker.Dispatcher
+	storage    *storage.Client
 }
 
-func NewHandler(pool *pgxpool.Pool, q *queue.Client, d *worker.Dispatcher) *Handler {
-	return &Handler{pool: pool, queue: q, dispatcher: d}
+func NewHandler(pool *pgxpool.Pool, q *queue.Client, d *worker.Dispatcher, s *storage.Client) *Handler {
+	return &Handler{pool: pool, queue: q, dispatcher: d, storage: s}
 }
 
 type Run struct {

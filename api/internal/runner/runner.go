@@ -56,6 +56,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	// Scoped environment — credentials injected as env vars, never in image
 	env := []string{
 		"CRUCIBLE_RUN_ID=" + spec.RunID,
+		"CRUCIBLE_STACK_ID=" + spec.StackID,
 		"CRUCIBLE_API_URL=" + spec.APIURL,
 		"CRUCIBLE_JOB_TOKEN=" + spec.JobToken,
 		"CRUCIBLE_TOOL=" + spec.Tool,

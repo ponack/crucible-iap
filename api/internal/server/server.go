@@ -54,7 +54,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
 	stackHandler := stacks.NewHandler(s.pool)
-	runHandler := runs.NewHandler(s.pool, q, d)
+	runHandler := runs.NewHandler(s.pool, q, d, store)
 	stateHandler := state.NewHandler(s.pool, store)
 	auditHandler := audit.NewHandler(s.pool)
 
@@ -67,7 +67,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 
 	// ── Terraform state backend (HTTP Basic auth per stack token) ──────────────
 	tfState := e.Group("/api/v1/state/:stackID")
-	tfState.Use(auth.BasicAuthMiddleware(s.pool))
+	tfState.Use(auth.BasicAuthMiddleware(s.pool, s.cfg.SecretKey))
 	tfState.GET("", stateHandler.Get)
 	tfState.POST("", stateHandler.Update)
 	tfState.DELETE("", stateHandler.Delete)
@@ -101,6 +101,12 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 
 	// Audit log
 	api.GET("/audit", auditHandler.List)
+
+	// ── Internal runner callbacks (runner JWT auth) ────────────────────────────
+	internal := e.Group("/api/v1/internal")
+	internal.Use(auth.RunnerAuthMiddleware(s.cfg.SecretKey))
+	internal.POST("/runs/:id/status", runHandler.ReportStatus)
+	internal.POST("/runs/:id/plan", runHandler.UploadPlan)
 }
 
 func (s *Server) Start(ctx context.Context) error {

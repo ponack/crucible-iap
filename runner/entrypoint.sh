@@ -4,98 +4,142 @@
 # All env vars are injected by the dispatcher at container spawn time.
 set -euo pipefail
 
-log() { echo "[crucible-runner] $*"; }
+log()  { echo "[crucible-runner] $*" >&2; }
 fail() { log "ERROR: $*"; exit 1; }
 
 # ── Validate required environment ────────────────────────────────────────────
 : "${CRUCIBLE_RUN_ID:?CRUCIBLE_RUN_ID is required}"
+: "${CRUCIBLE_STACK_ID:?CRUCIBLE_STACK_ID is required}"
 : "${CRUCIBLE_API_URL:?CRUCIBLE_API_URL is required}"
 : "${CRUCIBLE_JOB_TOKEN:?CRUCIBLE_JOB_TOKEN is required}"
 : "${CRUCIBLE_TOOL:?CRUCIBLE_TOOL is required}"
 : "${CRUCIBLE_REPO_URL:?CRUCIBLE_REPO_URL is required}"
-: "${CRUCIBLE_REPO_BRANCH:=${CRUCIBLE_REPO_BRANCH:-main}}"
-: "${CRUCIBLE_PROJECT_ROOT:=${CRUCIBLE_PROJECT_ROOT:-.}}"
-: "${CRUCIBLE_RUN_TYPE:=${CRUCIBLE_RUN_TYPE:-tracked}}"
+CRUCIBLE_REPO_BRANCH="${CRUCIBLE_REPO_BRANCH:-main}"
+CRUCIBLE_PROJECT_ROOT="${CRUCIBLE_PROJECT_ROOT:-.}"
+CRUCIBLE_RUN_TYPE="${CRUCIBLE_RUN_TYPE:-tracked}"
 
-API_HEADERS=(-H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" -H "Content-Type: application/json")
+API_HEADERS=(
+    -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}"
+    -H "Content-Type: application/json"
+)
 
-# ── Helper: report status back to API ────────────────────────────────────────
+# ── Helper: report intermediate status ───────────────────────────────────────
 report_status() {
     local status="$1"
+    log "reporting status: ${status}"
     curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/status" \
         "${API_HEADERS[@]}" \
-        -d "{\"status\":\"${status}\"}" || log "warn: failed to report status ${status}"
+        -d "{\"status\":\"${status}\"}" \
+        || log "warn: failed to report status ${status}"
 }
 
-# ── Clone repository ──────────────────────────────────────────────────────────
-log "cloning ${CRUCIBLE_REPO_URL} @ ${CRUCIBLE_REPO_BRANCH}"
-git clone --depth=1 --branch "${CRUCIBLE_REPO_BRANCH}" "${CRUCIBLE_REPO_URL}" /workspace/repo \
-    || fail "git clone failed"
-
-WORKDIR="/workspace/repo/${CRUCIBLE_PROJECT_ROOT}"
-cd "${WORKDIR}"
-
-# ── Dispatch to tool handler ──────────────────────────────────────────────────
-case "${CRUCIBLE_TOOL}" in
-    opentofu)   run_opentofu ;;
-    terraform)  run_terraform ;;
-    ansible)    run_ansible ;;
-    pulumi)     run_pulumi ;;
-    *)          fail "unsupported tool: ${CRUCIBLE_TOOL}" ;;
-esac
-
-# ── OpenTofu / Terraform ──────────────────────────────────────────────────────
-run_opentofu() {
-    local bin="tofu"
-    run_tf_generic "${bin}"
+# ── Helper: upload plan artifact ─────────────────────────────────────────────
+upload_plan() {
+    local plan_file="$1"
+    if [[ -f "${plan_file}" ]]; then
+        log "uploading plan artifact"
+        curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan" \
+            -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+            -H "Content-Type: application/octet-stream" \
+            --data-binary "@${plan_file}" \
+            || log "warn: plan upload failed"
+    fi
 }
 
-run_terraform() {
-    local bin="terraform"
-    run_tf_generic "${bin}"
-}
-
+# ── OpenTofu / Terraform shared logic ────────────────────────────────────────
 run_tf_generic() {
     local bin="$1"
-    log "initialising with ${bin}"
+    log "using ${bin} (run_type=${CRUCIBLE_RUN_TYPE})"
 
-    # Configure state backend to point at Crucible IAP
-    export TF_HTTP_ADDRESS="${CRUCIBLE_API_URL}/api/v1/state/${CRUCIBLE_RUN_ID%%-*}"  # stack portion
+    # Point Terraform HTTP backend at Crucible's state API.
+    # Runner JWT is accepted as password (aud=runner, stack_id claim validated).
+    export TF_HTTP_ADDRESS="${CRUCIBLE_API_URL}/api/v1/state/${CRUCIBLE_STACK_ID}"
     export TF_HTTP_LOCK_ADDRESS="${TF_HTTP_ADDRESS}"
     export TF_HTTP_UNLOCK_ADDRESS="${TF_HTTP_ADDRESS}"
-    export TF_HTTP_USERNAME="${CRUCIBLE_RUN_ID}"
+    export TF_HTTP_USERNAME="${CRUCIBLE_STACK_ID}"
     export TF_HTTP_PASSWORD="${CRUCIBLE_JOB_TOKEN}"
+    export TF_IN_AUTOMATION=1
+    export TF_INPUT=0
 
-    ${bin} init -input=false -no-color
+    log "initialising"
+    ${bin} init -no-color
 
-    log "running plan"
-    report_status "planning"
-    ${bin} plan -input=false -no-color -out=/workspace/plan.tfplan
+    case "${CRUCIBLE_RUN_TYPE}" in
+        destroy)
+            log "planning destroy"
+            report_status "planning"
+            ${bin} plan -no-color -destroy -out=/workspace/plan.tfplan
+            upload_plan /workspace/plan.tfplan
+            if [[ "${CRUCIBLE_RUN_TYPE}" == "destroy" ]]; then
+                # Destroy runs always require explicit confirmation — never auto-apply.
+                log "plan complete — awaiting confirmation before destroy"
+            fi
+            ;;
 
-    # Upload plan artifact
-    if [[ -f /workspace/plan.tfplan ]]; then
-        curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan" \
-            "${API_HEADERS[@]}" \
-            --data-binary @/workspace/plan.tfplan || log "warn: plan upload failed"
-    fi
+        apply)
+            # Second phase: a confirmed run re-enqueues with run_type=apply.
+            # Download the saved plan and apply it.
+            log "applying saved plan"
+            report_status "applying"
+            curl -sf "${CRUCIBLE_API_URL}/api/v1/runs/${CRUCIBLE_RUN_ID}/plan" \
+                -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+                -o /workspace/plan.tfplan \
+                || fail "failed to download plan artifact"
+            ${bin} apply -no-color /workspace/plan.tfplan
+            ;;
 
-    if [[ "${CRUCIBLE_RUN_TYPE}" == "apply" ]]; then
-        log "applying"
-        report_status "applying"
-        ${bin} apply -input=false -no-color /workspace/plan.tfplan
-    fi
+        proposed)
+            # Plan only — no apply, no confirmation needed.
+            log "running plan (proposed)"
+            report_status "planning"
+            ${bin} plan -no-color -out=/workspace/plan.tfplan
+            upload_plan /workspace/plan.tfplan
+            ;;
+
+        tracked|*)
+            # Default: plan, upload, then wait for human confirmation.
+            log "running plan"
+            report_status "planning"
+            ${bin} plan -no-color -out=/workspace/plan.tfplan
+            upload_plan /workspace/plan.tfplan
+            log "plan complete — awaiting confirmation"
+            ;;
+    esac
 }
+
+run_opentofu()  { run_tf_generic "tofu"; }
+run_terraform() { run_tf_generic "terraform"; }
 
 # ── Ansible ───────────────────────────────────────────────────────────────────
 run_ansible() {
-    : "${CRUCIBLE_ANSIBLE_PLAYBOOK:=${CRUCIBLE_ANSIBLE_PLAYBOOK:-site.yml}}"
-    log "running ansible-playbook ${CRUCIBLE_ANSIBLE_PLAYBOOK}"
+    local playbook="${CRUCIBLE_ANSIBLE_PLAYBOOK:-site.yml}"
+    log "running ansible-playbook ${playbook}"
     report_status "planning"
-    ansible-playbook "${CRUCIBLE_ANSIBLE_PLAYBOOK}" --diff
+    ansible-playbook "${playbook}" --diff
 }
 
 # ── Pulumi ────────────────────────────────────────────────────────────────────
 run_pulumi() {
-    log "pulumi support coming soon"
     fail "pulumi runner not yet implemented"
 }
+
+# ── Clone repository ──────────────────────────────────────────────────────────
+log "cloning ${CRUCIBLE_REPO_URL} @ ${CRUCIBLE_REPO_BRANCH}"
+git clone --depth=1 --branch "${CRUCIBLE_REPO_BRANCH}" \
+    "${CRUCIBLE_REPO_URL}" /workspace/repo \
+    || fail "git clone failed"
+
+WORKDIR="/workspace/repo/${CRUCIBLE_PROJECT_ROOT}"
+[[ -d "${WORKDIR}" ]] || fail "project root '${CRUCIBLE_PROJECT_ROOT}' not found in repository"
+cd "${WORKDIR}"
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+case "${CRUCIBLE_TOOL}" in
+    opentofu)   run_opentofu  ;;
+    terraform)  run_terraform ;;
+    ansible)    run_ansible   ;;
+    pulumi)     run_pulumi    ;;
+    *)          fail "unsupported tool: ${CRUCIBLE_TOOL}" ;;
+esac
+
+log "done"

@@ -15,6 +15,20 @@ jobs:
   api:
     name: API (Go)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: crucible_test
+          POSTGRES_USER: crucible
+          POSTGRES_PASSWORD: crucible
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,12 +44,26 @@ jobs:
         working-directory: api
         run: go mod tidy
 
+      - name: Run migrations
+        working-directory: api
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: crucible_test
+          POSTGRES_USER: crucible
+          POSTGRES_PASSWORD: crucible
+          CRUCIBLE_SECRET_KEY: ci-placeholder
+          OIDC_ISSUER_URL: https://placeholder.example.com
+        run: go run ./cmd/crucible-iap migrate
+
       - name: Vet
         working-directory: api
         run: go vet ./...
 
       - name: Test
         working-directory: api
+        env:
+          TEST_DATABASE_URL: postgres://crucible:crucible@localhost:5432/crucible_test?sslmode=disable
         run: go test -race ./...
 
       - name: Build

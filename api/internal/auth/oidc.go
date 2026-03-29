@@ -223,33 +223,76 @@ func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 }
 
 // BasicAuthMiddleware validates stack token credentials for the Terraform state backend.
-func BasicAuthMiddleware(pool *pgxpool.Pool) echo.MiddlewareFunc {
+// It accepts two credential forms:
+//  1. Stack token: username=tokenID, password=rawSecret  (human/CI use)
+//  2. Runner JWT:  username=stackID, password=jobToken   (ephemeral job containers)
+func BasicAuthMiddleware(pool *pgxpool.Pool, secretKey string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			tokenID, secret, ok := c.Request().BasicAuth()
+			username, password, ok := c.Request().BasicAuth()
 			if !ok {
 				c.Response().Header().Set("WWW-Authenticate", `Basic realm="crucible"`)
 				return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
 			}
 
-			h := sha256.Sum256([]byte(secret))
-			hash := hex.EncodeToString(h[:])
 			stackID := c.Param("stackID")
+
+			// Try runner JWT first (password is a JWT with aud=runner and stack_id claim).
+			runnerClaims := jwt.MapClaims{}
+			_, jwtErr := jwt.ParseWithClaims(password, runnerClaims, func(t *jwt.Token) (any, error) {
+				return []byte(secretKey), nil
+			}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithAudience("runner"))
+			if jwtErr == nil {
+				claimStack, _ := runnerClaims["stack_id"].(string)
+				if claimStack == stackID {
+					return next(c)
+				}
+			}
+
+			// Fall back to hashed stack token lookup.
+			_ = username // tokenID passed as username for human tokens
+			h := sha256.Sum256([]byte(password))
+			hash := hex.EncodeToString(h[:])
 
 			var storedStackID string
 			err := pool.QueryRow(c.Request().Context(), `
 				SELECT stack_id FROM stack_tokens
 				WHERE id = $1 AND token_hash = $2
-			`, tokenID, hash).Scan(&storedStackID)
+			`, username, hash).Scan(&storedStackID)
 			if err != nil || storedStackID != stackID {
 				c.Response().Header().Set("WWW-Authenticate", `Basic realm="crucible"`)
 				return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
 			}
 
-			// Best-effort last_used update
 			_, _ = pool.Exec(c.Request().Context(),
-				`UPDATE stack_tokens SET last_used = now() WHERE id = $1`, tokenID)
+				`UPDATE stack_tokens SET last_used = now() WHERE id = $1`, username)
 
+			return next(c)
+		}
+	}
+}
+
+// RunnerAuthMiddleware validates per-job JWT tokens issued to ephemeral runner containers.
+// Sets runID and stackID on the context.
+func RunnerAuthMiddleware(secretKey string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			header := c.Request().Header.Get("Authorization")
+			if !strings.HasPrefix(header, "Bearer ") {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing bearer token")
+			}
+			raw := strings.TrimPrefix(header, "Bearer ")
+
+			claims := jwt.MapClaims{}
+			_, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
+				return []byte(secretKey), nil
+			}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithAudience("runner"))
+			if err != nil {
+				return echo.NewHTTPError(http.StatusUnauthorized, "invalid runner token")
+			}
+
+			c.Set("runID", claims["run_id"])
+			c.Set("stackID", claims["stack_id"])
 			return next(c)
 		}
 	}
