@@ -55,6 +55,10 @@ jobs:
         working-directory: ui
         run: pnpm install --no-frozen-lockfile
 
+      - name: Sync SvelteKit types
+        working-directory: ui
+        run: pnpm svelte-kit sync
+
       - name: Check types
         working-directory: ui
         run: pnpm svelte-check
@@ -69,6 +73,29 @@ jobs:
         with:
           commit_message: "chore: update pnpm-lock.yaml"
           file_pattern: "ui/pnpm-lock.yaml"
+
+  api-lockfile:
+    name: Commit go.sum
+    runs-on: ubuntu-latest
+    needs: [api]
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: false
+
+      - name: Tidy
+        working-directory: api
+        run: go mod tidy
+
+      - name: Commit go.sum if changed
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update go.sum"
+          file_pattern: "api/go.sum"
 
   docker:
     name: Docker build

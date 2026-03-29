@@ -49,11 +49,11 @@
 		display: block;
 		padding: 0.375rem 0.75rem;
 		border-radius: 0.375rem;
-		color: theme(colors.zinc.400);
+		color: var(--color-zinc-400);
 		transition: background-color 0.1s, color 0.1s;
 	}
 	:global(.nav-link:hover) {
-		background-color: theme(colors.zinc.800);
-		color: theme(colors.white);
+		background-color: var(--color-zinc-800);
+		color: #fff;
 	}
 </style>

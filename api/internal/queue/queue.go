@@ -92,28 +92,6 @@ type AuditFlushArgs struct {
 
 func (AuditFlushArgs) Kind() string { return "audit_flush" }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// JobStatus maps a River job to a human-readable status string.
-func JobStatus(state river.JobState) string {
-	switch state {
-	case river.JobStateAvailable:
-		return "queued"
-	case river.JobStateRunning:
-		return "running"
-	case river.JobStateCompleted:
-		return "completed"
-	case river.JobStateDiscarded:
-		return "discarded"
-	case river.JobStateRetryable:
-		return "retrying"
-	case river.JobStateCancelled:
-		return "canceled"
-	default:
-		return string(state)
-	}
-}
-
 // TokenClaims holds the per-job JWT payload sent to runner containers.
 type TokenClaims struct {
 	RunID   string    `json:"run_id"`
