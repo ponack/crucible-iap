@@ -13,7 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
-	"github.com/ponack/crucible/internal/config"
+	"github.com/ponack/crucible-iap/internal/config"
 	"golang.org/x/oauth2"
 )
 

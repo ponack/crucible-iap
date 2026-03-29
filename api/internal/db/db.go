@@ -3,17 +3,14 @@ package db
 
 import (
 	"context"
-	"embed"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ponack/crucible-iap/migrations"
 )
-
-//go:embed ../../migrations/*.sql
-var migrationsFS embed.FS
 
 func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
@@ -34,7 +31,7 @@ func Connect(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 }
 
 func Migrate(dsn string, down bool) error {
-	src, err := iofs.New(migrationsFS, "migrations")
+	src, err := iofs.New(migrations.FS, ".")
 	if err != nil {
 		return fmt.Errorf("load migrations: %w", err)
 	}

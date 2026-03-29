@@ -7,8 +7,7 @@
 <div class="min-h-screen flex items-center justify-center bg-zinc-950">
 	<div class="w-full max-w-sm space-y-8">
 		<div class="text-center">
-			<h1 class="text-2xl font-bold text-white">Crucible</h1>
-			<p class="mt-1 text-sm text-zinc-400">Infrastructure Automation Platform</p>
+			<img src="/logo-dark.png" alt="Crucible IAP" class="mx-auto h-36 w-auto" />
 		</div>
 
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl p-8 space-y-4">

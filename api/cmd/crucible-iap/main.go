@@ -11,9 +11,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ponack/crucible/internal/config"
-	"github.com/ponack/crucible/internal/db"
-	"github.com/ponack/crucible/internal/server"
+	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/db"
+	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/runner"
+	"github.com/ponack/crucible-iap/internal/server"
+	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/worker"
 )
 
 func main() {
@@ -27,10 +31,10 @@ func main() {
 	case "migrate":
 		runMigrate()
 	case "version":
-		fmt.Printf("crucible %s\n", version)
+		fmt.Printf("crucible-iap %s\n", version)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		fmt.Fprintf(os.Stderr, "usage: crucible [serve|migrate|version]\n")
+		fmt.Fprintf(os.Stderr, "usage: crucible-iap [serve|migrate|version]\n")
 		os.Exit(1)
 	}
 }
@@ -53,12 +57,43 @@ func runServe() {
 	}
 	defer pool.Close()
 
-	srv := server.New(cfg, pool)
+	store, err := storage.New(cfg)
+	if err != nil {
+		slog.Error("failed to connect to object storage", "err", err)
+		os.Exit(1)
+	}
+
+	q, err := queue.New(pool)
+	if err != nil {
+		slog.Error("failed to create job queue client", "err", err)
+		os.Exit(1)
+	}
+
+	r, err := runner.New(cfg)
+	if err != nil {
+		slog.Error("failed to create runner", "err", err)
+		os.Exit(1)
+	}
+
+	d, err := worker.New(pool, cfg, r, store)
+	if err != nil {
+		slog.Error("failed to create worker dispatcher", "err", err)
+		os.Exit(1)
+	}
+
+	srv := server.New(cfg, pool, store, q, d)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	slog.Info("starting crucible", "addr", cfg.ListenAddr, "env", cfg.Env)
+	// Start worker dispatcher in background
+	go func() {
+		if err := d.Start(ctx); err != nil {
+			slog.Error("worker dispatcher error", "err", err)
+		}
+	}()
+
+	slog.Info("starting crucible-iap", "addr", cfg.ListenAddr, "env", cfg.Env)
 
 	if err := srv.Start(ctx); err != nil {
 		slog.Error("server error", "err", err)

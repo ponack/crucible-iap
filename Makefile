@@ -9,7 +9,7 @@ dev-deps: ## Start dev dependencies (postgres, minio)
 	docker compose -f deploy/docker-compose.dev.yml up -d
 
 dev-api: ## Run API in development mode
-	cd api && go run ./cmd/crucible
+	cd api && go run ./cmd/crucible-iap
 
 dev-ui: ## Run UI in development mode
 	cd ui && pnpm dev
@@ -17,7 +17,7 @@ dev-ui: ## Run UI in development mode
 # ── Build ─────────────────────────────────────────────────────────────────────
 
 build-api: ## Build API binary
-	cd api && go build -o bin/crucible ./cmd/crucible
+	cd api && go build -o bin/crucible-iap ./cmd/crucible-iap
 
 build-ui: ## Build UI for production
 	cd ui && pnpm build
@@ -47,10 +47,10 @@ lint: lint-api lint-ui ## Lint everything
 # ── Database ──────────────────────────────────────────────────────────────────
 
 migrate: ## Run database migrations
-	cd api && go run ./cmd/crucible migrate
+	cd api && go run ./cmd/crucible-iap migrate
 
 migrate-down: ## Roll back last migration
-	cd api && go run ./cmd/crucible migrate --down
+	cd api && go run ./cmd/crucible-iap migrate --down
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 

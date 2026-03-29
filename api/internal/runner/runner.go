@@ -13,7 +13,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
-	"github.com/ponack/crucible/internal/config"
+	"github.com/ponack/crucible-iap/internal/config"
 )
 
 // JobSpec defines what the runner needs to execute.

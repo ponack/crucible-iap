@@ -3,14 +3,15 @@
 ## Project overview
 
 Crucible IAP is a self-hosted infrastructure automation platform (Spacelift alternative).
-- **Backend:** Go 1.23+ — `api/` directory, module `github.com/ponack/crucible`
+
+- **Backend:** Go 1.23+ — `api/` directory, module `github.com/ponack/crucible-iap`
 - **Frontend:** SvelteKit 2 + Svelte 5 (Runes) — `ui/` directory
 - **Deployment:** Docker Compose — `deploy/` directory
 - **License:** AGPL-3.0-or-later (dual-license planned)
 
 ## Architecture
 
-- `api/cmd/crucible/` — main entrypoint; supports subcommands (`serve`, `migrate`)
+- `api/cmd/crucible-iap/` — main entrypoint; supports subcommands (`serve`, `migrate`)
 - `api/internal/server/` — Echo HTTP server, route registration
 - `api/internal/auth/` — OIDC/OAuth2 PKCE authentication
 - `api/internal/stacks/` — stack CRUD and git integration
@@ -37,7 +38,7 @@ Crucible IAP is a self-hosted infrastructure automation platform (Spacelift alte
 
 ```bash
 make dev-deps     # start postgres + minio
-make dev-api      # go run ./cmd/crucible
+make dev-api      # go run ./cmd/crucible-iap
 make dev-ui       # pnpm dev
 ```
 

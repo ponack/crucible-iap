@@ -11,14 +11,14 @@ RUN go mod download
 COPY api/ .
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.version=$(git describe --tags --always 2>/dev/null || echo dev)" \
-    -o /crucible ./cmd/crucible
+    -o /crucible-iap ./cmd/crucible-iap
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM scratch
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /crucible /crucible
+COPY --from=builder /crucible-iap /crucible-iap
 
 EXPOSE 8080
-ENTRYPOINT ["/crucible"]
+ENTRYPOINT ["/crucible-iap"]
 CMD ["serve"]

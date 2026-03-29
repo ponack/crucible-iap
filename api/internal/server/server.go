@@ -8,67 +8,71 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/ponack/crucible/internal/auth"
-	"github.com/ponack/crucible/internal/audit"
-	"github.com/ponack/crucible/internal/config"
-	"github.com/ponack/crucible/internal/runs"
-	"github.com/ponack/crucible/internal/stacks"
-	"github.com/ponack/crucible/internal/state"
+	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/auth"
+	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/runs"
+	"github.com/ponack/crucible-iap/internal/stacks"
+	"github.com/ponack/crucible-iap/internal/state"
+	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/worker"
 )
 
 type Server struct {
-	cfg  *config.Config
-	pool *pgxpool.Pool
-	echo *echo.Echo
+	cfg        *config.Config
+	pool       *pgxpool.Pool
+	echo       *echo.Echo
+	dispatcher *worker.Dispatcher
 }
 
-func New(cfg *config.Config, pool *pgxpool.Pool) *Server {
+func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
 	// ── Global middleware ──────────────────────────────────────────────────────
-	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
-		LogStatus: true,
-		LogURI:    true,
-		LogMethod: true,
-		LogError:  true,
-		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
-			return nil // structured logging handled by slog
-		},
-	}))
 	e.Use(middleware.Recover())
-	e.Use(middleware.CORS())
-	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(100)))
+	e.Use(middleware.RequestID())
+	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(200)))
 
-	s := &Server{cfg: cfg, pool: pool, echo: e}
-	s.registerRoutes()
+	if cfg.IsDev() {
+		e.Use(middleware.CORS())
+	} else {
+		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+			AllowOrigins: []string{cfg.BaseURL},
+			AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAuthorization},
+		}))
+	}
+
+	s := &Server{cfg: cfg, pool: pool, echo: e, dispatcher: d}
+	s.registerRoutes(store, q, d)
 	return s
 }
 
-func (s *Server) registerRoutes() {
+func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worker.Dispatcher) {
 	e := s.echo
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
 	stackHandler := stacks.NewHandler(s.pool)
-	runHandler := runs.NewHandler(s.pool)
-	stateHandler := state.NewHandler(s.pool, s.cfg)
+	runHandler := runs.NewHandler(s.pool, q, d)
+	stateHandler := state.NewHandler(s.pool, store)
 	auditHandler := audit.NewHandler(s.pool)
 
-	// ── Public routes ──────────────────────────────────────────────────────────
+	// ── Public ─────────────────────────────────────────────────────────────────
 	e.GET("/health", s.handleHealth)
 	e.GET("/auth/login", authHandler.Login)
 	e.GET("/auth/callback", authHandler.Callback)
 	e.POST("/auth/refresh", authHandler.Refresh)
 	e.POST("/auth/logout", authHandler.Logout)
 
-	// ── Terraform state backend (HTTP Basic auth, per workspace) ───────────────
+	// ── Terraform state backend (HTTP Basic auth per stack token) ──────────────
 	tfState := e.Group("/api/v1/state/:stackID")
 	tfState.Use(auth.BasicAuthMiddleware(s.pool))
 	tfState.GET("", stateHandler.Get)
 	tfState.POST("", stateHandler.Update)
 	tfState.DELETE("", stateHandler.Delete)
-	tfState.LOCK("", stateHandler.Lock)
-	tfState.UNLOCK("", stateHandler.Unlock)
+	tfState.Add("LOCK", "", stateHandler.Lock)
+	tfState.Add("UNLOCK", "", stateHandler.Unlock)
 
 	// ── Authenticated API ──────────────────────────────────────────────────────
 	api := e.Group("/api/v1")
@@ -88,7 +92,7 @@ func (s *Server) registerRoutes() {
 	api.POST("/runs/:id/confirm", runHandler.Confirm)
 	api.POST("/runs/:id/discard", runHandler.Discard)
 	api.POST("/runs/:id/cancel", runHandler.Cancel)
-	api.GET("/runs/:id/logs", runHandler.Logs) // WebSocket
+	api.GET("/runs/:id/logs", runHandler.Logs) // SSE stream
 
 	// Audit log
 	api.GET("/audit", auditHandler.List)

@@ -1,4 +1,4 @@
-name: crucible-dev
+name: crucible-iap-dev
 
 # Starts only the infrastructure dependencies for local development.
 # Run the API and UI natively: make dev-api && make dev-ui
