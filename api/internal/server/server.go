@@ -16,6 +16,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/stacks"
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/webhooks"
 	"github.com/ponack/crucible-iap/internal/worker"
 )
 
@@ -57,6 +58,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	runHandler := runs.NewHandler(s.pool, q, d, store)
 	stateHandler := state.NewHandler(s.pool, store)
 	auditHandler := audit.NewHandler(s.pool)
+	webhookHandler := webhooks.NewHandler(s.pool, q)
 
 	// ── Public ─────────────────────────────────────────────────────────────────
 	e.GET("/health", s.handleHealth)
@@ -64,6 +66,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	e.GET("/auth/callback", authHandler.Callback)
 	e.POST("/auth/refresh", authHandler.Refresh)
 	e.POST("/auth/logout", authHandler.Logout)
+
+	// Webhook ingestion — public, authenticated internally via HMAC/token
+	e.POST("/api/v1/webhooks/:stackID", webhookHandler.Receive)
 
 	// ── Terraform state backend (HTTP Basic auth per stack token) ──────────────
 	tfState := e.Group("/api/v1/state/:stackID")
@@ -89,6 +94,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.POST("/stacks/:id/tokens", stackHandler.CreateToken)
 	api.GET("/stacks/:id/tokens", stackHandler.ListTokens)
 	api.DELETE("/stacks/:id/tokens/:tokenID", stackHandler.RevokeToken)
+
+	// Webhook secret rotation
+	api.POST("/stacks/:id/webhook/rotate", webhookHandler.RotateSecret)
 
 	// Runs
 	api.GET("/stacks/:stackID/runs", runHandler.List)

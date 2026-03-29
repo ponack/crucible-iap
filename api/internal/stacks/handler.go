@@ -15,6 +15,15 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// webhookSecret generates a random 32-byte hex string for use as a webhook secret.
+func webhookSecret() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 type Handler struct{ pool *pgxpool.Pool }
 
 func NewHandler(pool *pgxpool.Pool) *Handler { return &Handler{pool: pool} }
@@ -34,6 +43,8 @@ type Stack struct {
 	AutoApply      bool      `json:"auto_apply"`
 	DriftDetection bool      `json:"drift_detection"`
 	DriftSchedule  string    `json:"drift_schedule,omitempty"`
+	WebhookSecret  string    `json:"webhook_secret,omitempty"` // only populated on Get
+	WebhookURL     string    `json:"webhook_url,omitempty"`    // only populated on Get
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -110,23 +121,29 @@ func (h *Handler) Create(c echo.Context) error {
 		req.Slug = slugify(req.Name)
 	}
 
+	secret, err := webhookSecret()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to generate webhook secret")
+	}
+
 	var s Stack
-	err := h.pool.QueryRow(c.Request().Context(), `
+	err = h.pool.QueryRow(c.Request().Context(), `
 		INSERT INTO stacks
 		  (org_id, slug, name, description, tool, repo_url, repo_branch,
-		   project_root, auto_apply, drift_detection, created_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		   project_root, auto_apply, drift_detection, created_by, webhook_secret)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
 		          repo_url, repo_branch, project_root, auto_apply, drift_detection,
-		          created_at, updated_at
+		          webhook_secret, created_at, updated_at
 	`, orgID, req.Slug, req.Name, req.Description, req.Tool, req.RepoURL,
-		req.RepoBranch, req.ProjectRoot, req.AutoApply, req.DriftDetection, userID).
+		req.RepoBranch, req.ProjectRoot, req.AutoApply, req.DriftDetection, userID, secret).
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.RepoURL, &s.RepoBranch, &s.ProjectRoot, &s.AutoApply, &s.DriftDetection,
-			&s.CreatedAt, &s.UpdatedAt)
+			&s.WebhookSecret, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	s.WebhookURL = c.Scheme() + "://" + c.Request().Host + "/api/v1/webhooks/" + s.ID
 	return c.JSON(http.StatusCreated, s)
 }
 
@@ -134,19 +151,24 @@ func (h *Handler) Get(c echo.Context) error {
 	id := c.Param("id")
 	orgID := c.Get("orgID").(string)
 	var s Stack
+	var webhookSecretPtr *string
 	err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT id, org_id, slug, name, COALESCE(description,''), tool,
 		       COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		       COALESCE(runner_image,''), auto_apply, drift_detection,
-		       COALESCE(drift_schedule,''), created_at, updated_at
+		       COALESCE(drift_schedule,''), webhook_secret, created_at, updated_at
 		FROM stacks WHERE id = $1 AND org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-		&s.CreatedAt, &s.UpdatedAt)
+		&webhookSecretPtr, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
+	if webhookSecretPtr != nil {
+		s.WebhookSecret = *webhookSecretPtr
+	}
+	s.WebhookURL = c.Scheme() + "://" + c.Request().Host + "/api/v1/webhooks/" + s.ID
 	return c.JSON(http.StatusOK, s)
 }
 
