@@ -1,0 +1,89 @@
+# Crucible IAP — Traefik v3 reverse proxy example
+#
+# Requirements:
+#   - Traefik v3 running with Docker provider enabled
+#   - Crucible running with external-proxy profile:
+#       docker compose --profile external-proxy up -d
+#   - Replace crucible.example.com with your domain
+#   - Replace my-tls-resolver with your Traefik ACME resolver name
+#
+# Add these labels to the crucible-api and crucible-ui services in
+# docker-compose.yml, or place in a separate Traefik file provider config.
+
+# ── File provider config (traefik/dynamic/crucible-iap.yml) ──────────────────
+
+http:
+  routers:
+    crucible-api:
+      rule: "Host(`crucible.example.com`) && PathPrefix(`/auth`, `/api`, `/health`)"
+      entryPoints: [websecure]
+      service: crucible-api
+      tls:
+        certResolver: my-tls-resolver
+      middlewares:
+        - crucible-security-headers
+
+    crucible-ui:
+      rule: "Host(`crucible.example.com`)"
+      entryPoints: [websecure]
+      service: crucible-ui
+      tls:
+        certResolver: my-tls-resolver
+      middlewares:
+        - crucible-security-headers
+
+    # HTTP → HTTPS redirect
+    crucible-redirect:
+      rule: "Host(`crucible.example.com`)"
+      entryPoints: [web]
+      middlewares: [https-redirect]
+      service: crucible-ui
+
+  services:
+    crucible-api:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"
+        passHostHeader: true
+
+    crucible-ui:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:3000"
+        passHostHeader: true
+
+  middlewares:
+    https-redirect:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+    crucible-security-headers:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        customResponseHeaders:
+          Server: ""
+
+# ── Docker label alternative ──────────────────────────────────────────────────
+# If you prefer Docker labels, add these to docker-compose.yml instead:
+#
+# crucible-api:
+#   labels:
+#     - "traefik.enable=true"
+#     - "traefik.http.routers.crucible-api.rule=Host(`crucible.example.com`) && PathPrefix(`/auth`,`/api`,`/health`)"
+#     - "traefik.http.routers.crucible-api.entrypoints=websecure"
+#     - "traefik.http.routers.crucible-api.tls.certresolver=my-tls-resolver"
+#     - "traefik.http.services.crucible-api.loadbalancer.server.port=8080"
+#
+# crucible-ui:
+#   labels:
+#     - "traefik.enable=true"
+#     - "traefik.http.routers.crucible-ui.rule=Host(`crucible.example.com`)"
+#     - "traefik.http.routers.crucible-ui.entrypoints=websecure"
+#     - "traefik.http.routers.crucible-ui.tls.certresolver=my-tls-resolver"
+#     - "traefik.http.services.crucible-ui.loadbalancer.server.port=3000"

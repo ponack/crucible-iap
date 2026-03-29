@@ -1,0 +1,52 @@
+# Crucible IAP — Caddy standalone (external) reverse proxy example
+#
+# Use this if you run Caddy separately from the Docker Compose stack
+# (e.g. Caddy installed directly on the host, or a shared Caddy container).
+#
+# Requirements:
+#   - Crucible running with external-proxy profile:
+#       docker compose --profile external-proxy up -d
+#   - API on 127.0.0.1:8080, UI on 127.0.0.1:3000
+
+crucible.example.com {
+    # Caddy handles TLS automatically via Let's Encrypt.
+    # For internal/self-signed: replace the domain with "localhost" or use
+    # tls internal
+
+    # Auth + API → Go backend
+    handle /auth/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+    handle /health {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    # SSE log streaming — disable response buffering
+    handle /api/v1/runs/*/logs {
+        reverse_proxy 127.0.0.1:8080 {
+            flush_interval -1
+        }
+    }
+
+    # UI → SvelteKit
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options    "nosniff"
+        X-Frame-Options           "DENY"
+        Referrer-Policy           "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    log {
+        output stderr
+        format json
+        level INFO
+    }
+}

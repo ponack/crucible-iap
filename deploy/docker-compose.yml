@@ -1,14 +1,26 @@
 name: crucible-iap
 
+# ── Profiles ──────────────────────────────────────────────────────────────────
+# Default (no profile): bundled Caddy handles TLS + routing.
+#   docker compose up -d
+#
+# External reverse proxy: omit Caddy, expose ports directly.
+#   docker compose --profile external-proxy up -d
+#
+# Bundled Authentik IdP (either profile):
+#   docker compose --profile authentik up -d
+#   docker compose --profile external-proxy --profile authentik up -d
+
 services:
 
-  # ── Reverse proxy (TLS termination) ─────────────────────────────────────────
+  # ── Bundled reverse proxy (default) ──────────────────────────────────────────
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    profiles: ["", "caddy"]   # active when no profile is specified
     ports:
-      - "80:80"
-      - "443:443"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -20,15 +32,20 @@ services:
     networks:
       - frontend
 
-  # ── API (Go backend) ─────────────────────────────────────────────────────────
+  # ── API (Go backend) ──────────────────────────────────────────────────────────
   crucible-api:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.api
+    image: ghcr.io/ponack/crucible-iap-api:latest
     restart: unless-stopped
     env_file: ../.env
     environment:
       CRUCIBLE_ENV: production
+    # When using an external proxy, expose the API port directly.
+    # Set CRUCIBLE_API_PORT in .env (default 8080) or leave unset for internal-only.
+    ports:
+      - "${CRUCIBLE_API_EXPOSE:-127.0.0.1}:${CRUCIBLE_API_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,7 +55,6 @@ services:
       - frontend
       - backend
       - runner
-    # The API needs Docker socket access to spawn runner containers
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
@@ -47,10 +63,13 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.ui
+    image: ghcr.io/ponack/crucible-iap-ui:latest
     restart: unless-stopped
     environment:
       PORT: "3000"
       ORIGIN: "${CRUCIBLE_BASE_URL}"
+    ports:
+      - "${CRUCIBLE_UI_EXPOSE:-127.0.0.1}:${CRUCIBLE_UI_PORT:-3000}:3000"
     networks:
       - frontend
 
@@ -91,10 +110,12 @@ services:
       retries: 5
 
   # ── Authentik (optional bundled IdP) ─────────────────────────────────────────
-  # Remove this service if you use an external IdP (Okta, GitHub, Keycloak).
+  # Activate with: --profile authentik
+  # Skip this if you use an external IdP (Okta, GitHub, Keycloak, etc.)
   authentik-server:
     image: ghcr.io/goauthentik/server:2025.2
     restart: unless-stopped
+    profiles: ["authentik"]
     command: server
     environment:
       AUTHENTIK_REDIS__HOST: authentik-redis
@@ -105,6 +126,8 @@ services:
       AUTHENTIK_SECRET_KEY: "${AUTHENTIK_SECRET_KEY}"
       AUTHENTIK_BOOTSTRAP_EMAIL: "${AUTHENTIK_BOOTSTRAP_EMAIL}"
       AUTHENTIK_BOOTSTRAP_PASSWORD: "${AUTHENTIK_BOOTSTRAP_PASSWORD}"
+    ports:
+      - "${AUTHENTIK_EXPOSE:-127.0.0.1}:${AUTHENTIK_PORT:-9000}:9000"
     depends_on:
       - postgres
       - authentik-redis
@@ -115,6 +138,7 @@ services:
   authentik-worker:
     image: ghcr.io/goauthentik/server:2025.2
     restart: unless-stopped
+    profiles: ["authentik"]
     command: worker
     environment:
       AUTHENTIK_REDIS__HOST: authentik-redis
@@ -132,6 +156,7 @@ services:
   authentik-redis:
     image: redis:7-alpine
     restart: unless-stopped
+    profiles: ["authentik"]
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
       - authentik_redis:/data
@@ -144,11 +169,10 @@ networks:
     driver: bridge
   backend:
     driver: bridge
-    internal: true   # no direct internet access
+    internal: true
   runner:
     name: crucible-runner
     driver: bridge
-    # Runner containers attach to this network; configure egress as needed
 
 # ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
