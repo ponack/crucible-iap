@@ -1,0 +1,37 @@
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Go
+api/bin/
+api/tmp/
+*.exe
+*.test
+*.out
+
+# Node / SvelteKit
+ui/node_modules/
+ui/.svelte-kit/
+ui/build/
+ui/.env
+
+# Docker volumes (local dev)
+deploy/volumes/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.DS_Store
+
+# SOPS encrypted files (keep, but note them)
+# *.enc.yaml
+
+# Terraform / OpenTofu (if any local testing)
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl

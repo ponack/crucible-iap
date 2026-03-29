@@ -1,0 +1,53 @@
+{
+	# Set email for Let's Encrypt production TLS.
+	# Leave blank to use self-signed certs (fine for internal/dev).
+	email {$CADDY_ACME_EMAIL}
+
+	# Uncomment to use a custom ACME server (e.g. Step-CA for internal PKI)
+	# acme_ca https://ca.internal/acme/acme/directory
+}
+
+# ── Main domain ───────────────────────────────────────────────────────────────
+{$CRUCIBLE_BASE_URL:https://localhost} {
+
+	# Auth and API → Go backend
+	handle /auth/* {
+		reverse_proxy crucible-api:8080
+	}
+
+	handle /api/* {
+		reverse_proxy crucible-api:8080
+	}
+
+	# Health check
+	handle /health {
+		reverse_proxy crucible-api:8080
+	}
+
+	# Everything else → SvelteKit UI
+	handle {
+		reverse_proxy crucible-ui:3000
+	}
+
+	# Security headers
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+
+	log {
+		output stderr
+		format json
+		level INFO
+	}
+}
+
+# ── Authentik (if bundled) ────────────────────────────────────────────────────
+# Expose Authentik on a subdomain or port if needed.
+# authentik.{$CRUCIBLE_BASE_URL} {
+# 	reverse_proxy authentik-server:9000
+# }

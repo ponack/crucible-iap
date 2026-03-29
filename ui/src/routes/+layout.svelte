@@ -1,0 +1,56 @@
+<script lang="ts">
+	import '../app.css';
+	import { auth } from '$lib/stores/auth.svelte';
+	import { page } from '$app/stores';
+
+	const isAuthRoute = $derived($page.url.pathname.startsWith('/login'));
+</script>
+
+{#if isAuthRoute}
+	<slot />
+{:else if auth.loading}
+	<div class="flex h-screen items-center justify-center">
+		<span class="text-zinc-400 text-sm">Loading…</span>
+	</div>
+{:else if !auth.isAuthenticated}
+	{@html '<script>window.location.href="/login"</script>'}
+{:else}
+	<!-- App shell -->
+	<div class="flex h-screen overflow-hidden">
+		<!-- Sidebar -->
+		<aside class="w-56 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col">
+			<div class="px-4 py-5 border-b border-zinc-800">
+				<span class="font-semibold text-white tracking-tight">Crucible</span>
+				<span class="ml-1 text-xs text-zinc-500">IAP</span>
+			</div>
+			<nav class="flex-1 px-2 py-4 space-y-1 text-sm">
+				<a href="/stacks" class="nav-link">Stacks</a>
+				<a href="/runs" class="nav-link">Runs</a>
+				<a href="/audit" class="nav-link">Audit Log</a>
+				<a href="/settings" class="nav-link">Settings</a>
+			</nav>
+			<div class="px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500">
+				{auth.user?.email}
+			</div>
+		</aside>
+
+		<!-- Main content -->
+		<main class="flex-1 overflow-auto">
+			<slot />
+		</main>
+	</div>
+{/if}
+
+<style>
+	:global(.nav-link) {
+		display: block;
+		padding: 0.375rem 0.75rem;
+		border-radius: 0.375rem;
+		color: theme(colors.zinc.400);
+		transition: background-color 0.1s, color 0.1s;
+	}
+	:global(.nav-link:hover) {
+		background-color: theme(colors.zinc.800);
+		color: theme(colors.white);
+	}
+</style>

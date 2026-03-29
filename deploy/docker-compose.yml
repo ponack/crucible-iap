@@ -1,0 +1,159 @@
+name: crucible
+
+services:
+
+  # ── Reverse proxy (TLS termination) ─────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    env_file: ../.env
+    depends_on:
+      - crucible-api
+      - crucible-ui
+    networks:
+      - frontend
+
+  # ── API (Go backend) ─────────────────────────────────────────────────────────
+  crucible-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      CRUCIBLE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - frontend
+      - backend
+      - runner
+    # The API needs Docker socket access to spawn runner containers
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # ── UI (SvelteKit SSR) ────────────────────────────────────────────────────────
+  crucible-ui:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.ui
+    restart: unless-stopped
+    environment:
+      PORT: "3000"
+      ORIGIN: "${CRUCIBLE_BASE_URL}"
+    networks:
+      - frontend
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-crucible}"
+      POSTGRES_USER: "${POSTGRES_USER:-crucible}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crucible}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── MinIO (S3-compatible object storage) ──────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ACCESS_KEY:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_SECRET_KEY}"
+    volumes:
+      - minio_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Authentik (optional bundled IdP) ─────────────────────────────────────────
+  # Remove this service if you use an external IdP (Okta, GitHub, Keycloak).
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2025.2
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__USER: "${POSTGRES_USER:-crucible}"
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: "${POSTGRES_PASSWORD}"
+      AUTHENTIK_SECRET_KEY: "${AUTHENTIK_SECRET_KEY}"
+      AUTHENTIK_BOOTSTRAP_EMAIL: "${AUTHENTIK_BOOTSTRAP_EMAIL}"
+      AUTHENTIK_BOOTSTRAP_PASSWORD: "${AUTHENTIK_BOOTSTRAP_PASSWORD}"
+    depends_on:
+      - postgres
+      - authentik-redis
+    networks:
+      - frontend
+      - backend
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2025.2
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: authentik-redis
+      AUTHENTIK_POSTGRESQL__HOST: postgres
+      AUTHENTIK_POSTGRESQL__USER: "${POSTGRES_USER:-crucible}"
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: "${POSTGRES_PASSWORD}"
+      AUTHENTIK_SECRET_KEY: "${AUTHENTIK_SECRET_KEY}"
+    depends_on:
+      - postgres
+      - authentik-redis
+    networks:
+      - backend
+
+  authentik-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - authentik_redis:/data
+    networks:
+      - backend
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true   # no direct internet access
+  runner:
+    name: crucible-runner
+    driver: bridge
+    # Runner containers attach to this network; configure egress as needed
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  minio_data:
+  caddy_data:
+  caddy_config:
+  authentik_redis:
