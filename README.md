@@ -2,7 +2,7 @@
 
 ![Crucible IAP](ui/static/logo-new.png)
 
-**Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
+**Crucible IAP - Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
 
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
 ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)
