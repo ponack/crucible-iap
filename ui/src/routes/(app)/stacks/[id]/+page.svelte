@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { stacks, runs, type Stack, type Run, type StackToken } from '$lib/api/client';
 
-	const stackID = $derived(page.params.id);
+	const stackID = $derived(page.params.id as string);
 
 	let stack = $state<Stack | null>(null);
 	let recentRuns = $state<Run[]>([]);

@@ -4,7 +4,7 @@
 	import { runs, type Run } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
-	const runID = $derived(page.params.id);
+	const runID = $derived(page.params.id as string);
 
 	let run = $state<Run | null>(null);
 	let logLines = $state<string[]>([]);
@@ -12,7 +12,7 @@
 	let error = $state<string | null>(null);
 	let acting = $state<string | null>(null); // 'confirm' | 'discard' | 'cancel'
 
-	let logEl: HTMLElement;
+	let logEl = $state<HTMLElement | undefined>(undefined);
 	let sse: EventSource | null = null;
 	let autoScroll = $state(true);
 
