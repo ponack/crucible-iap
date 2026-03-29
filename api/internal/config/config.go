@@ -63,6 +63,8 @@ func Load() (*Config, error) {
 	v.SetDefault("POSTGRES_HOST", "localhost")
 	v.SetDefault("POSTGRES_PORT", 5432)
 	v.SetDefault("POSTGRES_DB", "crucible")
+	v.SetDefault("POSTGRES_USER", "")
+	v.SetDefault("POSTGRES_PASSWORD", "")
 	v.SetDefault("MINIO_BUCKET_STATE", "crucible-state")
 	v.SetDefault("MINIO_BUCKET_ARTIFACTS", "crucible-artifacts")
 	v.SetDefault("RUNNER_DEFAULT_IMAGE", "ghcr.io/ponack/crucible-iap-runner:latest")
