@@ -10,6 +10,7 @@ import (
 type Config struct {
 	Env        string `mapstructure:"CRUCIBLE_ENV"`
 	BaseURL    string `mapstructure:"CRUCIBLE_BASE_URL"`
+	UIBaseURL  string `mapstructure:"CRUCIBLE_UI_BASE_URL"` // defaults to BaseURL
 	ListenAddr string `mapstructure:"CRUCIBLE_LISTEN_ADDR"`
 	SecretKey  string `mapstructure:"CRUCIBLE_SECRET_KEY"`
 
@@ -47,6 +48,7 @@ func Load() (*Config, error) {
 
 	// Defaults
 	v.SetDefault("CRUCIBLE_ENV", "production")
+	v.SetDefault("CRUCIBLE_UI_BASE_URL", "") // falls back to BaseURL at runtime
 	v.SetDefault("CRUCIBLE_LISTEN_ADDR", ":8080")
 	v.SetDefault("POSTGRES_HOST", "localhost")
 	v.SetDefault("POSTGRES_PORT", 5432)

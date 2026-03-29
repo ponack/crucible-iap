@@ -4,7 +4,10 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -20,9 +23,9 @@ import (
 // Claims represents the JWT claims issued by Crucible to authenticated users.
 type Claims struct {
 	UserID string `json:"uid"`
+	OrgID  string `json:"org,omitempty"`
 	Email  string `json:"email"`
 	Name   string `json:"name"`
-	OrgID  string `json:"org,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -61,7 +64,6 @@ func (h *Handler) Login(c echo.Context) error {
 		return err
 	}
 
-	// Store state + nonce in a short-lived cookie for CSRF validation
 	c.SetCookie(&http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
@@ -79,14 +81,13 @@ func (h *Handler) Login(c echo.Context) error {
 	return c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
-// Callback handles the IdP redirect, exchanges the code, and issues Crucible JWTs.
+// Callback handles the IdP redirect, exchanges the code, and redirects the browser
+// to the frontend with short-lived tokens in the query string.
 func (h *Handler) Callback(c echo.Context) error {
 	stateCookie, err := c.Cookie("oauth_state")
 	if err != nil || stateCookie.Value != c.QueryParam("state") {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid oauth state")
 	}
-
-	// Clear the state cookie
 	c.SetCookie(&http.Cookie{Name: "oauth_state", MaxAge: -1, Path: "/"})
 
 	code := c.QueryParam("code")
@@ -110,22 +111,21 @@ func (h *Handler) Callback(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid id_token")
 	}
 
-	var claims struct {
+	var idClaims struct {
 		Email   string `json:"email"`
 		Name    string `json:"name"`
 		Picture string `json:"picture"`
 	}
-	if err := idToken.Claims(&claims); err != nil {
+	if err := idToken.Claims(&idClaims); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to parse claims")
 	}
 
-	// Upsert user in database
-	userID, err := h.upsertUser(c.Request().Context(), claims.Email, claims.Name, claims.Picture)
+	userID, orgID, err := h.upsertUser(c.Request().Context(), idClaims.Email, idClaims.Name, idClaims.Picture)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to provision user")
 	}
 
-	accessToken, err := h.issueAccessToken(userID, claims.Email, claims.Name)
+	accessToken, err := h.issueAccessToken(userID, orgID, idClaims.Email, idClaims.Name)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
 	}
@@ -135,32 +135,76 @@ func (h *Handler) Callback(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue refresh token")
 	}
 
+	// Redirect the browser to the UI callback page with tokens.
+	uiBase := h.cfg.UIBaseURL
+	if uiBase == "" {
+		uiBase = h.cfg.BaseURL
+	}
+	dest := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s",
+		uiBase, accessToken, refreshToken)
+	return c.Redirect(http.StatusTemporaryRedirect, dest)
+}
+
+// Refresh issues a new access token given a valid refresh token.
+func (h *Handler) Refresh(c echo.Context) error {
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := c.Bind(&req); err != nil || req.RefreshToken == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "refresh_token required")
+	}
+
+	rc := &jwt.RegisteredClaims{}
+	_, err := jwt.ParseWithClaims(req.RefreshToken, rc, func(t *jwt.Token) (any, error) {
+		return []byte(h.cfg.SecretKey), nil
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithAudience("refresh"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid refresh token")
+	}
+
+	userID := rc.Subject
+	var email, name, orgID string
+	err = h.pool.QueryRow(c.Request().Context(), `
+		SELECT u.email, u.name, om.org_id
+		FROM users u
+		JOIN organization_members om ON om.user_id = u.id
+		WHERE u.id = $1
+		ORDER BY om.joined_at
+		LIMIT 1
+	`, userID).Scan(&email, &name, &orgID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnauthorized, "user not found")
+	}
+
+	accessToken, err := h.issueAccessToken(userID, orgID, email, name)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
+	}
+
 	return c.JSON(http.StatusOK, map[string]string{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
-		"token_type":    "Bearer",
+		"access_token": accessToken,
+		"token_type":   "Bearer",
 	})
 }
 
-func (h *Handler) Refresh(c echo.Context) error {
-	// TODO: validate refresh token, issue new access token
-	return echo.NewHTTPError(http.StatusNotImplemented, "coming soon")
-}
-
 func (h *Handler) Logout(c echo.Context) error {
-	// TODO: invalidate refresh token
+	// Stateless JWTs — client drops tokens. Refresh tokens expire naturally.
 	return c.NoContent(http.StatusNoContent)
 }
 
-// JWTMiddleware validates Crucible-issued access tokens.
+// JWTMiddleware validates Crucible-issued access tokens and sets userID + orgID on the context.
+// Accepts the token either as a Bearer header or a ?token= query param (for EventSource clients).
 func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			header := c.Request().Header.Get("Authorization")
-			if !strings.HasPrefix(header, "Bearer ") {
-				return echo.NewHTTPError(http.StatusUnauthorized, "missing bearer token")
+			raw := c.QueryParam("token")
+			if raw == "" {
+				header := c.Request().Header.Get("Authorization")
+				if !strings.HasPrefix(header, "Bearer ") {
+					return echo.NewHTTPError(http.StatusUnauthorized, "missing bearer token")
+				}
+				raw = strings.TrimPrefix(header, "Bearer ")
 			}
-			raw := strings.TrimPrefix(header, "Bearer ")
 
 			claims := &Claims{}
 			_, err := jwt.ParseWithClaims(raw, claims, func(t *jwt.Token) (any, error) {
@@ -172,32 +216,49 @@ func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 
 			c.Set("claims", claims)
 			c.Set("userID", claims.UserID)
+			c.Set("orgID", claims.OrgID)
 			return next(c)
 		}
 	}
 }
 
-// BasicAuthMiddleware validates HTTP Basic auth for the Terraform state backend.
+// BasicAuthMiddleware validates stack token credentials for the Terraform state backend.
 func BasicAuthMiddleware(pool *pgxpool.Pool) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			username, password, ok := c.Request().BasicAuth()
+			tokenID, secret, ok := c.Request().BasicAuth()
 			if !ok {
 				c.Response().Header().Set("WWW-Authenticate", `Basic realm="crucible"`)
 				return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
 			}
-			// TODO: validate username (stack token ID) + password (token secret hash)
-			_ = username
-			_ = password
-			_ = pool
+
+			h := sha256.Sum256([]byte(secret))
+			hash := hex.EncodeToString(h[:])
+			stackID := c.Param("stackID")
+
+			var storedStackID string
+			err := pool.QueryRow(c.Request().Context(), `
+				SELECT stack_id FROM stack_tokens
+				WHERE id = $1 AND token_hash = $2
+			`, tokenID, hash).Scan(&storedStackID)
+			if err != nil || storedStackID != stackID {
+				c.Response().Header().Set("WWW-Authenticate", `Basic realm="crucible"`)
+				return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
+			}
+
+			// Best-effort last_used update
+			_, _ = pool.Exec(c.Request().Context(),
+				`UPDATE stack_tokens SET last_used = now() WHERE id = $1`, tokenID)
+
 			return next(c)
 		}
 	}
 }
 
-func (h *Handler) issueAccessToken(userID, email, name string) (string, error) {
+func (h *Handler) issueAccessToken(userID, orgID, email, name string) (string, error) {
 	claims := &Claims{
 		UserID: userID,
+		OrgID:  orgID,
 		Email:  email,
 		Name:   name,
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -220,18 +281,50 @@ func (h *Handler) issueRefreshToken(userID string) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(h.cfg.SecretKey))
 }
 
-func (h *Handler) upsertUser(ctx context.Context, email, name, avatarURL string) (string, error) {
-	var id string
-	err := h.pool.QueryRow(ctx, `
+// upsertUser creates or updates the user and ensures they have a personal org.
+// Returns (userID, orgID, error).
+func (h *Handler) upsertUser(ctx context.Context, email, name, avatarURL string) (string, string, error) {
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var userID string
+	if err := tx.QueryRow(ctx, `
 		INSERT INTO users (email, name, avatar_url)
 		VALUES ($1, $2, $3)
 		ON CONFLICT (email) DO UPDATE
-		  SET name = EXCLUDED.name,
-		      avatar_url = EXCLUDED.avatar_url,
-		      updated_at = now()
+		  SET name        = EXCLUDED.name,
+		      avatar_url  = EXCLUDED.avatar_url,
+		      updated_at  = now()
 		RETURNING id
-	`, email, name, avatarURL).Scan(&id)
-	return id, err
+	`, email, name, avatarURL).Scan(&userID); err != nil {
+		return "", "", err
+	}
+
+	// Create (or find) the user's personal workspace org.
+	orgSlug := "personal-" + userID[:8]
+	orgName := name + "'s workspace"
+	var orgID string
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO organizations (slug, name)
+		VALUES ($1, $2)
+		ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+		RETURNING id
+	`, orgSlug, orgName).Scan(&orgID); err != nil {
+		return "", "", err
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO organization_members (org_id, user_id, role)
+		VALUES ($1, $2, 'admin')
+		ON CONFLICT (org_id, user_id) DO NOTHING
+	`, orgID, userID); err != nil {
+		return "", "", err
+	}
+
+	return userID, orgID, tx.Commit(ctx)
 }
 
 func randomString(n int) (string, error) {

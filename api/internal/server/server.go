@@ -85,6 +85,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.PATCH("/stacks/:id", stackHandler.Update)
 	api.DELETE("/stacks/:id", stackHandler.Delete)
 
+	// Stack tokens (for Terraform state backend auth)
+	api.POST("/stacks/:id/tokens", stackHandler.CreateToken)
+	api.GET("/stacks/:id/tokens", stackHandler.ListTokens)
+	api.DELETE("/stacks/:id/tokens/:tokenID", stackHandler.RevokeToken)
+
 	// Runs
 	api.GET("/stacks/:stackID/runs", runHandler.List)
 	api.POST("/stacks/:stackID/runs", runHandler.Create)

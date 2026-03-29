@@ -5,7 +5,13 @@
 
 	const { children } = $props();
 
-	const isAuthRoute = $derived(page.url.pathname.startsWith('/login'));
+	const isAuthRoute = $derived(
+		page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/auth')
+	);
+
+	function navClass(prefix: string) {
+		return 'nav-link' + (page.url.pathname.startsWith(prefix) ? ' active' : '');
+	}
 </script>
 
 {#if isAuthRoute}
@@ -28,10 +34,10 @@
 				</div>
 			</div>
 			<nav class="flex-1 px-2 py-4 space-y-1 text-sm">
-				<a href="/stacks" class="nav-link">Stacks</a>
-				<a href="/runs" class="nav-link">Runs</a>
-				<a href="/audit" class="nav-link">Audit Log</a>
-				<a href="/settings" class="nav-link">Settings</a>
+				<a href="/stacks" class={navClass('/stacks')}>Stacks</a>
+				<a href="/runs" class={navClass('/runs')}>Runs</a>
+				<a href="/audit" class={navClass('/audit')}>Audit Log</a>
+				<a href="/settings" class={navClass('/settings')}>Settings</a>
 			</nav>
 			<div class="px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500">
 				{auth.user?.email}
@@ -54,6 +60,10 @@
 		transition: background-color 0.1s, color 0.1s;
 	}
 	:global(.nav-link:hover) {
+		background-color: var(--color-zinc-800);
+		color: #fff;
+	}
+	:global(.nav-link.active) {
 		background-color: var(--color-zinc-800);
 		color: #fff;
 	}

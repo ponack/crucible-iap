@@ -2,7 +2,13 @@
 package stacks
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,21 +38,31 @@ type Stack struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 }
 
+type Token struct {
+	ID        string     `json:"id"`
+	StackID   string     `json:"stack_id"`
+	Name      string     `json:"name"`
+	CreatedAt time.Time  `json:"created_at"`
+	LastUsed  *time.Time `json:"last_used,omitempty"`
+}
+
 func (h *Handler) List(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT id, org_id, slug, name, COALESCE(description,''), tool,
 		       COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		       COALESCE(runner_image,''), auto_apply, drift_detection,
 		       COALESCE(drift_schedule,''), created_at, updated_at
 		FROM stacks
+		WHERE org_id = $1
 		ORDER BY created_at DESC
-	`)
+	`, orgID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer rows.Close()
 
-	var out []Stack
+	out := []Stack{}
 	for rows.Next() {
 		var s Stack
 		if err := rows.Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
@@ -57,21 +73,29 @@ func (h *Handler) List(c echo.Context) error {
 		}
 		out = append(out, s)
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
 func (h *Handler) Create(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
 	var req struct {
-		Slug        string `json:"slug" validate:"required"`
-		Name        string `json:"name" validate:"required"`
-		Tool        string `json:"tool"`
-		RepoURL     string `json:"repo_url" validate:"required"`
-		RepoBranch  string `json:"repo_branch"`
-		ProjectRoot string `json:"project_root"`
+		Slug           string `json:"slug"`
+		Name           string `json:"name"`
+		Description    string `json:"description"`
+		Tool           string `json:"tool"`
+		RepoURL        string `json:"repo_url"`
+		RepoBranch     string `json:"repo_branch"`
+		ProjectRoot    string `json:"project_root"`
+		AutoApply      bool   `json:"auto_apply"`
+		DriftDetection bool   `json:"drift_detection"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.Name == "" || req.RepoURL == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "name and repo_url are required")
 	}
 	if req.Tool == "" {
 		req.Tool = "opentofu"
@@ -82,35 +106,41 @@ func (h *Handler) Create(c echo.Context) error {
 	if req.ProjectRoot == "" {
 		req.ProjectRoot = "."
 	}
-
-	// TODO: get org_id from JWT claims
-	orgID := c.Get("orgID")
+	if req.Slug == "" {
+		req.Slug = slugify(req.Name)
+	}
 
 	var s Stack
 	err := h.pool.QueryRow(c.Request().Context(), `
-		INSERT INTO stacks (org_id, slug, name, tool, repo_url, repo_branch, project_root)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		RETURNING id, org_id, slug, name, tool, repo_url, repo_branch, project_root, created_at, updated_at
-	`, orgID, req.Slug, req.Name, req.Tool, req.RepoURL, req.RepoBranch, req.ProjectRoot).
-		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Tool, &s.RepoURL, &s.RepoBranch,
-			&s.ProjectRoot, &s.CreatedAt, &s.UpdatedAt)
+		INSERT INTO stacks
+		  (org_id, slug, name, description, tool, repo_url, repo_branch,
+		   project_root, auto_apply, drift_detection, created_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
+		          repo_url, repo_branch, project_root, auto_apply, drift_detection,
+		          created_at, updated_at
+	`, orgID, req.Slug, req.Name, req.Description, req.Tool, req.RepoURL,
+		req.RepoBranch, req.ProjectRoot, req.AutoApply, req.DriftDetection, userID).
+		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
+			&s.RepoURL, &s.RepoBranch, &s.ProjectRoot, &s.AutoApply, &s.DriftDetection,
+			&s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-
 	return c.JSON(http.StatusCreated, s)
 }
 
 func (h *Handler) Get(c echo.Context) error {
 	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
 	var s Stack
 	err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT id, org_id, slug, name, COALESCE(description,''), tool,
 		       COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		       COALESCE(runner_image,''), auto_apply, drift_detection,
 		       COALESCE(drift_schedule,''), created_at, updated_at
-		FROM stacks WHERE id = $1
-	`, id).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
+		FROM stacks WHERE id = $1 AND org_id = $2
+	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
 		&s.CreatedAt, &s.UpdatedAt)
@@ -121,15 +151,208 @@ func (h *Handler) Get(c echo.Context) error {
 }
 
 func (h *Handler) Update(c echo.Context) error {
-	// TODO: partial update via PATCH
-	return echo.NewHTTPError(http.StatusNotImplemented, "coming soon")
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var req struct {
+		Name           *string `json:"name"`
+		Description    *string `json:"description"`
+		RepoBranch     *string `json:"repo_branch"`
+		ProjectRoot    *string `json:"project_root"`
+		RunnerImage    *string `json:"runner_image"`
+		AutoApply      *bool   `json:"auto_apply"`
+		DriftDetection *bool   `json:"drift_detection"`
+		DriftSchedule  *string `json:"drift_schedule"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	// Build dynamic SET clause from non-nil fields.
+	sets := []string{"updated_at = now()"}
+	args := []any{id, orgID}
+
+	add := func(col string, val any) {
+		args = append(args, val)
+		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
+	}
+	if req.Name != nil {
+		add("name", *req.Name)
+	}
+	if req.Description != nil {
+		add("description", *req.Description)
+	}
+	if req.RepoBranch != nil {
+		add("repo_branch", *req.RepoBranch)
+	}
+	if req.ProjectRoot != nil {
+		add("project_root", *req.ProjectRoot)
+	}
+	if req.RunnerImage != nil {
+		add("runner_image", *req.RunnerImage)
+	}
+	if req.AutoApply != nil {
+		add("auto_apply", *req.AutoApply)
+	}
+	if req.DriftDetection != nil {
+		add("drift_detection", *req.DriftDetection)
+	}
+	if req.DriftSchedule != nil {
+		add("drift_schedule", *req.DriftSchedule)
+	}
+
+	query := fmt.Sprintf(`
+		UPDATE stacks SET %s WHERE id = $1 AND org_id = $2
+		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
+		          COALESCE(tool_version,''), repo_url, repo_branch, project_root,
+		          COALESCE(runner_image,''), auto_apply, drift_detection,
+		          COALESCE(drift_schedule,''), created_at, updated_at
+	`, strings.Join(sets, ", "))
+
+	var s Stack
+	err := h.pool.QueryRow(c.Request().Context(), query, args...).
+		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
+			&s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
+			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
+			&s.CreatedAt, &s.UpdatedAt)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+	return c.JSON(http.StatusOK, s)
 }
 
 func (h *Handler) Delete(c echo.Context) error {
 	id := c.Param("id")
-	_, err := h.pool.Exec(c.Request().Context(), `DELETE FROM stacks WHERE id = $1`, id)
+	orgID := c.Get("orgID").(string)
+	tag, err := h.pool.Exec(c.Request().Context(),
+		`DELETE FROM stacks WHERE id = $1 AND org_id = $2`, id, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ── Stack token management ─────────────────────────────────────────────────────
+
+// CreateToken generates a new stack token. The raw secret is returned once only.
+func (h *Handler) CreateToken(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.Name == "" {
+		req.Name = "default"
+	}
+
+	// Verify stack belongs to this org
+	var exists bool
+	if err := h.pool.QueryRow(c.Request().Context(),
+		`SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)`,
+		stackID, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	raw, hash, err := generateToken()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to generate token")
+	}
+
+	var t Token
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		INSERT INTO stack_tokens (stack_id, name, token_hash, created_by)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id, stack_id, name, created_at
+	`, stackID, req.Name, hash, userID).Scan(&t.ID, &t.StackID, &t.Name, &t.CreatedAt); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.JSON(http.StatusCreated, map[string]any{
+		"id":         t.ID,
+		"stack_id":   t.StackID,
+		"name":       t.Name,
+		"secret":     raw, // shown once — store it now
+		"created_at": t.CreatedAt,
+	})
+}
+
+// ListTokens returns token metadata (no secrets) for a stack.
+func (h *Handler) ListTokens(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var exists bool
+	if err := h.pool.QueryRow(c.Request().Context(),
+		`SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)`,
+		stackID, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT id, stack_id, name, created_at, last_used
+		FROM stack_tokens WHERE stack_id = $1
+		ORDER BY created_at DESC
+	`, stackID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	defer rows.Close()
+
+	out := []Token{}
+	for rows.Next() {
+		var t Token
+		if err := rows.Scan(&t.ID, &t.StackID, &t.Name, &t.CreatedAt, &t.LastUsed); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		out = append(out, t)
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// RevokeToken deletes a stack token.
+func (h *Handler) RevokeToken(c echo.Context) error {
+	stackID := c.Param("id")
+	tokenID := c.Param("tokenID")
+	orgID := c.Get("orgID").(string)
+
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		DELETE FROM stack_tokens st
+		USING stacks s
+		WHERE st.id = $1 AND st.stack_id = $2
+		  AND s.id = st.stack_id AND s.org_id = $3
+	`, tokenID, stackID, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "token not found")
+	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// generateToken returns a URL-safe random secret and its SHA-256 hex hash.
+func generateToken() (raw, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err = rand.Read(b); err != nil {
+		return
+	}
+	raw = base64.RawURLEncoding.EncodeToString(b)
+	h := sha256.Sum256([]byte(raw))
+	hash = hex.EncodeToString(h[:])
+	return
+}
+
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	var out strings.Builder
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+			out.WriteRune(r)
+		} else if r == ' ' || r == '_' {
+			out.WriteRune('-')
+		}
+	}
+	return strings.Trim(out.String(), "-")
 }

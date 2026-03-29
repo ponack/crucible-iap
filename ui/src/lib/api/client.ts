@@ -3,7 +3,7 @@ import { auth } from '$lib/stores/auth.svelte';
 
 const BASE = '/api/v1';
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
 		...(init.headers as Record<string, string>)
@@ -14,6 +14,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 	}
 
 	const res = await fetch(BASE + path, { ...init, headers });
+
+	// Attempt silent token refresh on 401, once.
+	if (res.status === 401 && retry && auth.refreshToken) {
+		const refreshed = await tryRefresh();
+		if (refreshed) return request<T>(path, init, false);
+		auth.clear();
+		window.location.href = '/login';
+		throw new Error('Unauthorized');
+	}
 
 	if (res.status === 401) {
 		auth.clear();
@@ -30,6 +39,22 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 	return res.json() as Promise<T>;
 }
 
+async function tryRefresh(): Promise<boolean> {
+	try {
+		const res = await fetch('/auth/refresh', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ refresh_token: auth.refreshToken })
+		});
+		if (!res.ok) return false;
+		const { access_token } = await res.json();
+		auth.setAccessToken(access_token);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 // ── Stacks ────────────────────────────────────────────────────────────────────
 
 export interface Stack {
@@ -43,10 +68,21 @@ export interface Stack {
 	repo_url: string;
 	repo_branch: string;
 	project_root: string;
+	runner_image?: string;
 	auto_apply: boolean;
 	drift_detection: boolean;
+	drift_schedule?: string;
 	created_at: string;
 	updated_at: string;
+}
+
+export interface StackToken {
+	id: string;
+	stack_id: string;
+	name: string;
+	secret?: string; // only present on creation
+	created_at: string;
+	last_used?: string;
 }
 
 export const stacks = {
@@ -56,7 +92,18 @@ export const stacks = {
 		request<Stack>('/stacks', { method: 'POST', body: JSON.stringify(data) }),
 	update: (id: string, data: Partial<Stack>) =>
 		request<Stack>(`/stacks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-	delete: (id: string) => request<null>(`/stacks/${id}`, { method: 'DELETE' })
+	delete: (id: string) => request<null>(`/stacks/${id}`, { method: 'DELETE' }),
+
+	tokens: {
+		list: (stackID: string) => request<StackToken[]>(`/stacks/${stackID}/tokens`),
+		create: (stackID: string, name: string) =>
+			request<StackToken>(`/stacks/${stackID}/tokens`, {
+				method: 'POST',
+				body: JSON.stringify({ name })
+			}),
+		revoke: (stackID: string, tokenID: string) =>
+			request<null>(`/stacks/${stackID}/tokens/${tokenID}`, { method: 'DELETE' })
+	}
 };
 
 // ── Runs ──────────────────────────────────────────────────────────────────────
@@ -64,7 +111,17 @@ export const stacks = {
 export interface Run {
 	id: string;
 	stack_id: string;
-	status: 'queued' | 'preparing' | 'planning' | 'unconfirmed' | 'confirmed' | 'applying' | 'finished' | 'failed' | 'canceled' | 'discarded';
+	status:
+		| 'queued'
+		| 'preparing'
+		| 'planning'
+		| 'unconfirmed'
+		| 'confirmed'
+		| 'applying'
+		| 'finished'
+		| 'failed'
+		| 'canceled'
+		| 'discarded';
 	type: 'tracked' | 'proposed' | 'destroy';
 	trigger: string;
 	commit_sha?: string;
@@ -83,4 +140,23 @@ export const runs = {
 	confirm: (id: string) => request<null>(`/runs/${id}/confirm`, { method: 'POST' }),
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
 	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' })
+};
+
+// ── Audit ─────────────────────────────────────────────────────────────────────
+
+export interface AuditEvent {
+	id: number;
+	occurred_at: string;
+	actor_id?: string;
+	actor_type: string;
+	action: string;
+	resource_id?: string;
+	resource_type?: string;
+	org_id?: string;
+	ip_address?: string;
+	context: Record<string, unknown>;
+}
+
+export const audit = {
+	list: () => request<AuditEvent[]>('/audit')
 };
