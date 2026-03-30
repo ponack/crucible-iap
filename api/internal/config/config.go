@@ -30,10 +30,15 @@ type Config struct {
 	MinioUseSSL          bool   `mapstructure:"MINIO_USE_SSL"`
 
 	// OIDC
-	OIDCIssuerURL   string `mapstructure:"OIDC_ISSUER_URL"`
-	OIDCClientID    string `mapstructure:"OIDC_CLIENT_ID"`
+	OIDCIssuerURL    string `mapstructure:"OIDC_ISSUER_URL"`
+	OIDCClientID     string `mapstructure:"OIDC_CLIENT_ID"`
 	OIDCClientSecret string `mapstructure:"OIDC_CLIENT_SECRET"`
-	OIDCRedirectURL string `mapstructure:"OIDC_REDIRECT_URL"`
+	OIDCRedirectURL  string `mapstructure:"OIDC_REDIRECT_URL"`
+
+	// Local auth (simple email/password, for deployments without an IdP)
+	LocalAuthEnabled  bool   `mapstructure:"LOCAL_AUTH_ENABLED"`
+	LocalAuthEmail    string `mapstructure:"LOCAL_AUTH_EMAIL"`
+	LocalAuthPassword string `mapstructure:"LOCAL_AUTH_PASSWORD"`
 
 	// Runner
 	RunnerDefaultImage      string `mapstructure:"RUNNER_DEFAULT_IMAGE"`
@@ -59,6 +64,11 @@ func Load() (*Config, error) {
 	v.SetDefault("OIDC_CLIENT_ID", "")
 	v.SetDefault("OIDC_CLIENT_SECRET", "")
 	v.SetDefault("OIDC_REDIRECT_URL", "")
+
+	// Local auth
+	v.SetDefault("LOCAL_AUTH_ENABLED", false)
+	v.SetDefault("LOCAL_AUTH_EMAIL", "")
+	v.SetDefault("LOCAL_AUTH_PASSWORD", "")
 	v.SetDefault("CRUCIBLE_LISTEN_ADDR", ":8080")
 	v.SetDefault("POSTGRES_HOST", "localhost")
 	v.SetDefault("POSTGRES_PORT", 5432)
@@ -83,8 +93,11 @@ func Load() (*Config, error) {
 	if cfg.SecretKey == "" {
 		return nil, fmt.Errorf("CRUCIBLE_SECRET_KEY is required")
 	}
-	if cfg.OIDCIssuerURL == "" {
-		return nil, fmt.Errorf("OIDC_ISSUER_URL is required")
+	if cfg.OIDCIssuerURL == "" && !cfg.LocalAuthEnabled {
+		return nil, fmt.Errorf("at least one auth method must be configured: set OIDC_ISSUER_URL or LOCAL_AUTH_ENABLED=true")
+	}
+	if cfg.LocalAuthEnabled && (cfg.LocalAuthEmail == "" || cfg.LocalAuthPassword == "") {
+		return nil, fmt.Errorf("LOCAL_AUTH_EMAIL and LOCAL_AUTH_PASSWORD are required when LOCAL_AUTH_ENABLED=true")
 	}
 
 	return &cfg, nil

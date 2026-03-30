@@ -7,7 +7,7 @@
 
 	html,
 	body {
-		background-color: var(--color-zinc-950);
+		background-color: #1a2e2a;
 		color: var(--color-zinc-100);
 		min-height: 100%;
 	}

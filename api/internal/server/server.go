@@ -62,8 +62,10 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 
 	// ── Public ─────────────────────────────────────────────────────────────────
 	e.GET("/health", s.handleHealth)
+	e.GET("/auth/config", authHandler.GetAuthConfig)
 	e.GET("/auth/login", authHandler.Login)
 	e.GET("/auth/callback", authHandler.Callback)
+	e.POST("/auth/local", authHandler.LocalLogin)
 	e.POST("/auth/refresh", authHandler.Refresh)
 	e.POST("/auth/logout", authHandler.Logout)
 

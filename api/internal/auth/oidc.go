@@ -37,24 +37,79 @@ type Handler struct {
 }
 
 func NewHandler(cfg *config.Config, pool *pgxpool.Pool) *Handler {
-	provider, err := gooidc.NewProvider(context.Background(), cfg.OIDCIssuerURL)
+	h := &Handler{cfg: cfg, pool: pool}
+
+	if cfg.OIDCIssuerURL != "" {
+		provider, err := gooidc.NewProvider(context.Background(), cfg.OIDCIssuerURL)
+		if err != nil {
+			panic("failed to initialise OIDC provider: " + err.Error())
+		}
+		h.provider = provider
+		h.oauth2 = &oauth2.Config{
+			ClientID:     cfg.OIDCClientID,
+			ClientSecret: cfg.OIDCClientSecret,
+			RedirectURL:  cfg.OIDCRedirectURL,
+			Endpoint:     provider.Endpoint(),
+			Scopes:       []string{gooidc.ScopeOpenID, "profile", "email"},
+		}
+	}
+
+	return h
+}
+
+// GetAuthConfig returns which authentication methods are available.
+func (h *Handler) GetAuthConfig(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]bool{
+		"oidc":  h.provider != nil,
+		"local": h.cfg.LocalAuthEnabled,
+	})
+}
+
+// LocalLogin authenticates a user with email + password from config.
+func (h *Handler) LocalLogin(c echo.Context) error {
+	if !h.cfg.LocalAuthEnabled {
+		return echo.NewHTTPError(http.StatusNotFound, "local auth not enabled")
+	}
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request")
+	}
+
+	if req.Email != h.cfg.LocalAuthEmail || req.Password != h.cfg.LocalAuthPassword {
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
+	}
+
+	userID, orgID, err := h.upsertUser(c.Request().Context(), req.Email, req.Email, "")
 	if err != nil {
-		panic("failed to initialise OIDC provider: " + err.Error())
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to provision user")
 	}
 
-	oauth2Cfg := &oauth2.Config{
-		ClientID:     cfg.OIDCClientID,
-		ClientSecret: cfg.OIDCClientSecret,
-		RedirectURL:  cfg.OIDCRedirectURL,
-		Endpoint:     provider.Endpoint(),
-		Scopes:       []string{gooidc.ScopeOpenID, "profile", "email"},
+	accessToken, err := h.issueAccessToken(userID, orgID, req.Email, req.Email)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
 	}
 
-	return &Handler{cfg: cfg, pool: pool, provider: provider, oauth2: oauth2Cfg}
+	refreshToken, err := h.issueRefreshToken(userID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue refresh token")
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"token_type":    "Bearer",
+	})
 }
 
 // Login redirects the user to the IdP authorization endpoint (PKCE).
 func (h *Handler) Login(c echo.Context) error {
+	if h.provider == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "OIDC not configured")
+	}
 	state, err := randomString(16)
 	if err != nil {
 		return err
@@ -84,6 +139,9 @@ func (h *Handler) Login(c echo.Context) error {
 // Callback handles the IdP redirect, exchanges the code, and redirects the browser
 // to the frontend with short-lived tokens in the query string.
 func (h *Handler) Callback(c echo.Context) error {
+	if h.provider == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "OIDC not configured")
+	}
 	stateCookie, err := c.Cookie("oauth_state")
 	if err != nil || stateCookie.Value != c.QueryParam("state") {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid oauth state")
