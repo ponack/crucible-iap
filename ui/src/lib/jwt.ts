@@ -1,4 +1,12 @@
+export interface JWTPayload {
+	uid: string;
+	email: string;
+	name: string;
+	org?: string;
+	[key: string]: unknown;
+}
+
 // Decode a JWT payload without verification (server already validated the token).
-export function decodeJWTPayload(token: string): Record<string, unknown> {
-	return JSON.parse(atob(token.split('.')[1]));
+export function decodeJWTPayload(token: string): JWTPayload {
+	return JSON.parse(atob(token.split('.')[1])) as JWTPayload;
 }

@@ -28,11 +28,14 @@
 
 	onMount(async () => {
 		try {
-			[stack, recentRuns, tokens] = await Promise.all([
+			const [stackRes, runsRes, tokensRes] = await Promise.all([
 				stacks.get(stackID),
 				runs.list(stackID),
 				stacks.tokens.list(stackID)
 			]);
+			stack = stackRes;
+			recentRuns = runsRes.data;
+			tokens = tokensRes;
 			resetForm();
 		} catch (e) {
 			error = (e as Error).message;
