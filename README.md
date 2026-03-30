@@ -1,6 +1,6 @@
 # Crucible IAP
 
-![Crucible IAP](ui/static/logo-new.png)
+![Crucible IAP](ui/static/logo-dark.png)
 
 **Crucible IAP - Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
 
@@ -28,7 +28,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 ```bash
 cp .env.example .env
 # Edit .env — set CRUCIBLE_BASE_URL, CRUCIBLE_SECRET_KEY, POSTGRES_PASSWORD, etc.
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d
 ```
 
 Crucible IAP will be available at `https://localhost`. Caddy provisions a TLS certificate automatically (set `CADDY_ACME_EMAIL` for Let's Encrypt).
@@ -40,7 +40,7 @@ Crucible IAP will be available at `https://localhost`. Caddy provisions a TLS ce
 Zero-config TLS via Let's Encrypt or self-signed. Everything in one `docker compose up`.
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d
 ```
 
 ### External reverse proxy
@@ -48,7 +48,7 @@ docker compose -f deploy/docker-compose.yml up -d
 Use your existing nginx, Traefik, or Caddy instance instead.
 
 ```bash
-docker compose -f deploy/docker-compose.yml --profile external-proxy up -d
+docker compose --profile external-proxy up -d
 ```
 
 The API binds to `127.0.0.1:8080` and the UI to `127.0.0.1:3000` by default. Point your proxy at those addresses. Ready-to-use config examples are in [`deploy/proxy-examples/`](deploy/proxy-examples/):
@@ -65,10 +65,10 @@ Add `--profile authentik` to include a self-hosted Authentik instance. Skip this
 
 ```bash
 # Default Caddy + Authentik
-docker compose -f deploy/docker-compose.yml --profile authentik up -d
+docker compose --profile authentik up -d
 
 # External proxy + Authentik
-docker compose -f deploy/docker-compose.yml --profile external-proxy --profile authentik up -d
+docker compose --profile external-proxy --profile authentik up -d
 ```
 
 ## Architecture
@@ -209,8 +209,8 @@ Requirements: Go 1.25+, Node.js 22+, pnpm, Docker
 # Start dependencies (PostgreSQL + MinIO only)
 docker compose -f deploy/docker-compose.dev.yml up -d
 
-# Run migrations and start API
-cd api && go run ./cmd/crucible-iap migrate && go run ./cmd/crucible-iap
+# Start API (migrations run automatically on startup)
+cd api && go run ./cmd/crucible-iap
 
 # Run UI
 cd ui && pnpm install && pnpm dev
@@ -239,8 +239,10 @@ cd api && go test -race ./...
 - [x] OPA/Rego policy evaluation engine
 - [x] Append-only audit log (tamper-resistant at DB level)
 - [x] GitHub and GitLab webhook ingestion (push + PR/MR events)
-- [ ] Audit log partition auto-creation + list pagination
-- [ ] RBAC enforcement + org invite flow
+- [x] List pagination on all collection endpoints
+- [x] RBAC enforcement (viewer / member / admin) + org invite flow
+- [x] Settings UI — member management, role changes, invite links
+- [x] Automatic migrations on startup
 - [ ] Prometheus metrics + structured health endpoint
 - [ ] Policy management UI + drift detection scheduling
 - [ ] Operator documentation + security hardening guide
