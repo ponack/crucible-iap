@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/pagination"
 )
 
 // webhookSecret generates a random 32-byte hex string for use as a webhook secret.
@@ -59,32 +60,37 @@ type Token struct {
 
 func (h *Handler) List(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
+	p := pagination.Parse(c)
+
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT id, org_id, slug, name, COALESCE(description,''), tool,
 		       COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		       COALESCE(runner_image,''), auto_apply, drift_detection,
-		       COALESCE(drift_schedule,''), created_at, updated_at
+		       COALESCE(drift_schedule,''), created_at, updated_at,
+		       COUNT(*) OVER () AS total
 		FROM stacks
 		WHERE org_id = $1
 		ORDER BY created_at DESC
-	`, orgID)
+		LIMIT $2 OFFSET $3
+	`, orgID, p.Limit, p.Offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer rows.Close()
 
-	out := []Stack{}
+	var out []Stack
+	var total int
 	for rows.Next() {
 		var s Stack
 		if err := rows.Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 			&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.CreatedAt, &s.UpdatedAt); err != nil {
+			&s.CreatedAt, &s.UpdatedAt, &total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		out = append(out, s)
 	}
-	return c.JSON(http.StatusOK, out)
+	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
 }
 
 func (h *Handler) Create(c echo.Context) error {

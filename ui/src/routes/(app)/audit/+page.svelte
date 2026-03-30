@@ -1,20 +1,31 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { audit, type AuditEvent } from '$lib/api/client';
+	import { audit, type AuditEvent, type PageMeta } from '$lib/api/client';
 
 	let events = $state<AuditEvent[]>([]);
+	let pagination = $state<PageMeta | null>(null);
+	let offset = $state(0);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	onMount(async () => {
+	async function load() {
+		loading = true;
+		error = null;
 		try {
-			events = await audit.list();
+			const res = await audit.list(offset);
+			events = res.data;
+			pagination = res.pagination;
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
 			loading = false;
 		}
-	});
+	}
+
+	onMount(load);
+
+	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
+	function next() { offset += pagination?.limit ?? 50; load(); }
 
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleString();
@@ -79,5 +90,19 @@
 				</tbody>
 			</table>
 		</div>
+
+		{#if pagination && pagination.total > pagination.limit}
+			<div class="flex items-center justify-between text-xs text-zinc-500">
+				<span>{offset + 1}–{Math.min(offset + events.length, pagination.total)} of {pagination.total}</span>
+				<div class="flex gap-2">
+					<button onclick={prev} disabled={offset === 0} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+						Previous
+					</button>
+					<button onclick={next} disabled={!pagination.has_more} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+						Next
+					</button>
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>

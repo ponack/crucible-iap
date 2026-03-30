@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/pagination"
 )
 
 type Event struct {
@@ -53,33 +54,38 @@ func Record(ctx context.Context, pool *pgxpool.Pool, e Event) {
 	}
 }
 
-// List returns recent audit events for the authenticated org.
+// List returns audit events for the authenticated org, newest first.
 func (h *Handler) List(c echo.Context) error {
 	orgID := c.Get("orgID")
+	p := pagination.Parse(c)
+
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT id, occurred_at, COALESCE(actor_id::text,''), actor_type,
 		       action, COALESCE(resource_id,''), COALESCE(resource_type,''),
-		       COALESCE(org_id::text,''), context
+		       COALESCE(org_id::text,''), context,
+		       COUNT(*) OVER () AS total
 		FROM audit_events
 		WHERE org_id = $1
 		ORDER BY occurred_at DESC
-		LIMIT 100
-	`, orgID)
+		LIMIT $2 OFFSET $3
+	`, orgID, p.Limit, p.Offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer rows.Close()
 
 	var events []Event
+	var total int
 	for rows.Next() {
 		var e Event
 		if err := rows.Scan(&e.ID, &e.OccurredAt, &e.ActorID, &e.ActorType,
-			&e.Action, &e.ResourceID, &e.ResourceType, &e.OrgID, &e.Context); err != nil {
+			&e.Action, &e.ResourceID, &e.ResourceType, &e.OrgID, &e.Context,
+			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		events = append(events, e)
 	}
-	return c.JSON(http.StatusOK, events)
+	return c.JSON(http.StatusOK, pagination.Wrap(events, p, total))
 }
 
 func nilIfEmpty(s string) any {

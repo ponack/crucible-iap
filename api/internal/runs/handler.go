@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/worker"
@@ -42,29 +43,34 @@ type Run struct {
 // List returns runs for a specific stack.
 func (h *Handler) List(c echo.Context) error {
 	stackID := c.Param("stackID")
+	p := pagination.Parse(c)
+
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT id, stack_id, status, type, trigger,
 		       COALESCE(commit_sha,''), COALESCE(branch,''),
-		       is_drift, queued_at, started_at, finished_at
+		       is_drift, queued_at, started_at, finished_at,
+		       COUNT(*) OVER () AS total
 		FROM runs WHERE stack_id = $1
 		ORDER BY queued_at DESC
-		LIMIT 50
-	`, stackID)
+		LIMIT $2 OFFSET $3
+	`, stackID, p.Limit, p.Offset)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer rows.Close()
 
 	var out []Run
+	var total int
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
-			&r.CommitSHA, &r.Branch, &r.IsDrift, &r.QueuedAt, &r.StartedAt, &r.FinishedAt); err != nil {
+			&r.CommitSHA, &r.Branch, &r.IsDrift, &r.QueuedAt, &r.StartedAt, &r.FinishedAt,
+			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		out = append(out, r)
 	}
-	return c.JSON(http.StatusOK, out)
+	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
 }
 
 // Create enqueues a new manual run.

@@ -1,20 +1,31 @@
 <script lang="ts">
-	import { stacks, type Stack } from '$lib/api/client';
+	import { stacks, type Stack, type PageMeta } from '$lib/api/client';
 	import { onMount } from 'svelte';
 
 	let items = $state<Stack[]>([]);
+	let pagination = $state<PageMeta | null>(null);
+	let offset = $state(0);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	onMount(async () => {
+	async function load() {
+		loading = true;
+		error = null;
 		try {
-			items = await stacks.list();
+			const res = await stacks.list(offset);
+			items = res.data;
+			pagination = res.pagination;
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
 			loading = false;
 		}
-	});
+	}
+
+	onMount(load);
+
+	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
+	function next() { offset += pagination?.limit ?? 50; load(); }
 
 	const toolBadge: Record<string, string> = {
 		opentofu: 'bg-violet-900 text-violet-300',
@@ -79,5 +90,19 @@
 				</tbody>
 			</table>
 		</div>
+
+		{#if pagination && pagination.total > pagination.limit}
+			<div class="flex items-center justify-between text-xs text-zinc-500">
+				<span>{offset + 1}–{Math.min(offset + items.length, pagination.total)} of {pagination.total}</span>
+				<div class="flex gap-2">
+					<button onclick={prev} disabled={offset === 0} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+						Previous
+					</button>
+					<button onclick={next} disabled={!pagination.has_more} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+						Next
+					</button>
+				</div>
+			</div>
+		{/if}
 	{/if}
 </div>

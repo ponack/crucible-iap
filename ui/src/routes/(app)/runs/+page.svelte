@@ -1,28 +1,45 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { stacks, runs, type Stack, type Run } from '$lib/api/client';
+	import { stacks, runs, type Run, type PageMeta } from '$lib/api/client';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	// Collect runs across all stacks
 	let allRuns = $state<(Run & { stackName?: string })[]>([]);
+	let pagination = $state<PageMeta | null>(null);
+	let offset = $state(0);
+	// stackName map populated once; reused across page changes
+	let stackMap = $state(new Map<string, string>());
 
-	onMount(async () => {
+	async function load() {
+		loading = true;
+		error = null;
 		try {
-			const stackList = await stacks.list();
-			const stackMap = new Map<string, string>(stackList.map((s) => [s.id, s.name]));
-
-			const runLists = await Promise.all(stackList.map((s) => runs.list(s.id)));
-			allRuns = runLists
-				.flat()
-				.map((r) => ({ ...r, stackName: stackMap.get(r.stack_id) }))
+			if (stackMap.size === 0) {
+				const stackRes = await stacks.list(0, 200);
+				stackMap = new Map(stackRes.data.map((s) => [s.id, s.name]));
+			}
+			// Fetch all stacks' runs concurrently for this page
+			const runLists = await Promise.all(
+				[...stackMap.keys()].map((id) => runs.list(id, offset))
+			);
+			const merged = runLists
+				.flatMap((r) => r.data.map((run) => ({ ...run, stackName: stackMap.get(run.stack_id) })))
 				.sort((a, b) => new Date(b.queued_at).getTime() - new Date(a.queued_at).getTime());
+			allRuns = merged;
+			// Use the first non-null pagination as reference
+			const first = runLists.find((r) => r.pagination);
+			pagination = first?.pagination ?? null;
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
 			loading = false;
 		}
-	});
+	}
+
+	onMount(load);
+
+	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
+	function next() { offset += pagination?.limit ?? 50; load(); }
 
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleString();
@@ -86,5 +103,16 @@
 				</tbody>
 			</table>
 		</div>
+
+		{#if pagination && pagination.total > pagination.limit}
+			<div class="flex items-center justify-end gap-2 text-xs text-zinc-500">
+				<button onclick={prev} disabled={offset === 0} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+					Previous
+				</button>
+				<button onclick={next} disabled={!pagination.has_more} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+					Next
+				</button>
+			</div>
+		{/if}
 	{/if}
 </div>

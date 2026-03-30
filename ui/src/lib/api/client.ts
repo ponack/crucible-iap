@@ -55,6 +55,20 @@ async function tryRefresh(): Promise<boolean> {
 	}
 }
 
+// ── Pagination ────────────────────────────────────────────────────────────────
+
+export interface PageMeta {
+	limit: number;
+	offset: number;
+	total: number;
+	has_more: boolean;
+}
+
+export interface Paginated<T> {
+	data: T[];
+	pagination: PageMeta;
+}
+
 // ── Stacks ────────────────────────────────────────────────────────────────────
 
 export interface Stack {
@@ -86,7 +100,8 @@ export interface StackToken {
 }
 
 export const stacks = {
-	list: () => request<Stack[]>('/stacks'),
+	list: (offset = 0, limit = 50) =>
+		request<Paginated<Stack>>(`/stacks?limit=${limit}&offset=${offset}`),
 	get: (id: string) => request<Stack>(`/stacks/${id}`),
 	create: (data: Partial<Stack>) =>
 		request<Stack>('/stacks', { method: 'POST', body: JSON.stringify(data) }),
@@ -133,7 +148,8 @@ export interface Run {
 }
 
 export const runs = {
-	list: (stackID: string) => request<Run[]>(`/stacks/${stackID}/runs`),
+	list: (stackID: string, offset = 0, limit = 50) =>
+		request<Paginated<Run>>(`/stacks/${stackID}/runs?limit=${limit}&offset=${offset}`),
 	get: (id: string) => request<Run>(`/runs/${id}`),
 	create: (stackID: string, type = 'tracked') =>
 		request<Run>(`/stacks/${stackID}/runs`, { method: 'POST', body: JSON.stringify({ type }) }),
@@ -158,5 +174,6 @@ export interface AuditEvent {
 }
 
 export const audit = {
-	list: () => request<AuditEvent[]>('/audit')
+	list: (offset = 0, limit = 50) =>
+		request<Paginated<AuditEvent>>(`/audit?limit=${limit}&offset=${offset}`)
 };
