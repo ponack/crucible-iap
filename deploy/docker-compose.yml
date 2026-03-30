@@ -1,15 +1,20 @@
 name: crucible-iap
 
 # ── Profiles ──────────────────────────────────────────────────────────────────
+# Always run from the repo root so .env is found automatically, or pass it
+# explicitly with --env-file:
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#   docker compose --env-file .env -f deploy/docker-compose.yml up -d
+#
 # Default (no profile): bundled Caddy handles TLS + routing.
-#   docker compose up -d
+#   docker compose -f deploy/docker-compose.yml up -d
 #
 # External reverse proxy: omit Caddy, expose ports directly.
-#   docker compose --profile external-proxy up -d
+#   docker compose -f deploy/docker-compose.yml --profile external-proxy up -d
 #
 # Bundled Authentik IdP (either profile):
-#   docker compose --profile authentik up -d
-#   docker compose --profile external-proxy --profile authentik up -d
+#   docker compose -f deploy/docker-compose.yml --profile authentik up -d
 
 services:
 
