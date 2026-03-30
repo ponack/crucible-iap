@@ -18,8 +18,7 @@ WORKDIR /app
 
 COPY --from=builder /build/build ./build
 COPY --from=builder /build/package.json .
-
-RUN npm install --production --ignore-scripts 2>/dev/null || true
+COPY --from=builder /build/node_modules ./node_modules
 
 EXPOSE 3000
 ENV PORT=3000
