@@ -5,7 +5,7 @@
 	import { auth } from '$lib/stores/auth.svelte';
 	import { org } from '$lib/api/client';
 
-	let token = $derived($page.params.token);
+	let token = $derived($page.params.token!);
 
 	interface InviteMeta {
 		org_name: string;
