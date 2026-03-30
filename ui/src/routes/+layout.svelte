@@ -1,13 +1,27 @@
 <script lang="ts">
 	import '../app.css';
+	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { page } from '$app/state';
 
 	const { children } = $props();
 
+	let mounted = $state(false);
+
 	const isAuthRoute = $derived(
 		page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/auth')
 	);
+
+	onMount(() => {
+		mounted = true;
+	});
+
+	$effect(() => {
+		if (mounted && !isAuthRoute && !auth.isAuthenticated) {
+			goto('/login', { replaceState: true });
+		}
+	});
 
 	function navClass(prefix: string) {
 		return 'nav-link' + (page.url.pathname.startsWith(prefix) ? ' active' : '');
@@ -16,12 +30,10 @@
 
 {#if isAuthRoute}
 	{@render children()}
-{:else if auth.loading}
-	<div class="flex h-screen items-center justify-center">
+{:else if !mounted || auth.loading}
+	<div class="flex h-screen items-center justify-center bg-[#1a2e2a]">
 		<span class="text-zinc-400 text-sm">Loading…</span>
 	</div>
-{:else if !auth.isAuthenticated}
-	{@html '<script>window.location.href="/login"</script>'}
 {:else}
 	<div class="flex h-screen overflow-hidden">
 		<!-- Sidebar -->
