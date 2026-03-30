@@ -11,6 +11,8 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
 	"github.com/ponack/crucible-iap/internal/config"
+	cruciblemw "github.com/ponack/crucible-iap/internal/middleware"
+	"github.com/ponack/crucible-iap/internal/orgs"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runs"
 	"github.com/ponack/crucible-iap/internal/stacks"
@@ -59,6 +61,10 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	stateHandler := state.NewHandler(s.pool, store)
 	auditHandler := audit.NewHandler(s.pool)
 	webhookHandler := webhooks.NewHandler(s.pool, q)
+	orgHandler := orgs.NewHandler(s.pool)
+
+	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
+	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
 
 	// ── Public ─────────────────────────────────────────────────────────────────
 	e.GET("/health", s.handleHealth)
@@ -68,6 +74,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	e.POST("/auth/local", authHandler.LocalLogin)
 	e.POST("/auth/refresh", authHandler.Refresh)
 	e.POST("/auth/logout", authHandler.Logout)
+	e.GET("/api/v1/invites/:token", orgHandler.GetInvite)
 
 	// Webhook ingestion — public, authenticated internally via HMAC/token
 	e.POST("/api/v1/webhooks/:stackID", webhookHandler.Receive)
@@ -85,28 +92,37 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api := e.Group("/api/v1")
 	api.Use(auth.JWTMiddleware(s.cfg.SecretKey))
 
+	// Org members & invites
+	api.GET("/org/members", orgHandler.ListMembers)
+	api.PATCH("/org/members/:userID", orgHandler.UpdateMember, admin)
+	api.DELETE("/org/members/:userID", orgHandler.RemoveMember, admin)
+	api.GET("/org/invites", orgHandler.ListInvites, admin)
+	api.POST("/org/invites", orgHandler.CreateInvite, admin)
+	api.DELETE("/org/invites/:inviteID", orgHandler.RevokeInvite, admin)
+	api.POST("/invites/:token/accept", orgHandler.AcceptInvite)
+
 	// Stacks
 	api.GET("/stacks", stackHandler.List)
-	api.POST("/stacks", stackHandler.Create)
+	api.POST("/stacks", stackHandler.Create, member)
 	api.GET("/stacks/:id", stackHandler.Get)
-	api.PATCH("/stacks/:id", stackHandler.Update)
-	api.DELETE("/stacks/:id", stackHandler.Delete)
+	api.PATCH("/stacks/:id", stackHandler.Update, member)
+	api.DELETE("/stacks/:id", stackHandler.Delete, admin)
 
 	// Stack tokens (for Terraform state backend auth)
-	api.POST("/stacks/:id/tokens", stackHandler.CreateToken)
+	api.POST("/stacks/:id/tokens", stackHandler.CreateToken, member)
 	api.GET("/stacks/:id/tokens", stackHandler.ListTokens)
-	api.DELETE("/stacks/:id/tokens/:tokenID", stackHandler.RevokeToken)
+	api.DELETE("/stacks/:id/tokens/:tokenID", stackHandler.RevokeToken, member)
 
 	// Webhook secret rotation
-	api.POST("/stacks/:id/webhook/rotate", webhookHandler.RotateSecret)
+	api.POST("/stacks/:id/webhook/rotate", webhookHandler.RotateSecret, member)
 
 	// Runs
 	api.GET("/stacks/:stackID/runs", runHandler.List)
-	api.POST("/stacks/:stackID/runs", runHandler.Create)
+	api.POST("/stacks/:stackID/runs", runHandler.Create, member)
 	api.GET("/runs/:id", runHandler.Get)
-	api.POST("/runs/:id/confirm", runHandler.Confirm)
-	api.POST("/runs/:id/discard", runHandler.Discard)
-	api.POST("/runs/:id/cancel", runHandler.Cancel)
+	api.POST("/runs/:id/confirm", runHandler.Confirm, member)
+	api.POST("/runs/:id/discard", runHandler.Discard, member)
+	api.POST("/runs/:id/cancel", runHandler.Cancel, member)
 	api.GET("/runs/:id/logs", runHandler.Logs) // SSE stream
 
 	// Audit log

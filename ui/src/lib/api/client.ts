@@ -177,3 +177,39 @@ export const audit = {
 	list: (offset = 0, limit = 50) =>
 		request<Paginated<AuditEvent>>(`/audit?limit=${limit}&offset=${offset}`)
 };
+
+// ── Org ───────────────────────────────────────────────────────────────────────
+
+export interface OrgMember {
+	user_id: string;
+	email: string;
+	name: string;
+	role: 'admin' | 'member' | 'viewer';
+	joined_at: string;
+}
+
+export interface OrgInvite {
+	id: string;
+	email: string;
+	role: 'admin' | 'member' | 'viewer';
+	expires_at: string;
+	created_at: string;
+	token?: string; // only present on creation
+}
+
+export const org = {
+	members: {
+		list: () => request<OrgMember[]>('/org/members'),
+		update: (userID: string, role: string) =>
+			request<null>(`/org/members/${userID}`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+		remove: (userID: string) => request<null>(`/org/members/${userID}`, { method: 'DELETE' })
+	},
+	invites: {
+		list: () => request<OrgInvite[]>('/org/invites'),
+		create: (email: string, role: string) =>
+			request<OrgInvite>('/org/invites', { method: 'POST', body: JSON.stringify({ email, role }) }),
+		revoke: (inviteID: string) => request<null>(`/org/invites/${inviteID}`, { method: 'DELETE' }),
+		accept: (token: string) =>
+			request<{ org_id: string; role: string }>(`/invites/${token}/accept`, { method: 'POST' })
+	}
+};
