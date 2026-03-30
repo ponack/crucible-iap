@@ -4,4 +4,11 @@
 	:root {
 		--radius: 0.5rem;
 	}
+
+	html,
+	body {
+		background-color: var(--color-zinc-950);
+		color: var(--color-zinc-100);
+		min-height: 100%;
+	}
 }
