@@ -50,6 +50,11 @@ func runServe() {
 
 	setupLogger(cfg.Env)
 
+	if err := db.Migrate(cfg.DatabaseURL(), false); err != nil {
+		slog.Error("migration failed", "err", err)
+		os.Exit(1)
+	}
+
 	pool, err := db.Connect(context.Background(), cfg.DatabaseURL())
 	if err != nil {
 		slog.Error("failed to connect to database", "err", err)
