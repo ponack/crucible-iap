@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { decodeJWTPayload } from '$lib/jwt';
 
+	let next = $derived($page.url.searchParams.get('next') || '/stacks');
 	let authConfig = $state({ oidc: false, local: false });
 	let email = $state('');
 	let password = $state('');
@@ -50,7 +52,7 @@
 				name: payload.name,
 				is_admin: false
 			});
-			goto('/stacks', { replaceState: true });
+			goto(next, { replaceState: true });
 		} catch {
 			error = 'Something went wrong. Please try again.';
 		} finally {
