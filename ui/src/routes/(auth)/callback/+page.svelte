@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { decodeJWTPayload } from '$lib/jwt';
 
 	let error = $state<string | null>(null);
 
@@ -16,8 +17,7 @@
 		}
 
 		try {
-			// Decode the JWT payload (no verification needed — server already validated)
-			const payload = JSON.parse(atob(accessToken.split('.')[1]));
+			const payload = decodeJWTPayload(accessToken);
 			auth.setTokens(accessToken, refreshToken, {
 				id: payload.uid,
 				email: payload.email,

@@ -88,21 +88,7 @@ func (h *Handler) LocalLogin(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to provision user")
 	}
 
-	accessToken, err := h.issueAccessToken(userID, orgID, req.Email, req.Email)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
-	}
-
-	refreshToken, err := h.issueRefreshToken(userID)
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue refresh token")
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
-		"token_type":    "Bearer",
-	})
+	return h.respondWithTokens(c, userID, orgID, req.Email, req.Email)
 }
 
 // Login redirects the user to the IdP authorization endpoint (PKCE).
@@ -354,6 +340,22 @@ func RunnerAuthMiddleware(secretKey string) echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+func (h *Handler) respondWithTokens(c echo.Context, userID, orgID, email, name string) error {
+	accessToken, err := h.issueAccessToken(userID, orgID, email, name)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
+	}
+	refreshToken, err := h.issueRefreshToken(userID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue refresh token")
+	}
+	return c.JSON(http.StatusOK, map[string]string{
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+		"token_type":    "Bearer",
+	})
 }
 
 func (h *Handler) issueAccessToken(userID, orgID, email, name string) (string, error) {

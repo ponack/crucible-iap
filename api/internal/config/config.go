@@ -69,7 +69,6 @@ func Load() (*Config, error) {
 	v.SetDefault("LOCAL_AUTH_ENABLED", false)
 	v.SetDefault("LOCAL_AUTH_EMAIL", "")
 	v.SetDefault("LOCAL_AUTH_PASSWORD", "")
-	v.SetDefault("CRUCIBLE_LISTEN_ADDR", ":8080")
 	v.SetDefault("POSTGRES_HOST", "localhost")
 	v.SetDefault("POSTGRES_PORT", 5432)
 	v.SetDefault("POSTGRES_DB", "crucible")

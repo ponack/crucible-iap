@@ -53,7 +53,7 @@ services:
       POSTGRES_DB: "${POSTGRES_DB:-crucible}"
       POSTGRES_USER: "${POSTGRES_USER:-crucible}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
-      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT:-minio:9000}"
       MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
       MINIO_SECRET_KEY: "${MINIO_SECRET_KEY}"
       MINIO_BUCKET_STATE: "${MINIO_BUCKET_STATE:-crucible-state}"

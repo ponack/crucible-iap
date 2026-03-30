@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { decodeJWTPayload } from '$lib/jwt';
 
 	let authConfig = $state({ oidc: false, local: false });
 	let email = $state('');
@@ -15,11 +16,11 @@
 			if (res.ok) {
 				authConfig = await res.json();
 			} else {
-				// Old API image without /auth/config — default to SSO
-				authConfig = { oidc: true, local: false };
+				// API unavailable or old image — show both options as a safe fallback
+				authConfig = { oidc: true, local: true };
 			}
 		} catch {
-			authConfig = { oidc: true, local: false };
+			authConfig = { oidc: true, local: true };
 		}
 	});
 
@@ -42,7 +43,7 @@
 				return;
 			}
 			const { access_token, refresh_token } = await res.json();
-			const payload = JSON.parse(atob(access_token.split('.')[1]));
+			const payload = decodeJWTPayload(access_token);
 			auth.setTokens(access_token, refresh_token, {
 				id: payload.uid,
 				email: payload.email,
