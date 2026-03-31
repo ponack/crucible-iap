@@ -256,7 +256,7 @@ cd api && go test -race ./...
 - [x] Structured `/health` endpoint (DB status, version, uptime)
 - [x] Policy management UI + drift detection scheduling
 - [x] Operator documentation + security hardening guide
-- [ ] Stack-level environment variable injection (cloud credentials, secrets)
+- [x] Stack-level environment variables — AES-256-GCM encrypted at rest, injected into runner containers
 - [ ] External secret store integrations (AWS Secrets Manager, HashiCorp Vault, Bitwarden)
 - [ ] Multi-cloud state backend options (S3, GCS, Azure Blob)
 - [ ] Slack / PagerDuty / webhook run notifications
