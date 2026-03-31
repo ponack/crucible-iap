@@ -12,40 +12,41 @@ Browser / CI
     ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Caddy (TLS termination, security headers, routing)         │
-└────────────────────┬────────────────────┬───────────────────┘
-                     │                    │
-                     ▼                    ▼
-          ┌──────────────────┐  ┌──────────────────┐
-          │  Crucible API    │  │  Crucible UI     │
-          │  (Go / Echo)     │  │  (SvelteKit SSR) │
-          └────────┬─────────┘  └──────────────────┘
-                   │
-       ┌───────────┼───────────────┬──────────────┐
-       ▼           ▼               ▼              ▼
-  ┌─────────┐ ┌─────────┐  ┌──────────┐  ┌──────────────┐
-  │Postgres │ │  MinIO  │  │OPA engine│  │ River queue  │
-  │(primary │ │(state + │  │(embedded │  │ (Postgres-   │
-  │ DB +    │ │ plans + │  │ in API)  │  │  backed)     │
-  │ audit)  │ │  logs)  │  └──────────┘  └──────┬───────┘
-  └─────────┘ └─────────┘                        │
-                                                  ▼
-                                      ┌───────────────────────┐
-                                      │  Worker Dispatcher    │
-                                      │  (Go goroutine pool)  │
-                                      └───────────┬───────────┘
-                                                  │ docker SDK
-                                                  ▼
-                                      ┌───────────────────────┐
-                                      │  Runner Container     │
-                                      │  (ephemeral, per run) │
-                                      │  --read-only          │
-                                      │  --no-new-privileges  │
-                                      │  --cap-drop ALL       │
-                                      │  tmpfs /workspace     │
-                                      │                       │
-                                      │  tofu / terraform /   │
-                                      │  ansible / pulumi     │
-                                      └───────────────────────┘
+└─────┬──────────────────────┬───────────────────┬───────────┘
+      │                      │                   │
+      ▼                      ▼                   ▼
+┌──────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│ Crucible UI  │  │  Crucible API    │  │     Grafana      │
+│ (SvelteKit)  │  │  (Go / Echo)     │  │  (at /grafana)   │
+└──────────────┘  └────────┬─────────┘  └──────────────────┘
+                            │                      ▲
+          ┌─────────────────┼──────────────┐       │ scrapes
+          ▼                 ▼              ▼       │
+     ┌─────────┐      ┌─────────┐  ┌──────────┐  ┌────────────┐
+     │Postgres │      │  MinIO  │  │OPA engine│  │ Prometheus │
+     │(DB +    │      │(state + │  │(embedded)│  │            │
+     │ audit + │      │ plans + │  └──────────┘  └────────────┘
+     │ River   │      │  logs)  │
+     │ queue)  │      └─────────┘
+     └────┬────┘
+          │  River jobs
+          ▼
+  ┌───────────────────┐
+  │  Worker / Drift   │
+  │  Dispatcher (Go)  │
+  └────────┬──────────┘
+           │ docker SDK
+           ▼
+  ┌───────────────────┐
+  │  Runner Container │
+  │  (ephemeral)      │
+  │  --read-only      │
+  │  --cap-drop ALL   │
+  │  tmpfs /workspace │
+  │                   │
+  │  tofu / tf /      │
+  │  ansible / pulumi │
+  └───────────────────┘
 ```
 
 ## Request flow — triggering a run
@@ -134,18 +135,42 @@ audit_events       — append-only partitioned audit log
 
 Policies are written in Rego and stored in PostgreSQL. They are compiled once (OPA `PrepareForEval`) and evaluated in microseconds per request with no network hop.
 
+## Observability
+
+Crucible ships Prometheus and Grafana as first-class components — not optional add-ons.
+
+| Metric | Description |
+| ------ | ----------- |
+| `crucible_http_requests_total` | Request count by method, route, status |
+| `crucible_http_request_duration_seconds` | Latency histogram |
+| `crucible_runs_total` | Run completions by status and trigger type |
+| `crucible_queue_depth` | Pending River jobs |
+| `crucible_build_info` | Version and commit metadata |
+
+The `/metrics` endpoint is exposed on the API's internal port and scraped by Prometheus from the Docker `backend` network. It is **not** proxied through Caddy — unreachable from the public internet by default.
+
+Grafana is served at `/grafana` via Caddy. The bundled dashboard covers HTTP request rates, error rates, p50/p95/p99 latency, run completion rates, and queue depth.
+
+## Drift detection
+
+A background goroutine (`worker.StartDriftScheduler`) wakes every minute and checks for stacks that are overdue for a drift check. Each stack carries a `drift_schedule` (minutes) and `drift_last_run_at`. When `drift_last_run_at + schedule_interval ≤ now()`, a `proposed` run is created with `trigger=drift_detection` and `is_drift=true`. The plan output is surfaced in the UI as a drift alert.
+
+Operators can also trigger a one-off drift check via the UI or `POST /api/v1/stacks/:id/drift`.
+
 ## Directory structure
 
 ```
 crucible-iap/
 ├── api/                    # Go backend
-│   ├── cmd/crucible-iap/   # Main entrypoint
+│   ├── cmd/crucible-iap/   # Main entrypoint (serve + migrate subcommands)
 │   ├── internal/
-│   │   ├── auth/           # OIDC PKCE, JWT middleware
+│   │   ├── auth/           # OIDC PKCE, JWT middleware, Basic auth
 │   │   ├── audit/          # Append-only audit log
-│   │   ├── config/         # Viper-based configuration
-│   │   ├── db/             # PostgreSQL pool + migrations
+│   │   ├── config/         # Configuration + startup validation
+│   │   ├── db/             # PostgreSQL pool + auto-migrations
+│   │   ├── metrics/        # Prometheus instrumentation + middleware
 │   │   ├── policy/         # OPA/Rego evaluation engine
+│   │   ├── policies/       # Policy CRUD handlers + stack assignment
 │   │   ├── queue/          # River job queue client
 │   │   ├── runner/         # Docker ephemeral container spawner
 │   │   ├── runs/           # Run lifecycle handlers + SSE logs
@@ -153,8 +178,8 @@ crucible-iap/
 │   │   ├── stacks/         # Stack CRUD handlers
 │   │   ├── state/          # Terraform HTTP backend
 │   │   ├── storage/        # MinIO client (state, plans, logs)
-│   │   └── worker/         # River worker + log broker
-│   └── migrations/         # SQL migration files
+│   │   └── worker/         # River worker, log broker, drift scheduler
+│   └── migrations/         # SQL migration files (golang-migrate)
 ├── ui/                     # SvelteKit frontend
 │   └── src/
 │       ├── lib/
@@ -164,12 +189,19 @@ crucible-iap/
 ├── runner/                 # Runner container image
 │   ├── Dockerfile
 │   └── entrypoint.sh       # Tool dispatcher (tofu/tf/ansible/pulumi)
-└── deploy/                 # Docker Compose deployment
-    ├── docker-compose.yml  # Production stack
-    ├── docker-compose.dev.yml
-    ├── Dockerfile.api
-    ├── Dockerfile.ui
-    └── caddy/Caddyfile
+├── deploy/                 # Docker Compose deployment
+│   ├── docker-compose.yml  # Production stack
+│   ├── docker-compose.dev.yml
+│   ├── Dockerfile.api
+│   ├── Dockerfile.ui
+│   ├── caddy/Caddyfile
+│   ├── prometheus/         # Prometheus scrape config
+│   └── grafana/            # Grafana provisioning + dashboards
+└── docs/                   # Operator and developer documentation
+    ├── architecture.md     # This file
+    ├── operator-guide.md   # Deployment, backup, monitoring
+    ├── security.md         # Threat model, hardening checklist
+    └── policies.md         # Rego policy authoring guide
 ```
 
 ## Images for logos and icons

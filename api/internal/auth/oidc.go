@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"golang.org/x/oauth2"
 )
@@ -80,6 +82,13 @@ func (h *Handler) LocalLogin(c echo.Context) error {
 	}
 
 	if req.Email != h.cfg.LocalAuthEmail || req.Password != h.cfg.LocalAuthPassword {
+		ctx, _ := json.Marshal(map[string]string{"email": req.Email, "method": "local"})
+		audit.Record(c.Request().Context(), h.pool, audit.Event{
+			Action:       "auth.login.failed",
+			ResourceType: "user",
+			IPAddress:    c.RealIP(),
+			Context:      ctx,
+		})
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
 	}
 

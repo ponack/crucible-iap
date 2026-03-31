@@ -103,6 +103,15 @@ Reverse proxy (Caddy bundled, or nginx / Traefik / your own)
 
 See [docs/architecture.md](docs/architecture.md) for the full design including security model, state backend protocol, and policy evaluation hooks.
 
+## Documentation
+
+| Document | Description |
+| -------- | ----------- |
+| [docs/architecture.md](docs/architecture.md) | Component diagram, request flow, security model, DB schema |
+| [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, backup, monitoring, troubleshooting |
+| [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting |
+| [docs/policies.md](docs/policies.md) | Rego policy authoring guide with examples |
+
 ## Connecting a Git repository
 
 Every stack has a unique webhook URL and secret. Find them on the stack detail page in the UI, or via the API:
@@ -245,8 +254,12 @@ cd api && go test -race ./...
 - [x] Automatic migrations on startup
 - [x] Prometheus metrics + Grafana dashboards (built-in, served at `/grafana`)
 - [x] Structured `/health` endpoint (DB status, version, uptime)
-- [ ] Policy management UI + drift detection scheduling
-- [ ] Operator documentation + security hardening guide
+- [x] Policy management UI + drift detection scheduling
+- [x] Operator documentation + security hardening guide
+- [ ] Stack-level environment variable injection (cloud credentials, secrets)
+- [ ] External secret store integrations (AWS Secrets Manager, HashiCorp Vault, Bitwarden)
+- [ ] Multi-cloud state backend options (S3, GCS, Azure Blob)
+- [ ] Slack / PagerDuty / webhook run notifications
 
 ## License
 

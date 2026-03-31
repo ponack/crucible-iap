@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/spf13/viper"
 )
@@ -96,11 +97,24 @@ func Load() (*Config, error) {
 	if cfg.SecretKey == "" {
 		return nil, fmt.Errorf("CRUCIBLE_SECRET_KEY is required")
 	}
+	if len(cfg.SecretKey) < 32 {
+		return nil, fmt.Errorf("CRUCIBLE_SECRET_KEY must be at least 32 characters (got %d)", len(cfg.SecretKey))
+	}
 	if cfg.OIDCIssuerURL == "" && !cfg.LocalAuthEnabled {
 		return nil, fmt.Errorf("at least one auth method must be configured: set OIDC_ISSUER_URL or LOCAL_AUTH_ENABLED=true")
 	}
 	if cfg.LocalAuthEnabled && (cfg.LocalAuthEmail == "" || cfg.LocalAuthPassword == "") {
 		return nil, fmt.Errorf("LOCAL_AUTH_EMAIL and LOCAL_AUTH_PASSWORD are required when LOCAL_AUTH_ENABLED=true")
+	}
+
+	// Warn on known-default values that signal an operator forgot to customise .env.
+	for _, pair := range [][2]string{
+		{"POSTGRES_PASSWORD", cfg.PostgresPassword},
+		{"MINIO_SECRET_KEY", cfg.MinioSecretKey},
+	} {
+		if pair[1] == "change-me" || pair[1] == "changeme" || pair[1] == "password" || pair[1] == "secret" {
+			slog.Warn("insecure default detected — change this before exposing to the network", "var", pair[0])
+		}
 	}
 
 	return &cfg, nil
