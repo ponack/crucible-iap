@@ -13,6 +13,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
 	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/metrics"
 	cruciblemw "github.com/ponack/crucible-iap/internal/middleware"
 	"github.com/ponack/crucible-iap/internal/orgs"
@@ -23,6 +24,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/stacks"
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/vault"
 	"github.com/ponack/crucible-iap/internal/webhooks"
 	"github.com/ponack/crucible-iap/internal/worker"
 )
@@ -37,7 +39,7 @@ type Server struct {
 	startTime     time.Time
 }
 
-func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher) *Server {
+func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher, v *vault.Vault) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
@@ -68,11 +70,11 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 		policyHandler: policyHandler,
 		startTime:     time.Now(),
 	}
-	s.registerRoutes(store, q, d, policyHandler)
+	s.registerRoutes(store, q, d, policyHandler, v)
 	return s
 }
 
-func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worker.Dispatcher, policyHandler *policies.Handler) {
+func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worker.Dispatcher, policyHandler *policies.Handler, v *vault.Vault) {
 	e := s.echo
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
@@ -82,6 +84,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	auditHandler := audit.NewHandler(s.pool)
 	webhookHandler := webhooks.NewHandler(s.pool, q)
 	orgHandler := orgs.NewHandler(s.pool)
+	envVarHandler := envvars.NewHandler(s.pool, v)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
 	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
@@ -140,6 +143,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.POST("/stacks/:id/tokens", stackHandler.CreateToken, member)
 	api.GET("/stacks/:id/tokens", stackHandler.ListTokens)
 	api.DELETE("/stacks/:id/tokens/:tokenID", stackHandler.RevokeToken, member)
+
+	// Stack env vars (write-only values; list returns names only)
+	api.GET("/stacks/:stackID/env", envVarHandler.List, member)
+	api.PUT("/stacks/:stackID/env", envVarHandler.Upsert, member)
+	api.DELETE("/stacks/:stackID/env/:name", envVarHandler.Delete, member)
 
 	// Stack policies
 	api.GET("/stacks/:id/policies", policyHandler.ListStackPolicies)

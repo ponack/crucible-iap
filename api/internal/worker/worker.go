@@ -18,9 +18,11 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
 	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/vault"
 )
 
 // Dispatcher manages the River worker pool and log fan-out.
@@ -29,11 +31,12 @@ type Dispatcher struct {
 	cfg     *config.Config
 	runner  *runner.Runner
 	storage *storage.Client
+	vault   *vault.Vault
 	broker  *LogBroker
 	river   *river.Client[pgx.Tx]
 }
 
-func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client) (*Dispatcher, error) {
+func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault) (*Dispatcher, error) {
 	broker := newLogBroker()
 
 	workers := river.NewWorkers()
@@ -42,6 +45,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		cfg:     cfg,
 		runner:  r,
 		storage: s,
+		vault:   v,
 		broker:  broker,
 	})
 
@@ -60,6 +64,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		cfg:     cfg,
 		runner:  r,
 		storage: s,
+		vault:   v,
 		broker:  broker,
 		river:   rc,
 	}, nil
@@ -91,6 +96,7 @@ type RunWorker struct {
 	cfg     *config.Config
 	runner  *runner.Runner
 	storage *storage.Client
+	vault   *vault.Vault
 	broker  *LogBroker
 }
 
@@ -118,6 +124,14 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	var logBuf bytes.Buffer
 	logWriter := io.MultiWriter(&logBuf, &brokerWriter{broker: w.broker, runID: args.RunID})
 
+	// Decrypt and collect stack-level env vars. Log a warning on failure but
+	// don't abort the run — some stacks may have no env vars at all.
+	extraEnv, evErr := envvars.LoadForStack(ctx, w.pool, w.vault, args.StackID)
+	if evErr != nil {
+		log.Warn("failed to load stack env vars", "err", evErr)
+		extraEnv = nil
+	}
+
 	spec := runner.JobSpec{
 		RunID:       args.RunID,
 		StackID:     args.StackID,
@@ -129,6 +143,7 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		RepoBranch:  args.RepoBranch,
 		ProjectRoot: args.ProjectRoot,
 		RunType:     args.RunType,
+		ExtraEnv:    extraEnv,
 	}
 
 	runErr := w.runner.Execute(ctx, spec, logWriter)

@@ -118,8 +118,28 @@ export const stacks = {
 			}),
 		revoke: (stackID: string, tokenID: string) =>
 			request<null>(`/stacks/${stackID}/tokens/${tokenID}`, { method: 'DELETE' })
+	},
+
+	env: {
+		list: (stackID: string) => request<StackEnvVar[]>(`/stacks/${stackID}/env`),
+		upsert: (stackID: string, name: string, value: string) =>
+			request<StackEnvVar>(`/stacks/${stackID}/env`, {
+				method: 'PUT',
+				body: JSON.stringify({ name, value })
+			}),
+		delete: (stackID: string, name: string) =>
+			request<null>(`/stacks/${stackID}/env/${encodeURIComponent(name)}`, { method: 'DELETE' })
 	}
 };
+
+// ── Stack env vars ────────────────────────────────────────────────────────────
+
+export interface StackEnvVar {
+	id: string;
+	name: string;
+	created_at: string;
+	updated_at: string;
+}
 
 // ── Runs ──────────────────────────────────────────────────────────────────────
 

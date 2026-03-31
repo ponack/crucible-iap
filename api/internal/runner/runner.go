@@ -28,6 +28,7 @@ type JobSpec struct {
 	RepoBranch  string
 	ProjectRoot string
 	RunType     string // tracked | proposed | destroy
+	ExtraEnv    []string // decrypted stack env vars as KEY=VALUE strings
 }
 
 type Runner struct {
@@ -53,7 +54,9 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 
 	containerName := fmt.Sprintf("crucible-run-%s", spec.RunID[:8])
 
-	// Scoped environment — credentials injected as env vars, never in image
+	// Scoped environment — credentials injected as env vars, never in image.
+	// ExtraEnv (decrypted stack env vars) is appended last so operators can
+	// override tool behaviour without touching the image.
 	env := []string{
 		"CRUCIBLE_RUN_ID=" + spec.RunID,
 		"CRUCIBLE_STACK_ID=" + spec.StackID,
@@ -65,6 +68,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		"CRUCIBLE_PROJECT_ROOT=" + spec.ProjectRoot,
 		"CRUCIBLE_RUN_TYPE=" + spec.RunType,
 	}
+	env = append(env, spec.ExtraEnv...)
 
 	resp, err := r.docker.ContainerCreate(ctx,
 		&container.Config{

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef } from '$lib/api/client';
+	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar } from '$lib/api/client';
 
 	const stackID = $derived(page.params.id as string);
 
@@ -35,6 +35,12 @@
 	// Policy attachment
 	let attachingPolicy = $state('');
 
+	// Env vars
+	let envVars = $state<StackEnvVar[]>([]);
+	let newEnvName = $state('');
+	let newEnvValue = $state('');
+	let savingEnv = $state(false);
+
 	const driftScheduleOptions = [
 		{ value: '', label: 'Disabled' },
 		{ value: '30', label: 'Every 30 minutes' },
@@ -46,18 +52,20 @@
 
 	onMount(async () => {
 		try {
-			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes] = await Promise.all([
+			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes] = await Promise.all([
 				stacks.get(stackID),
 				runs.list(stackID),
 				stacks.tokens.list(stackID),
 				policies.forStack(stackID),
-				policies.list()
+				policies.list(),
+				stacks.env.list(stackID)
 			]);
 			stack = stackRes;
 			recentRuns = runsRes.data;
 			tokens = tokensRes;
 			stackPolicies = stackPoliciesRes;
 			allPolicies = allPoliciesRes;
+			envVars = envVarsRes;
 			resetForm();
 		} catch (e) {
 			error = (e as Error).message;
@@ -153,6 +161,28 @@
 	async function detachPolicy(policyID: string) {
 		await policies.detach(stackID, policyID);
 		stackPolicies = stackPolicies.filter((p) => p.policy_id !== policyID);
+	}
+
+	async function saveEnvVar(e: SubmitEvent) {
+		e.preventDefault();
+		if (!newEnvName.trim() || !newEnvValue.trim()) return;
+		savingEnv = true;
+		try {
+			await stacks.env.upsert(stackID, newEnvName.trim(), newEnvValue.trim());
+			envVars = await stacks.env.list(stackID);
+			newEnvName = '';
+			newEnvValue = '';
+		} catch (err) {
+			alert((err as Error).message);
+		} finally {
+			savingEnv = false;
+		}
+	}
+
+	async function deleteEnvVar(name: string) {
+		if (!confirm(`Remove env var "${name}"?`)) return;
+		await stacks.env.delete(stackID, name);
+		envVars = envVars.filter((v) => v.name !== name);
 	}
 
 	const unattachedPolicies = $derived(
@@ -355,6 +385,49 @@
 				</button>
 			</div>
 		{/if}
+	</section>
+
+	<!-- Environment variables -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Environment variables</h2>
+		<p class="text-xs text-zinc-500">Values are encrypted at rest and injected into runner containers. They are write-only — existing values cannot be read back.</p>
+
+		{#if envVars.length > 0}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Name</th>
+							<th class="text-left px-4 py-2">Last updated</th>
+							<th class="px-4 py-2"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each envVars as ev (ev.id)}
+							<tr>
+								<td class="px-4 py-2.5 font-mono text-xs text-zinc-200">{ev.name}</td>
+								<td class="px-4 py-2.5 text-zinc-500 text-xs">{fmtDate(ev.updated_at)}</td>
+								<td class="px-4 py-2.5 text-right">
+									<button onclick={() => deleteEnvVar(ev.name)}
+										class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-zinc-600 text-sm">No environment variables set.</p>
+		{/if}
+
+		<form onsubmit={saveEnvVar} class="flex items-center gap-2">
+			<input id="env-name" class="field-input w-40 font-mono text-xs" bind:value={newEnvName} placeholder="NAME" autocomplete="off" />
+			<input id="env-value" class="field-input w-56" type="password" bind:value={newEnvValue} placeholder="value" autocomplete="new-password" />
+			<button type="submit" disabled={savingEnv || !newEnvName || !newEnvValue}
+				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+				{savingEnv ? 'Saving…' : 'Set'}
+			</button>
+		</form>
 	</section>
 
 	<!-- Recent runs -->
