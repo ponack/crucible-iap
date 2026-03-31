@@ -11,9 +11,9 @@ require (
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/minio/minio-go/v7 v7.0.83
 	github.com/open-policy-agent/opa v1.2.0
+	github.com/prometheus/client_golang v1.21.0
 	github.com/riverqueue/river v0.14.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.14.2
-	github.com/prometheus/client_golang v1.21.0
 	github.com/spf13/viper v1.19.0
 	golang.org/x/oauth2 v0.34.0
 )
