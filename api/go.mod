@@ -13,6 +13,7 @@ require (
 	github.com/open-policy-agent/opa v1.2.0
 	github.com/riverqueue/river v0.14.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.14.2
+	github.com/prometheus/client_golang v1.21.0
 	github.com/spf13/viper v1.19.0
 	golang.org/x/oauth2 v0.34.0
 )
@@ -60,7 +61,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.21.0 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

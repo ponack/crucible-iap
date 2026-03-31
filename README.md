@@ -243,7 +243,8 @@ cd api && go test -race ./...
 - [x] RBAC enforcement (viewer / member / admin) + org invite flow
 - [x] Settings UI — member management, role changes, invite links
 - [x] Automatic migrations on startup
-- [ ] Prometheus metrics + structured health endpoint
+- [x] Prometheus metrics + Grafana dashboards (built-in, served at `/grafana`)
+- [x] Structured `/health` endpoint (DB status, version, uptime)
 - [ ] Policy management UI + drift detection scheduling
 - [ ] Operator documentation + security hardening guide
 

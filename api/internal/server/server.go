@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -11,6 +12,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
 	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/metrics"
 	cruciblemw "github.com/ponack/crucible-iap/internal/middleware"
 	"github.com/ponack/crucible-iap/internal/orgs"
 	"github.com/ponack/crucible-iap/internal/queue"
@@ -27,6 +29,7 @@ type Server struct {
 	pool       *pgxpool.Pool
 	echo       *echo.Echo
 	dispatcher *worker.Dispatcher
+	startTime  time.Time
 }
 
 func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher) *Server {
@@ -37,6 +40,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
 	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(200)))
+	e.Use(metrics.Middleware())
 
 	if cfg.IsDev() {
 		e.Use(middleware.CORS())
@@ -47,7 +51,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 		}))
 	}
 
-	s := &Server{cfg: cfg, pool: pool, echo: e, dispatcher: d}
+	s := &Server{cfg: cfg, pool: pool, echo: e, dispatcher: d, startTime: time.Now()}
 	s.registerRoutes(store, q, d)
 	return s
 }
@@ -68,6 +72,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 
 	// ── Public ─────────────────────────────────────────────────────────────────
 	e.GET("/health", s.handleHealth)
+	e.GET("/metrics", metrics.Handler())
 	e.GET("/auth/config", authHandler.GetAuthConfig)
 	e.GET("/auth/login", authHandler.Login)
 	e.GET("/auth/callback", authHandler.Callback)
@@ -136,6 +141,8 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 }
 
 func (s *Server) Start(ctx context.Context) error {
+	metrics.PollQueueDepth(ctx, s.pool)
+
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -153,5 +160,23 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func (s *Server) handleHealth(c echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	dbStatus := "ok"
+	if err := s.pool.Ping(c.Request().Context()); err != nil {
+		dbStatus = "error"
+	}
+
+	status := "ok"
+	if dbStatus != "ok" {
+		status = "degraded"
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"status":  status,
+		"db":      dbStatus,
+		"uptime":  time.Since(s.startTime).Round(time.Second).String(),
+		"version": version,
+	})
 }
+
+// version is injected at build time via -ldflags.
+var version = "dev"

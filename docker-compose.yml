@@ -129,6 +129,48 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Prometheus ────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - backend
+
+  # ── Grafana ───────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_SERVER_ROOT_URL: "${CRUCIBLE_BASE_URL}/grafana"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-changeme}"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    # When using an external proxy, expose Grafana on the host so the proxy
+    # can reach it. Set CRUCIBLE_GRAFANA_PORT (default 3001) in .env.
+    # With the bundled Caddy, this port is not needed — Caddy reaches Grafana
+    # directly on the Docker network.
+    ports:
+      - "${CRUCIBLE_GRAFANA_EXPOSE:-127.0.0.1}:${CRUCIBLE_GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      - prometheus
+
   # ── Authentik (optional bundled IdP) ─────────────────────────────────────────
   # Activate with: --profile authentik
   # Skip this if you use an external IdP (Okta, GitHub, Keycloak, etc.)
@@ -200,4 +242,6 @@ volumes:
   minio_data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:
   authentik_redis:

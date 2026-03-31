@@ -1,12 +1,18 @@
 # Crucible IAP — Caddy standalone (external) reverse proxy example
 #
 # Use this if you run Caddy separately from the Docker Compose stack
-# (e.g. Caddy installed directly on the host, or a shared Caddy container).
+# (e.g. Caddy installed directly on the host, or OPNsense Caddy plugin).
 #
 # Requirements:
 #   - Crucible running with external-proxy profile:
 #       docker compose --profile external-proxy up -d
-#   - API on 127.0.0.1:8080, UI on 127.0.0.1:3000
+#   - API on 127.0.0.1:8080, UI on 127.0.0.1:3000, Grafana on 127.0.0.1:3001
+#
+# OPNsense / external Caddy note:
+#   Grafana is exposed on the host port configured by CRUCIBLE_GRAFANA_PORT
+#   (default 3001). Add the handle block below and point it at that port.
+#   Prometheus is NEVER exposed externally — it only scrapes crucible-api
+#   from within the Docker backend network.
 
 crucible.example.com {
     # Caddy handles TLS automatically via Let's Encrypt.
@@ -29,6 +35,12 @@ crucible.example.com {
         reverse_proxy 127.0.0.1:8080 {
             flush_interval -1
         }
+    }
+
+    # Grafana — served from the host port Grafana is bound to.
+    # /metrics is intentionally NOT proxied here.
+    handle /grafana/* {
+        reverse_proxy 127.0.0.1:3001
     }
 
     # UI → SvelteKit

@@ -24,6 +24,11 @@
 		reverse_proxy crucible-api:8080
 	}
 
+	# Grafana — proxied internally; /metrics is NOT proxied (scrape-only)
+	handle /grafana/* {
+		reverse_proxy grafana:3000
+	}
+
 	# Everything else → SvelteKit UI
 	handle {
 		reverse_proxy crucible-ui:3000
