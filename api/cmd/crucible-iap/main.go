@@ -47,6 +47,10 @@ func runServe() {
 		slog.Error("failed to load config", "err", err)
 		os.Exit(1)
 	}
+	if err := cfg.ValidateServe(); err != nil {
+		slog.Error("invalid config", "err", err)
+		os.Exit(1)
+	}
 
 	setupLogger(cfg.Env)
 
