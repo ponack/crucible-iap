@@ -4,7 +4,7 @@
 	import { onMount } from 'svelte';
 	import { policies, type Policy } from '$lib/api/client';
 
-	const id = $derived(page.params.id);
+	const id = $derived(page.params.id!);
 
 	let policy = $state<Policy | null>(null);
 	let loading = $state(true);
@@ -112,8 +112,8 @@
 				<input id="p-name" class="field-input" bind:value={form.name} required />
 			</div>
 			<div class="space-y-1.5">
-				<label class="field-label">Type</label>
-				<input class="field-input opacity-60 cursor-not-allowed" value={typeLabels[policy.type] ?? policy.type} disabled />
+				<label class="field-label" for="p-type-display">Type</label>
+				<input id="p-type-display" class="field-input opacity-60 cursor-not-allowed" value={typeLabels[policy.type] ?? policy.type} disabled />
 			</div>
 		</div>
 
