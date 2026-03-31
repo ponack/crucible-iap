@@ -257,9 +257,10 @@ cd api && go test -race ./...
 - [x] Policy management UI + drift detection scheduling
 - [x] Operator documentation + security hardening guide
 - [x] Stack-level environment variables — AES-256-GCM encrypted at rest, injected into runner containers
+- [x] PR/MR feedback — plan summary comments and commit status checks on GitHub and GitLab
+- [x] Slack notifications — configurable per-stack event subscriptions
 - [ ] External secret store integrations (AWS Secrets Manager, HashiCorp Vault, Bitwarden)
 - [ ] Multi-cloud state backend options (S3, GCS, Azure Blob)
-- [ ] Slack / PagerDuty / webhook run notifications
 
 ## License
 
