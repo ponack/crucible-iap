@@ -48,6 +48,7 @@
 			<nav class="flex-1 px-2 py-4 space-y-1 text-sm">
 				<a href="/stacks" class={navClass('/stacks')}>Stacks</a>
 				<a href="/runs" class={navClass('/runs')}>Runs</a>
+				<a href="/policies" class={navClass('/policies')}>Policies</a>
 				<a href="/audit" class={navClass('/audit')}>Audit Log</a>
 				<a href="/settings" class={navClass('/settings')}>Settings</a>
 			</nav>

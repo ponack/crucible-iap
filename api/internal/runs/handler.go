@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/storage"
@@ -17,13 +18,14 @@ import (
 
 type Handler struct {
 	pool       *pgxpool.Pool
+	cfg        *config.Config
 	queue      *queue.Client
 	dispatcher *worker.Dispatcher
 	storage    *storage.Client
 }
 
-func NewHandler(pool *pgxpool.Pool, q *queue.Client, d *worker.Dispatcher, s *storage.Client) *Handler {
-	return &Handler{pool: pool, queue: q, dispatcher: d, storage: s}
+func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, d *worker.Dispatcher, s *storage.Client) *Handler {
+	return &Handler{pool: pool, cfg: cfg, queue: q, dispatcher: d, storage: s}
 }
 
 type Run struct {
@@ -269,4 +271,54 @@ func (h *Handler) Logs(c echo.Context) error {
 			return nil
 		}
 	}
+}
+
+// TriggerDrift creates a manual proposed+drift run for the given stack.
+func (h *Handler) TriggerDrift(c echo.Context) error {
+	stackID := c.Param("stackID")
+
+	var stack struct {
+		Tool        string
+		RunnerImage string
+		RepoURL     string
+		RepoBranch  string
+		ProjectRoot string
+	}
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
+		FROM stacks WHERE id = $1
+	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	var r Run
+	err = h.pool.QueryRow(c.Request().Context(), `
+		INSERT INTO runs (stack_id, type, trigger, is_drift)
+		VALUES ($1, 'proposed', 'manual', true)
+		RETURNING id, stack_id, status, type, trigger, is_drift, queued_at
+	`, stackID).Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger, &r.IsDrift, &r.QueuedAt)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if _, err := h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
+		RunID:       r.ID,
+		StackID:     stackID,
+		Tool:        stack.Tool,
+		RunnerImage: stack.RunnerImage,
+		RepoURL:     stack.RepoURL,
+		RepoBranch:  stack.RepoBranch,
+		ProjectRoot: stack.ProjectRoot,
+		RunType:     "proposed",
+		APIURL:      h.cfg.BaseURL,
+	}); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue drift run: "+err.Error())
+	}
+
+	userID, _ := c.Get("userID").(string)
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "run.drift.triggered", ResourceID: r.ID, ResourceType: "run",
+	})
+	return c.JSON(http.StatusCreated, r)
 }

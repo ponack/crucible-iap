@@ -1,0 +1,1 @@
+ALTER TABLE stacks DROP COLUMN IF EXISTS drift_last_run_at;

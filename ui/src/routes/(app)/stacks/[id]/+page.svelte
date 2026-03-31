@@ -2,13 +2,15 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, type Stack, type Run, type StackToken } from '$lib/api/client';
+	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef } from '$lib/api/client';
 
 	const stackID = $derived(page.params.id as string);
 
 	let stack = $state<Stack | null>(null);
 	let recentRuns = $state<Run[]>([]);
 	let tokens = $state<StackToken[]>([]);
+	let stackPolicies = $state<StackPolicyRef[]>([]);
+	let allPolicies = $state<Policy[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
@@ -16,7 +18,10 @@
 	let editing = $state(false);
 	let saving = $state(false);
 	let editError = $state<string | null>(null);
-	let form = $state({ name: '', description: '', repo_branch: '', project_root: '', auto_apply: false, drift_detection: false });
+	let form = $state({
+		name: '', description: '', repo_branch: '', project_root: '',
+		auto_apply: false, drift_detection: false, drift_schedule: ''
+	});
 
 	// Token creation
 	let newTokenName = $state('');
@@ -25,17 +30,34 @@
 
 	// Run creation
 	let triggeringRun = $state(false);
+	let triggeringDrift = $state(false);
+
+	// Policy attachment
+	let attachingPolicy = $state('');
+
+	const driftScheduleOptions = [
+		{ value: '', label: 'Disabled' },
+		{ value: '30', label: 'Every 30 minutes' },
+		{ value: '60', label: 'Every hour' },
+		{ value: '360', label: 'Every 6 hours' },
+		{ value: '720', label: 'Every 12 hours' },
+		{ value: '1440', label: 'Every 24 hours' }
+	];
 
 	onMount(async () => {
 		try {
-			const [stackRes, runsRes, tokensRes] = await Promise.all([
+			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes] = await Promise.all([
 				stacks.get(stackID),
 				runs.list(stackID),
-				stacks.tokens.list(stackID)
+				stacks.tokens.list(stackID),
+				policies.forStack(stackID),
+				policies.list()
 			]);
 			stack = stackRes;
 			recentRuns = runsRes.data;
 			tokens = tokensRes;
+			stackPolicies = stackPoliciesRes;
+			allPolicies = allPoliciesRes;
 			resetForm();
 		} catch (e) {
 			error = (e as Error).message;
@@ -52,7 +74,8 @@
 			repo_branch: stack.repo_branch,
 			project_root: stack.project_root,
 			auto_apply: stack.auto_apply,
-			drift_detection: stack.drift_detection
+			drift_detection: stack.drift_detection,
+			drift_schedule: stack.drift_schedule ?? ''
 		};
 	}
 
@@ -87,6 +110,17 @@
 		}
 	}
 
+	async function triggerDrift() {
+		triggeringDrift = true;
+		try {
+			const run = await runs.triggerDrift(stackID);
+			goto(`/runs/${run.id}`);
+		} catch (e) {
+			alert((e as Error).message);
+			triggeringDrift = false;
+		}
+	}
+
 	async function createToken(e: SubmitEvent) {
 		e.preventDefault();
 		creatingToken = true;
@@ -109,6 +143,22 @@
 		tokens = tokens.filter((t) => t.id !== tokenID);
 	}
 
+	async function attachPolicy() {
+		if (!attachingPolicy) return;
+		await policies.attach(stackID, attachingPolicy);
+		stackPolicies = await policies.forStack(stackID);
+		attachingPolicy = '';
+	}
+
+	async function detachPolicy(policyID: string) {
+		await policies.detach(stackID, policyID);
+		stackPolicies = stackPolicies.filter((p) => p.policy_id !== policyID);
+	}
+
+	const unattachedPolicies = $derived(
+		allPolicies.filter((p) => !stackPolicies.some((sp) => sp.policy_id === p.id))
+	);
+
 	const statusColour: Record<string, string> = {
 		queued: 'text-zinc-400',
 		preparing: 'text-blue-400',
@@ -124,6 +174,10 @@
 
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleString();
+	}
+
+	function driftScheduleLabel(val: string | undefined) {
+		return driftScheduleOptions.find((o) => o.value === (val ?? ''))?.label ?? val ?? '—';
 	}
 </script>
 
@@ -160,6 +214,12 @@
 				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{triggeringRun ? 'Queuing…' : 'Trigger run'}
 			</button>
+			{#if stack.drift_detection}
+				<button onclick={triggerDrift} disabled={triggeringDrift}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					{triggeringDrift ? 'Queuing…' : 'Drift check'}
+				</button>
+			{/if}
 			<button onclick={() => { editing = !editing; resetForm(); }}
 				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{editing ? 'Cancel' : 'Edit'}
@@ -204,6 +264,16 @@
 					<input type="checkbox" bind:checked={form.drift_detection} /> Drift detection
 				</label>
 			</div>
+			{#if form.drift_detection}
+				<div class="space-y-1.5">
+					<label class="field-label" for="edit-schedule">Drift check interval</label>
+					<select id="edit-schedule" class="field-input" bind:value={form.drift_schedule}>
+						{#each driftScheduleOptions as opt}
+							<option value={opt.value}>{opt.label}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}
 					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
@@ -222,6 +292,7 @@
 			['Project root', stack.project_root],
 			['Auto-apply', stack.auto_apply ? 'Yes' : 'No'],
 			['Drift detection', stack.drift_detection ? 'Yes' : 'No'],
+			['Drift interval', stack.drift_detection ? driftScheduleLabel(stack.drift_schedule) : '—'],
 			['Created', fmtDate(stack.created_at)]
 		] as [label, value]}
 			<div class="flex px-4 py-3">
@@ -230,6 +301,61 @@
 			</div>
 		{/each}
 	</div>
+
+	<!-- Policies -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Policies</h2>
+		{#if stackPolicies.length > 0}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Name</th>
+							<th class="text-left px-4 py-2">Type</th>
+							<th class="text-left px-4 py-2">Status</th>
+							<th class="px-4 py-2"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each stackPolicies as sp (sp.policy_id)}
+							<tr>
+								<td class="px-4 py-2.5">
+									<a href="/policies/{sp.policy_id}" class="text-zinc-200 hover:text-white">{sp.name}</a>
+								</td>
+								<td class="px-4 py-2.5 text-zinc-500 text-xs">{sp.type}</td>
+								<td class="px-4 py-2.5">
+									<span class="text-xs {sp.is_active ? 'text-green-400' : 'text-zinc-500'}">
+										{sp.is_active ? 'Active' : 'Inactive'}
+									</span>
+								</td>
+								<td class="px-4 py-2.5 text-right">
+									<button onclick={() => detachPolicy(sp.policy_id)}
+										class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-zinc-600 text-sm">No policies attached.</p>
+		{/if}
+
+		{#if unattachedPolicies.length > 0}
+			<div class="flex items-center gap-2">
+				<select class="field-input w-64" bind:value={attachingPolicy}>
+					<option value="">— attach a policy —</option>
+					{#each unattachedPolicies as p (p.id)}
+						<option value={p.id}>{p.name} ({p.type})</option>
+					{/each}
+				</select>
+				<button onclick={attachPolicy} disabled={!attachingPolicy}
+					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Attach
+				</button>
+			</div>
+		{/if}
+	</section>
 
 	<!-- Recent runs -->
 	<section class="space-y-3">
@@ -255,7 +381,9 @@
 										{run.status}
 									</a>
 								</td>
-								<td class="px-4 py-2.5 text-zinc-400">{run.type}</td>
+								<td class="px-4 py-2.5 text-zinc-400">
+									{run.type}{#if run.is_drift} <span class="text-xs text-amber-500">drift</span>{/if}
+								</td>
 								<td class="px-4 py-2.5 text-zinc-500">{run.trigger}</td>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs">{fmtDate(run.queued_at)}</td>
 							</tr>

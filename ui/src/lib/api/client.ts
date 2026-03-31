@@ -153,6 +153,8 @@ export const runs = {
 	get: (id: string) => request<Run>(`/runs/${id}`),
 	create: (stackID: string, type = 'tracked') =>
 		request<Run>(`/stacks/${stackID}/runs`, { method: 'POST', body: JSON.stringify({ type }) }),
+	triggerDrift: (stackID: string) =>
+		request<Run>(`/stacks/${stackID}/drift`, { method: 'POST' }),
 	confirm: (id: string) => request<null>(`/runs/${id}/confirm`, { method: 'POST' }),
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
 	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' })
@@ -176,6 +178,42 @@ export interface AuditEvent {
 export const audit = {
 	list: (offset = 0, limit = 50) =>
 		request<Paginated<AuditEvent>>(`/audit?limit=${limit}&offset=${offset}`)
+};
+
+// ── Policies ──────────────────────────────────────────────────────────────────
+
+export interface Policy {
+	id: string;
+	name: string;
+	description?: string;
+	type: 'pre_plan' | 'post_plan' | 'pre_apply' | 'trigger' | 'login';
+	body: string;
+	is_active: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface StackPolicyRef {
+	policy_id: string;
+	name: string;
+	type: string;
+	is_active: boolean;
+}
+
+export const policies = {
+	list: () => request<Policy[]>('/policies'),
+	get: (id: string) => request<Policy>(`/policies/${id}`),
+	create: (data: Partial<Policy>) =>
+		request<Policy>('/policies', { method: 'POST', body: JSON.stringify(data) }),
+	update: (id: string, data: Partial<Policy>) =>
+		request<Policy>(`/policies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+	delete: (id: string) => request<null>(`/policies/${id}`, { method: 'DELETE' }),
+
+	forStack: (stackID: string) => request<StackPolicyRef[]>(`/stacks/${stackID}/policies`),
+	attach: (stackID: string, policyID: string) =>
+		request<null>(`/stacks/${stackID}/policies/${policyID}`, { method: 'PUT' }),
+	detach: (stackID: string, policyID: string) =>
+		request<null>(`/stacks/${stackID}/policies/${policyID}`, { method: 'DELETE' })
 };
 
 // ── Org ───────────────────────────────────────────────────────────────────────
