@@ -29,17 +29,22 @@ func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, d *work
 }
 
 type Run struct {
-	ID         string     `json:"id"`
-	StackID    string     `json:"stack_id"`
-	Status     string     `json:"status"`
-	Type       string     `json:"type"`
-	Trigger    string     `json:"trigger"`
-	CommitSHA  string     `json:"commit_sha,omitempty"`
-	Branch     string     `json:"branch,omitempty"`
-	IsDrift    bool       `json:"is_drift"`
-	QueuedAt   time.Time  `json:"queued_at"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	ID          string     `json:"id"`
+	StackID     string     `json:"stack_id"`
+	Status      string     `json:"status"`
+	Type        string     `json:"type"`
+	Trigger     string     `json:"trigger"`
+	CommitSHA   string     `json:"commit_sha,omitempty"`
+	Branch      string     `json:"branch,omitempty"`
+	IsDrift     bool       `json:"is_drift"`
+	PRNumber    *int       `json:"pr_number,omitempty"`
+	PRURL       *string    `json:"pr_url,omitempty"`
+	PlanAdd     *int       `json:"plan_add,omitempty"`
+	PlanChange  *int       `json:"plan_change,omitempty"`
+	PlanDestroy *int       `json:"plan_destroy,omitempty"`
+	QueuedAt    time.Time  `json:"queued_at"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
 }
 
 // List returns runs for a specific stack.
@@ -50,7 +55,8 @@ func (h *Handler) List(c echo.Context) error {
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT id, stack_id, status, type, trigger,
 		       COALESCE(commit_sha,''), COALESCE(branch,''),
-		       is_drift, queued_at, started_at, finished_at,
+		       is_drift, pr_number, pr_url, plan_add, plan_change, plan_destroy,
+		       queued_at, started_at, finished_at,
 		       COUNT(*) OVER () AS total
 		FROM runs WHERE stack_id = $1
 		ORDER BY queued_at DESC
@@ -66,7 +72,9 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
-			&r.CommitSHA, &r.Branch, &r.IsDrift, &r.QueuedAt, &r.StartedAt, &r.FinishedAt,
+			&r.CommitSHA, &r.Branch, &r.IsDrift,
+			&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
+			&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -147,10 +155,13 @@ func (h *Handler) Get(c echo.Context) error {
 	err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT id, stack_id, status, type, trigger,
 		       COALESCE(commit_sha,''), COALESCE(branch,''),
-		       is_drift, queued_at, started_at, finished_at
+		       is_drift, pr_number, pr_url, plan_add, plan_change, plan_destroy,
+		       queued_at, started_at, finished_at
 		FROM runs WHERE id = $1
 	`, id).Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
-		&r.CommitSHA, &r.Branch, &r.IsDrift, &r.QueuedAt, &r.StartedAt, &r.FinishedAt)
+		&r.CommitSHA, &r.Branch, &r.IsDrift,
+		&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
+		&r.QueuedAt, &r.StartedAt, &r.FinishedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found")
 	}

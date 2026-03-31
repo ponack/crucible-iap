@@ -41,6 +41,19 @@
 	let newEnvValue = $state('');
 	let savingEnv = $state(false);
 
+	// Notifications
+	let notifVCSToken = $state('');
+	let notifSlackWebhook = $state('');
+	let notifEvents = $state<string[]>([]);
+	let savingNotif = $state(false);
+	let notifSaved = $state(false);
+
+	const notifyEventOptions = [
+		{ value: 'plan_complete', label: 'Plan complete' },
+		{ value: 'run_finished', label: 'Run succeeded' },
+		{ value: 'run_failed', label: 'Run failed' }
+	];
+
 	const driftScheduleOptions = [
 		{ value: '', label: 'Disabled' },
 		{ value: '30', label: 'Every 30 minutes' },
@@ -85,6 +98,7 @@
 			drift_detection: stack.drift_detection,
 			drift_schedule: stack.drift_schedule ?? ''
 		};
+		notifEvents = [...(stack.notify_events ?? [])];
 	}
 
 	async function saveEdit(e: SubmitEvent) {
@@ -161,6 +175,28 @@
 	async function detachPolicy(policyID: string) {
 		await policies.detach(stackID, policyID);
 		stackPolicies = stackPolicies.filter((p) => p.policy_id !== policyID);
+	}
+
+	async function saveNotifications(e: SubmitEvent) {
+		e.preventDefault();
+		savingNotif = true;
+		notifSaved = false;
+		try {
+			const data: { vcs_token?: string; slack_webhook?: string; notify_events: string[] } = {
+				notify_events: notifEvents
+			};
+			if (notifVCSToken !== '') data.vcs_token = notifVCSToken;
+			if (notifSlackWebhook !== '') data.slack_webhook = notifSlackWebhook;
+			await stacks.notifications.update(stackID, data);
+			notifVCSToken = '';
+			notifSlackWebhook = '';
+			notifSaved = true;
+			stack = await stacks.get(stackID);
+		} catch (err) {
+			alert((err as Error).message);
+		} finally {
+			savingNotif = false;
+		}
 	}
 
 	async function saveEnvVar(e: SubmitEvent) {
@@ -430,6 +466,70 @@
 		</form>
 	</section>
 
+	<!-- Notifications -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Notifications</h2>
+		<form onsubmit={saveNotifications} class="border border-zinc-800 rounded-xl p-5 space-y-4">
+			<div class="grid grid-cols-2 gap-4">
+				<div class="space-y-1.5">
+					<label class="field-label" for="notif-vcs-token">
+						GitHub / GitLab token
+						{#if stack.has_vcs_token}
+							<span class="ml-1 text-green-500 text-xs">● set</span>
+						{/if}
+					</label>
+					<input id="notif-vcs-token" class="field-input" type="password"
+						bind:value={notifVCSToken}
+						placeholder={stack.has_vcs_token ? 'Enter new value to replace' : 'ghp_… or GitLab PAT'}
+						autocomplete="new-password" />
+					<p class="text-xs text-zinc-600">Used to post PR comments and set commit status checks. Needs <code>repo</code> scope (GitHub) or <code>api</code> scope (GitLab).</p>
+				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="notif-slack">
+						Slack webhook URL
+						{#if stack.has_slack_webhook}
+							<span class="ml-1 text-green-500 text-xs">● set</span>
+						{/if}
+					</label>
+					<input id="notif-slack" class="field-input" type="password"
+						bind:value={notifSlackWebhook}
+						placeholder={stack.has_slack_webhook ? 'Enter new value to replace' : 'https://hooks.slack.com/…'}
+						autocomplete="new-password" />
+				</div>
+			</div>
+
+			<div class="space-y-1.5">
+				<p class="text-xs text-zinc-400">Slack events to notify on</p>
+				<div class="flex gap-4 flex-wrap">
+					{#each notifyEventOptions as opt}
+						<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
+							<input type="checkbox"
+								checked={notifEvents.includes(opt.value)}
+								onchange={(e) => {
+									if ((e.target as HTMLInputElement).checked) {
+										notifEvents = [...notifEvents, opt.value];
+									} else {
+										notifEvents = notifEvents.filter((v) => v !== opt.value);
+									}
+								}} />
+							{opt.label}
+						</label>
+					{/each}
+				</div>
+			</div>
+
+			<div class="flex items-center gap-3">
+				<button type="submit" disabled={savingNotif}
+					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					{savingNotif ? 'Saving…' : 'Save notifications'}
+				</button>
+				{#if notifSaved}
+					<span class="text-xs text-green-400">Saved.</span>
+				{/if}
+			</div>
+		</form>
+	</section>
+
 	<!-- Recent runs -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Recent runs</h2>
@@ -442,6 +542,7 @@
 						<tr>
 							<th class="text-left px-4 py-2">Status</th>
 							<th class="text-left px-4 py-2">Type</th>
+							<th class="text-left px-4 py-2">Plan</th>
 							<th class="text-left px-4 py-2">Trigger</th>
 							<th class="text-left px-4 py-2">Queued</th>
 						</tr>
@@ -456,6 +557,19 @@
 								</td>
 								<td class="px-4 py-2.5 text-zinc-400">
 									{run.type}{#if run.is_drift} <span class="text-xs text-amber-500">drift</span>{/if}
+									{#if run.pr_number}
+										<a href={run.pr_url} target="_blank" rel="noopener"
+											class="ml-1 text-xs text-blue-400 hover:text-blue-300">#{run.pr_number}</a>
+									{/if}
+								</td>
+								<td class="px-4 py-2.5 text-xs font-mono">
+									{#if run.plan_add != null}
+										<span class="text-green-400">+{run.plan_add}</span>
+										<span class="text-yellow-400 ml-1">~{run.plan_change}</span>
+										<span class="text-red-400 ml-1">-{run.plan_destroy}</span>
+									{:else}
+										<span class="text-zinc-600">—</span>
+									{/if}
 								</td>
 								<td class="px-4 py-2.5 text-zinc-500">{run.trigger}</td>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs">{fmtDate(run.queued_at)}</td>

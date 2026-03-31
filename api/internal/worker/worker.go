@@ -19,6 +19,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/envvars"
+	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
 	"github.com/ponack/crucible-iap/internal/storage"
@@ -27,26 +28,28 @@ import (
 
 // Dispatcher manages the River worker pool and log fan-out.
 type Dispatcher struct {
-	pool    *pgxpool.Pool
-	cfg     *config.Config
-	runner  *runner.Runner
-	storage *storage.Client
-	vault   *vault.Vault
-	broker  *LogBroker
-	river   *river.Client[pgx.Tx]
+	pool     *pgxpool.Pool
+	cfg      *config.Config
+	runner   *runner.Runner
+	storage  *storage.Client
+	vault    *vault.Vault
+	notifier *notify.Notifier
+	broker   *LogBroker
+	river    *river.Client[pgx.Tx]
 }
 
-func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault) (*Dispatcher, error) {
+func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault, n *notify.Notifier) (*Dispatcher, error) {
 	broker := newLogBroker()
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &RunWorker{
-		pool:    pool,
-		cfg:     cfg,
-		runner:  r,
-		storage: s,
-		vault:   v,
-		broker:  broker,
+		pool:     pool,
+		cfg:      cfg,
+		runner:   r,
+		storage:  s,
+		vault:    v,
+		notifier: n,
+		broker:   broker,
 	})
 
 	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
@@ -60,13 +63,14 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 	}
 
 	return &Dispatcher{
-		pool:    pool,
-		cfg:     cfg,
-		runner:  r,
-		storage: s,
-		vault:   v,
-		broker:  broker,
-		river:   rc,
+		pool:     pool,
+		cfg:      cfg,
+		runner:   r,
+		storage:  s,
+		vault:    v,
+		notifier: n,
+		broker:   broker,
+		river:    rc,
 	}, nil
 }
 
@@ -92,12 +96,13 @@ func (d *Dispatcher) Subscribe(runID string) (<-chan string, func()) {
 // RunWorker processes a single infrastructure run job.
 type RunWorker struct {
 	river.WorkerDefaults[queue.RunJobArgs]
-	pool    *pgxpool.Pool
-	cfg     *config.Config
-	runner  *runner.Runner
-	storage *storage.Client
-	vault   *vault.Vault
-	broker  *LogBroker
+	pool     *pgxpool.Pool
+	cfg      *config.Config
+	runner   *runner.Runner
+	storage  *storage.Client
+	vault    *vault.Vault
+	notifier *notify.Notifier
+	broker   *LogBroker
 }
 
 func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) error {
@@ -154,6 +159,7 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	}
 
 	if runErr != nil {
+		go w.notifier.RunFinished(context.Background(), args.RunID, false)
 		return w.failRun(ctx, args.RunID, runErr)
 	}
 
@@ -168,6 +174,19 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	now := time.Now()
 	if err := w.setStatus(ctx, args.RunID, finalStatus, &now); err != nil {
 		return err
+	}
+
+	// Fire notifications after status is committed.
+	switch {
+	case finalStatus == "unconfirmed":
+		// Plan phase done — post PR comment / set commit status to awaiting approval
+		go w.notifier.PlanComplete(context.Background(), args.RunID)
+	case finalStatus == "finished" && args.RunType == "proposed":
+		// Proposed (PR) plan complete — post result comment
+		go w.notifier.PlanComplete(context.Background(), args.RunID)
+	case finalStatus == "finished" && args.RunType == "apply":
+		// Apply succeeded
+		go w.notifier.RunFinished(context.Background(), args.RunID, true)
 	}
 
 	log.Info("run job complete", "status", finalStatus)

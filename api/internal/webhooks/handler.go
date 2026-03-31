@@ -86,11 +86,12 @@ func (h *Handler) Receive(c echo.Context) error {
 
 	var runID string
 	err = h.pool.QueryRow(ctx, `
-		INSERT INTO runs (stack_id, status, type, trigger, commit_sha, commit_message, branch)
-		VALUES ($1, 'queued', $2::run_type, $3::run_trigger, $4, $5, $6)
+		INSERT INTO runs (stack_id, status, type, trigger, commit_sha, commit_message, branch, pr_number, pr_url)
+		VALUES ($1, 'queued', $2::run_type, $3::run_trigger, $4, $5, $6, $7, $8)
 		RETURNING id
 	`, stackID, event.runType, event.trigger,
 		emptyToNil(event.commitSHA), emptyToNil(event.commitMessage), emptyToNil(event.branch),
+		intToNil(event.prNumber), emptyToNil(event.prURL),
 	).Scan(&runID)
 	if err != nil {
 		return fmt.Errorf("insert run: %w", err)
@@ -156,6 +157,8 @@ type webhookEvent struct {
 	branch        string
 	commitSHA     string
 	commitMessage string
+	prNumber      int    // 0 if not a PR/MR event
+	prURL         string // HTML URL of the PR/MR
 }
 
 func parseAndVerify(r *http.Request, body []byte, secret string) (*webhookEvent, error) {
@@ -194,7 +197,9 @@ type ghPush struct {
 type ghPR struct {
 	Action      string `json:"action"`
 	PullRequest struct {
-		Head  struct {
+		Number  int    `json:"number"`
+		HTMLURL string `json:"html_url"`
+		Head    struct {
 			Ref string `json:"ref"`
 			SHA string `json:"sha"`
 		} `json:"head"`
@@ -235,6 +240,8 @@ func parseGitHub(event string, body []byte) (*webhookEvent, error) {
 			branch:        e.PullRequest.Head.Ref,
 			commitSHA:     e.PullRequest.Head.SHA,
 			commitMessage: e.PullRequest.Title,
+			prNumber:      e.PullRequest.Number,
+			prURL:         e.PullRequest.HTMLURL,
 		}, nil
 
 	default:
@@ -254,8 +261,10 @@ type glPush struct {
 
 type glMR struct {
 	ObjectAttributes struct {
+		IID          int    `json:"iid"`
 		Action       string `json:"action"`
 		SourceBranch string `json:"source_branch"`
+		URL          string `json:"url"`
 		LastCommit   struct {
 			ID      string `json:"id"`
 			Message string `json:"message"`
@@ -300,6 +309,8 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 			branch:        e.ObjectAttributes.SourceBranch,
 			commitSHA:     e.ObjectAttributes.LastCommit.ID,
 			commitMessage: e.ObjectAttributes.Title,
+			prNumber:      e.ObjectAttributes.IID,
+			prURL:         e.ObjectAttributes.URL,
 		}, nil
 
 	default:
@@ -329,4 +340,11 @@ func emptyToNil(s string) any {
 		return nil
 	}
 	return s
+}
+
+func intToNil(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
 }

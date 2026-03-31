@@ -86,6 +86,9 @@ export interface Stack {
 	auto_apply: boolean;
 	drift_detection: boolean;
 	drift_schedule?: string;
+	has_vcs_token: boolean;
+	has_slack_webhook: boolean;
+	notify_events: string[];
 	created_at: string;
 	updated_at: string;
 }
@@ -129,6 +132,17 @@ export const stacks = {
 			}),
 		delete: (stackID: string, name: string) =>
 			request<null>(`/stacks/${stackID}/env/${encodeURIComponent(name)}`, { method: 'DELETE' })
+	},
+
+	notifications: {
+		update: (
+			stackID: string,
+			data: { vcs_token?: string; slack_webhook?: string; notify_events?: string[] }
+		) =>
+			request<null>(`/stacks/${stackID}/notifications`, {
+				method: 'PUT',
+				body: JSON.stringify(data)
+			})
 	}
 };
 
@@ -162,6 +176,11 @@ export interface Run {
 	commit_sha?: string;
 	branch?: string;
 	is_drift: boolean;
+	pr_number?: number;
+	pr_url?: string;
+	plan_add?: number;
+	plan_change?: number;
+	plan_destroy?: number;
 	queued_at: string;
 	started_at?: string;
 	finished_at?: string;

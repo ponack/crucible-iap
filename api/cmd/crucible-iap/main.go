@@ -13,6 +13,7 @@ import (
 
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/db"
+	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
 	"github.com/ponack/crucible-iap/internal/server"
@@ -87,13 +88,15 @@ func runServe() {
 
 	v := vault.New(cfg.SecretKey)
 
-	d, err := worker.New(pool, cfg, r, store, v)
+	n := notify.New(pool, v, cfg.BaseURL)
+
+	d, err := worker.New(pool, cfg, r, store, v, n)
 	if err != nil {
 		slog.Error("failed to create worker dispatcher", "err", err)
 		os.Exit(1)
 	}
 
-	srv := server.New(cfg, pool, store, q, d, v)
+	srv := server.New(cfg, pool, store, q, d, v, n)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

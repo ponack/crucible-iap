@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/pagination"
+	vaultpkg "github.com/ponack/crucible-iap/internal/vault"
 )
 
 // webhookSecret generates a random 32-byte hex string for use as a webhook secret.
@@ -25,9 +26,12 @@ func webhookSecret() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-type Handler struct{ pool *pgxpool.Pool }
+type Handler struct {
+	pool  *pgxpool.Pool
+	vault *vaultpkg.Vault
+}
 
-func NewHandler(pool *pgxpool.Pool) *Handler { return &Handler{pool: pool} }
+func NewHandler(pool *pgxpool.Pool, v *vaultpkg.Vault) *Handler { return &Handler{pool: pool, vault: v} }
 
 type Stack struct {
 	ID             string    `json:"id"`
@@ -44,10 +48,13 @@ type Stack struct {
 	AutoApply      bool      `json:"auto_apply"`
 	DriftDetection bool      `json:"drift_detection"`
 	DriftSchedule  string    `json:"drift_schedule,omitempty"`
-	WebhookSecret  string    `json:"webhook_secret,omitempty"` // only populated on Get
-	WebhookURL     string    `json:"webhook_url,omitempty"`    // only populated on Get
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	WebhookSecret   string    `json:"webhook_secret,omitempty"` // only populated on Get
+	WebhookURL      string    `json:"webhook_url,omitempty"`    // only populated on Get
+	HasVCSToken     bool      `json:"has_vcs_token"`
+	HasSlackWebhook bool      `json:"has_slack_webhook"`
+	NotifyEvents    []string  `json:"notify_events"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 type Token struct {
@@ -162,12 +169,16 @@ func (h *Handler) Get(c echo.Context) error {
 		SELECT id, org_id, slug, name, COALESCE(description,''), tool,
 		       COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		       COALESCE(runner_image,''), auto_apply, drift_detection,
-		       COALESCE(drift_schedule,''), webhook_secret, created_at, updated_at
+		       COALESCE(drift_schedule,''), webhook_secret,
+		       vcs_token_enc IS NOT NULL, slack_webhook_enc IS NOT NULL,
+		       COALESCE(notify_events, '{}'),
+		       created_at, updated_at
 		FROM stacks WHERE id = $1 AND org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-		&webhookSecretPtr, &s.CreatedAt, &s.UpdatedAt)
+		&webhookSecretPtr, &s.HasVCSToken, &s.HasSlackWebhook, &s.NotifyEvents,
+		&s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}

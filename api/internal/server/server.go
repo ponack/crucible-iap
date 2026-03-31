@@ -16,6 +16,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/metrics"
 	cruciblemw "github.com/ponack/crucible-iap/internal/middleware"
+	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/orgs"
 	"github.com/ponack/crucible-iap/internal/policies"
 	"github.com/ponack/crucible-iap/internal/policy"
@@ -39,7 +40,7 @@ type Server struct {
 	startTime     time.Time
 }
 
-func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher, v *vault.Vault) *Server {
+func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher, v *vault.Vault, n *notify.Notifier) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
@@ -70,15 +71,15 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 		policyHandler: policyHandler,
 		startTime:     time.Now(),
 	}
-	s.registerRoutes(store, q, d, policyHandler, v)
+	s.registerRoutes(store, q, d, policyHandler, v, n)
 	return s
 }
 
-func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worker.Dispatcher, policyHandler *policies.Handler, v *vault.Vault) {
+func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worker.Dispatcher, policyHandler *policies.Handler, v *vault.Vault, n *notify.Notifier) {
 	e := s.echo
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
-	stackHandler := stacks.NewHandler(s.pool)
+	stackHandler := stacks.NewHandler(s.pool, v)
 	runHandler := runs.NewHandler(s.pool, s.cfg, q, d, store)
 	stateHandler := state.NewHandler(s.pool, store)
 	auditHandler := audit.NewHandler(s.pool)
@@ -157,6 +158,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	// Webhook secret rotation
 	api.POST("/stacks/:id/webhook/rotate", webhookHandler.RotateSecret, member)
 
+	// Stack notification config (VCS token, Slack webhook, event list)
+	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
+
 	// Runs
 	api.GET("/stacks/:stackID/runs", runHandler.List)
 	api.POST("/stacks/:stackID/runs", runHandler.Create, member)
@@ -175,6 +179,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	internal.Use(auth.RunnerAuthMiddleware(s.cfg.SecretKey))
 	internal.POST("/runs/:id/status", runHandler.ReportStatus)
 	internal.POST("/runs/:id/plan", runHandler.UploadPlan)
+	internal.POST("/runs/:id/plan-summary", runHandler.ReportPlanSummary)
 }
 
 func (s *Server) Start(ctx context.Context) error {
