@@ -796,7 +796,7 @@
 					</div>
 					<div class="space-y-1.5">
 						<label class="field-label" for="vw-client-id">Client ID</label>
-						<input id="vw-client-id" class="field-input font-mono text-sm" bind:value={vwCfg.client_id} placeholder="user.{uuid}" required />
+						<input id="vw-client-id" class="field-input font-mono text-sm" bind:value={vwCfg.client_id} placeholder="user.&#123;uuid&#125;" required />
 					</div>
 					<div class="space-y-1.5">
 						<label class="field-label" for="vw-client-secret">Client secret</label>
