@@ -15,12 +15,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
+	"github.com/ponack/crucible-iap/internal/statebackend"
 	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/vault"
 )
 
 type Handler struct {
 	pool    *pgxpool.Pool
 	storage *storage.Client
+	vault   *vault.Vault
 }
 
 type LockInfo struct {
@@ -33,14 +36,43 @@ type LockInfo struct {
 	Path      string    `json:"Path"`
 }
 
-func NewHandler(pool *pgxpool.Pool, s *storage.Client) *Handler {
-	return &Handler{pool: pool, storage: s}
+func NewHandler(pool *pgxpool.Pool, s *storage.Client, v *vault.Vault) *Handler {
+	return &Handler{pool: pool, storage: s, vault: v}
+}
+
+// resolveBackend returns the external backend for a stack, or nil when none is
+// configured (caller uses MinIO).
+func (h *Handler) resolveBackend(ctx context.Context, stackID string) (statebackend.Backend, error) {
+	b, err := statebackend.Resolve(ctx, h.pool, h.vault, stackID)
+	if statebackend.IsNoOverride(err) {
+		return nil, nil
+	}
+	return b, err
 }
 
 // GET /api/v1/state/:stackID — fetch current state
 func (h *Handler) Get(c echo.Context) error {
 	stackID := c.Param("stackID")
-	obj, err := h.storage.GetState(c.Request().Context(), stackID)
+	ctx := c.Request().Context()
+
+	if b, err := h.resolveBackend(ctx, stackID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	} else if b != nil {
+		rc, err := b.GetState(ctx, stackID)
+		if statebackend.IsNotFound(err) {
+			return c.NoContent(http.StatusNoContent)
+		}
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		defer rc.Close()
+		c.Response().Header().Set(echo.HeaderContentType, "application/json")
+		_, err = io.Copy(c.Response(), rc)
+		return err
+	}
+
+	// MinIO fallback.
+	obj, err := h.storage.GetState(ctx, stackID)
 	if err != nil {
 		resp := minio.ToErrorResponse(err)
 		if resp.Code == "NoSuchKey" {
@@ -49,7 +81,6 @@ func (h *Handler) Get(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer obj.Close()
-
 	c.Response().Header().Set(echo.HeaderContentType, "application/json")
 	_, err = io.Copy(c.Response(), obj)
 	return err
@@ -59,8 +90,9 @@ func (h *Handler) Get(c echo.Context) error {
 func (h *Handler) Update(c echo.Context) error {
 	stackID := c.Param("stackID")
 	lockID := c.QueryParam("ID")
+	ctx := c.Request().Context()
 
-	if err := h.assertLockHolder(c.Request().Context(), stackID, lockID); err != nil {
+	if err := h.assertLockHolder(ctx, stackID, lockID); err != nil {
 		return echo.NewHTTPError(http.StatusConflict, "lock ID mismatch")
 	}
 
@@ -69,7 +101,16 @@ func (h *Handler) Update(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	if err := h.storage.PutState(c.Request().Context(), stackID, bytes.NewReader(body), int64(len(body))); err != nil {
+	if b, err := h.resolveBackend(ctx, stackID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	} else if b != nil {
+		if err := b.PutState(ctx, stackID, body); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		return c.NoContent(http.StatusOK)
+	}
+
+	if err := h.storage.PutState(ctx, stackID, bytes.NewReader(body), int64(len(body))); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.NoContent(http.StatusOK)
@@ -78,7 +119,18 @@ func (h *Handler) Update(c echo.Context) error {
 // DELETE /api/v1/state/:stackID — purge state
 func (h *Handler) Delete(c echo.Context) error {
 	stackID := c.Param("stackID")
-	if err := h.storage.DeleteState(c.Request().Context(), stackID); err != nil {
+	ctx := c.Request().Context()
+
+	if b, err := h.resolveBackend(ctx, stackID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	} else if b != nil {
+		if err := b.DeleteState(ctx, stackID); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		return c.NoContent(http.StatusOK)
+	}
+
+	if err := h.storage.DeleteState(ctx, stackID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	return c.NoContent(http.StatusOK)

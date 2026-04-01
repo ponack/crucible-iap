@@ -50,11 +50,15 @@ type Stack struct {
 	DriftSchedule  string    `json:"drift_schedule,omitempty"`
 	WebhookSecret   string    `json:"webhook_secret,omitempty"` // only populated on Get
 	WebhookURL      string    `json:"webhook_url,omitempty"`    // only populated on Get
+	VCSProvider         string   `json:"vcs_provider"`
+	VCSBaseURL          string   `json:"vcs_base_url,omitempty"`
 	HasVCSToken         bool     `json:"has_vcs_token"`
 	HasSlackWebhook     bool     `json:"has_slack_webhook"`
 	NotifyEvents        []string `json:"notify_events"`
 	HasSecretStore      bool     `json:"has_secret_store"`
 	SecretStoreProvider string   `json:"secret_store_provider,omitempty"`
+	HasStateBackend     bool     `json:"has_state_backend"`
+	StateBackendProvider string  `json:"state_backend_provider,omitempty"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 }
@@ -172,17 +176,22 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
 		       COALESCE(s.drift_schedule,''), s.webhook_secret,
+		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
 		       s.vcs_token_enc IS NOT NULL, s.slack_webhook_enc IS NOT NULL,
 		       COALESCE(s.notify_events, '{}'),
 		       EXISTS(SELECT 1 FROM stack_secret_stores WHERE stack_id = s.id),
 		       COALESCE((SELECT ss.provider FROM stack_secret_stores ss WHERE ss.stack_id = s.id), ''),
+		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
+		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
 		       s.created_at, s.updated_at
 		FROM stacks s WHERE s.id = $1 AND s.org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-		&webhookSecretPtr, &s.HasVCSToken, &s.HasSlackWebhook, &s.NotifyEvents,
+		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL,
+		&s.HasVCSToken, &s.HasSlackWebhook, &s.NotifyEvents,
 		&s.HasSecretStore, &s.SecretStoreProvider,
+		&s.HasStateBackend, &s.StateBackendProvider,
 		&s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")

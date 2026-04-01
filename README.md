@@ -293,8 +293,10 @@ cd api && go test -race ./...
 - [x] Stack-level environment variables — AES-256-GCM encrypted at rest, injected into runner containers
 - [x] PR/MR feedback — plan summary comments and commit status checks on GitHub and GitLab
 - [x] Slack notifications — configurable per-stack event subscriptions
-- [x] External secret store integrations — AWS Secrets Manager (Sig v4, no SDK), HashiCorp Vault KV v2 (token + AppRole), Bitwarden Secrets Manager (E2E decryption)
-- [ ] Multi-cloud state backend options (S3, GCS, Azure Blob)
+- [x] External secret store integrations — AWS Secrets Manager (Sig v4, no SDK), HashiCorp Vault KV v2 (token + AppRole), Bitwarden Secrets Manager (E2E decryption), Vaultwarden (self-hosted; PBKDF2/Argon2id + AES-CBC vault crypto)
+- [x] Multi-cloud state backend options — S3 / S3-compatible (Sig v4), GCS (JWT + OAuth2), Azure Blob Storage (SharedKeyLite)
+- [x] Gitea and Gogs webhook support — modern X-Hub-Signature-256 compat + legacy X-Gitea-Signature fallback
+- [x] Per-stack VCS provider config (github/gitlab/gitea) with custom instance base URL for self-hosted deployments
 
 ## License
 

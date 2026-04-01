@@ -162,12 +162,38 @@ type webhookEvent struct {
 }
 
 func parseAndVerify(r *http.Request, body []byte, secret string) (*webhookEvent, error) {
+	// GitHub: X-Hub-Signature-256 + X-GitHub-Event
 	if sig := r.Header.Get("X-Hub-Signature-256"); sig != "" {
 		if !verifyGitHubSig(body, secret, sig) {
 			return nil, fmt.Errorf("invalid GitHub signature")
 		}
-		return parseGitHub(r.Header.Get("X-GitHub-Event"), body)
+		// Gitea and Gogs also set X-Hub-Signature-256 for compatibility;
+		// they set X-Gitea-Event / X-Gogs-Event as well as X-GitHub-Event.
+		event := r.Header.Get("X-GitHub-Event")
+		if event == "" {
+			event = r.Header.Get("X-Gitea-Event")
+		}
+		if event == "" {
+			event = r.Header.Get("X-Gogs-Event")
+		}
+		return parseGitHub(event, body) // Gitea/Gogs payload is GitHub-compatible
 	}
+	// Gitea/Gogs older versions that only send X-Gitea-Signature / X-Gogs-Signature.
+	if sig := r.Header.Get("X-Gitea-Signature"); sig != "" {
+		if !verifyGitHubSig(body, secret, "sha256="+sig) {
+			return nil, fmt.Errorf("invalid Gitea signature")
+		}
+		event := r.Header.Get("X-Gitea-Event")
+		return parseGitHub(event, body)
+	}
+	if sig := r.Header.Get("X-Gogs-Signature"); sig != "" {
+		if !verifyGitHubSig(body, secret, "sha256="+sig) {
+			return nil, fmt.Errorf("invalid Gogs signature")
+		}
+		event := r.Header.Get("X-Gogs-Event")
+		return parseGitHub(event, body)
+	}
+	// GitLab: X-Gitlab-Token (plain token, not HMAC)
 	if token := r.Header.Get("X-Gitlab-Token"); token != "" {
 		if token != secret {
 			return nil, fmt.Errorf("invalid GitLab token")

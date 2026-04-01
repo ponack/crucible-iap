@@ -9,42 +9,37 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 )
 
-// SecretStoreInfo is the API representation of a stack's secret store config.
-// The raw credentials are never returned; only the provider name and metadata.
-type SecretStoreInfo struct {
+// StateBackendInfo is the API representation — no credentials, just provider metadata.
+type StateBackendInfo struct {
 	Provider string `json:"provider"`
 }
 
-// validProviders is the set of accepted provider identifiers.
-var validProviders = map[string]bool{
-	"aws_sm":       true,
-	"hc_vault":     true,
-	"bitwarden_sm": true,
-	"vaultwarden":  true,
+var validStateBackendProviders = map[string]bool{
+	"s3":      true,
+	"gcs":     true,
+	"azurerm": true,
 }
 
-// GetSecretStore returns the configured external secret store for a stack,
-// or 404 if none is set. The provider config is never returned.
-func (h *Handler) GetSecretStore(c echo.Context) error {
+// GetStateBackend returns the configured external state backend for a stack.
+func (h *Handler) GetStateBackend(c echo.Context) error {
 	stackID := c.Param("id")
 	orgID := c.Get("orgID").(string)
 
 	var provider string
 	err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT ss.provider
-		FROM stack_secret_stores ss
-		JOIN stacks s ON s.id = ss.stack_id
-		WHERE ss.stack_id = $1 AND s.org_id = $2
+		SELECT sb.provider
+		FROM stack_state_backends sb
+		JOIN stacks s ON s.id = sb.stack_id
+		WHERE sb.stack_id = $1 AND s.org_id = $2
 	`, stackID, orgID).Scan(&provider)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusNotFound, "no secret store configured")
+		return echo.NewHTTPError(http.StatusNotFound, "no state backend configured")
 	}
-	return c.JSON(http.StatusOK, SecretStoreInfo{Provider: provider})
+	return c.JSON(http.StatusOK, StateBackendInfo{Provider: provider})
 }
 
-// UpsertSecretStore creates or replaces the external secret store for a stack.
-// The config JSON is validated for required fields and then encrypted at rest.
-func (h *Handler) UpsertSecretStore(c echo.Context) error {
+// UpsertStateBackend creates or replaces the external state backend for a stack.
+func (h *Handler) UpsertStateBackend(c echo.Context) error {
 	stackID := c.Param("id")
 	orgID := c.Get("orgID").(string)
 	userID := c.Get("userID").(string)
@@ -56,14 +51,13 @@ func (h *Handler) UpsertSecretStore(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	if !validProviders[req.Provider] {
-		return echo.NewHTTPError(http.StatusBadRequest, "provider must be one of: aws_sm, hc_vault, bitwarden_sm")
+	if !validStateBackendProviders[req.Provider] {
+		return echo.NewHTTPError(http.StatusBadRequest, "provider must be one of: s3, gcs, azurerm")
 	}
 	if len(req.Config) == 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "config is required")
 	}
 
-	// Verify stack belongs to this org
 	var exists bool
 	if err := h.pool.QueryRow(c.Request().Context(),
 		`SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)`,
@@ -77,7 +71,7 @@ func (h *Handler) UpsertSecretStore(c echo.Context) error {
 	}
 
 	_, err = h.pool.Exec(c.Request().Context(), `
-		INSERT INTO stack_secret_stores (stack_id, org_id, provider, config_enc)
+		INSERT INTO stack_state_backends (stack_id, org_id, provider, config_enc)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (stack_id) DO UPDATE
 		  SET provider = EXCLUDED.provider,
@@ -85,13 +79,13 @@ func (h *Handler) UpsertSecretStore(c echo.Context) error {
 		      updated_at = now()
 	`, stackID, orgID, req.Provider, enc)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save secret store config")
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save state backend config")
 	}
 
 	ctx, _ := json.Marshal(map[string]string{"provider": req.Provider})
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
 		ActorID:      userID,
-		Action:       "stack.secret_store.upserted",
+		Action:       "stack.state_backend.upserted",
 		ResourceID:   stackID,
 		ResourceType: "stack",
 		OrgID:        orgID,
@@ -99,28 +93,29 @@ func (h *Handler) UpsertSecretStore(c echo.Context) error {
 		Context:      ctx,
 	})
 
-	return c.JSON(http.StatusOK, SecretStoreInfo{Provider: req.Provider})
+	return c.JSON(http.StatusOK, StateBackendInfo{Provider: req.Provider})
 }
 
-// DeleteSecretStore removes the external secret store configuration from a stack.
-func (h *Handler) DeleteSecretStore(c echo.Context) error {
+// DeleteStateBackend removes the external state backend override from a stack.
+// Future state operations will use the default MinIO backend.
+func (h *Handler) DeleteStateBackend(c echo.Context) error {
 	stackID := c.Param("id")
 	orgID := c.Get("orgID").(string)
 	userID := c.Get("userID").(string)
 
 	tag, err := h.pool.Exec(c.Request().Context(), `
-		DELETE FROM stack_secret_stores ss
+		DELETE FROM stack_state_backends sb
 		USING stacks s
-		WHERE ss.stack_id = $1 AND s.id = ss.stack_id AND s.org_id = $2
+		WHERE sb.stack_id = $1 AND s.id = sb.stack_id AND s.org_id = $2
 	`, stackID, orgID)
 	if err != nil || tag.RowsAffected() == 0 {
-		return echo.NewHTTPError(http.StatusNotFound, "no secret store configured")
+		return echo.NewHTTPError(http.StatusNotFound, "no state backend configured")
 	}
 
 	ctx, _ := json.Marshal(map[string]string{})
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
 		ActorID:      userID,
-		Action:       "stack.secret_store.deleted",
+		Action:       "stack.state_backend.deleted",
 		ResourceID:   stackID,
 		ResourceType: "stack",
 		OrgID:        orgID,

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type SecretStoreProvider, type AWSSecretStoreConfig, type HCVaultSecretStoreConfig, type BitwardenSecretStoreConfig } from '$lib/api/client';
+	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type SecretStoreProvider, type AWSSecretStoreConfig, type HCVaultSecretStoreConfig, type BitwardenSecretStoreConfig, type VaultwardenSecretStoreConfig, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig } from '$lib/api/client';
 
 	const stackID = $derived(page.params.id as string);
 
@@ -60,6 +60,21 @@
 	let vaultCfg = $state<HCVaultSecretStoreConfig>({ address: '', mount: 'secret', path: '' });
 	// Bitwarden SM
 	let bwCfg = $state<BitwardenSecretStoreConfig>({ access_token: '' });
+	// Vaultwarden
+	let vwCfg = $state<VaultwardenSecretStoreConfig>({ url: '', client_id: '', client_secret: '', email: '', master_password: '' });
+
+	// Notifications VCS provider
+	let notifVCSProvider = $state('');
+	let notifVCSBaseURL = $state('');
+
+	// State backend
+	let stateBackendProvider = $state<StateBackendProvider | ''>('');
+	let savingStateBackend = $state(false);
+	let stateBackendSaved = $state(false);
+	let removingStateBackend = $state(false);
+	let s3Cfg = $state<S3StateBackendConfig>({ region: '', bucket: '' });
+	let gcsCfg = $state<GCSStateBackendConfig>({ bucket: '', service_account_json: '' });
+	let azureCfg = $state<AzureStateBackendConfig>({ account_name: '', account_key: '', container: '' });
 
 	const notifyEventOptions = [
 		{ value: 'plan_complete', label: 'Plan complete' },
@@ -95,6 +110,11 @@
 			if (stackRes.secret_store_provider) {
 				secretStoreProvider = stackRes.secret_store_provider as SecretStoreProvider;
 			}
+			if (stackRes.state_backend_provider) {
+				stateBackendProvider = stackRes.state_backend_provider as StateBackendProvider;
+			}
+			notifVCSProvider = stackRes.vcs_provider ?? 'github';
+			notifVCSBaseURL = stackRes.vcs_base_url ?? '';
 			resetForm();
 		} catch (e) {
 			error = (e as Error).message;
@@ -198,9 +218,11 @@
 		savingNotif = true;
 		notifSaved = false;
 		try {
-			const data: { vcs_token?: string; slack_webhook?: string; notify_events: string[] } = {
+			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; notify_events: string[] } = {
 				notify_events: notifEvents
 			};
+			if (notifVCSProvider) data.vcs_provider = notifVCSProvider;
+			data.vcs_base_url = notifVCSBaseURL; // allow clearing
 			if (notifVCSToken !== '') data.vcs_token = notifVCSToken;
 			if (notifSlackWebhook !== '') data.slack_webhook = notifSlackWebhook;
 			await stacks.notifications.update(stackID, data);
@@ -243,10 +265,11 @@
 		savingSecretStore = true;
 		secretStoreSaved = false;
 		try {
-			let cfg: AWSSecretStoreConfig | HCVaultSecretStoreConfig | BitwardenSecretStoreConfig;
+			let cfg: AWSSecretStoreConfig | HCVaultSecretStoreConfig | BitwardenSecretStoreConfig | VaultwardenSecretStoreConfig;
 			if (secretStoreProvider === 'aws_sm') cfg = awsCfg;
 			else if (secretStoreProvider === 'hc_vault') cfg = vaultCfg;
-			else cfg = bwCfg;
+			else if (secretStoreProvider === 'bitwarden_sm') cfg = bwCfg;
+			else cfg = vwCfg;
 			await stacks.secretStore.upsert(stackID, secretStoreProvider, cfg);
 			secretStoreSaved = true;
 			stack = await stacks.get(stackID);
@@ -266,11 +289,49 @@
 			awsCfg = { region: '', secret_names: [] };
 			vaultCfg = { address: '', mount: 'secret', path: '' };
 			bwCfg = { access_token: '' };
+			vwCfg = { url: '', client_id: '', client_secret: '', email: '', master_password: '' };
 			stack = await stacks.get(stackID);
 		} catch (err) {
 			alert((err as Error).message);
 		} finally {
 			removingSecretStore = false;
+		}
+	}
+
+	async function saveStateBackend(e: SubmitEvent) {
+		e.preventDefault();
+		if (!stateBackendProvider) return;
+		savingStateBackend = true;
+		stateBackendSaved = false;
+		try {
+			let cfg: S3StateBackendConfig | GCSStateBackendConfig | AzureStateBackendConfig;
+			if (stateBackendProvider === 's3') cfg = s3Cfg;
+			else if (stateBackendProvider === 'gcs') cfg = gcsCfg;
+			else cfg = azureCfg;
+			await stacks.stateBackend.upsert(stackID, stateBackendProvider, cfg);
+			stateBackendSaved = true;
+			stack = await stacks.get(stackID);
+		} catch (err) {
+			alert((err as Error).message);
+		} finally {
+			savingStateBackend = false;
+		}
+	}
+
+	async function removeStateBackend() {
+		if (!confirm('Remove the external state backend? Terraform state will fall back to the built-in MinIO store.')) return;
+		removingStateBackend = true;
+		try {
+			await stacks.stateBackend.delete(stackID);
+			stateBackendProvider = '';
+			s3Cfg = { region: '', bucket: '' };
+			gcsCfg = { bucket: '', service_account_json: '' };
+			azureCfg = { account_name: '', account_key: '', container: '' };
+			stack = await stacks.get(stackID);
+		} catch (err) {
+			alert((err as Error).message);
+		} finally {
+			removingStateBackend = false;
 		}
 	}
 
@@ -525,17 +586,42 @@
 		<form onsubmit={saveNotifications} class="border border-zinc-800 rounded-xl p-5 space-y-4">
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-1.5">
+					<label class="field-label" for="notif-vcs-provider">VCS provider</label>
+					<select id="notif-vcs-provider" class="field-input" bind:value={notifVCSProvider}>
+						<option value="github">GitHub</option>
+						<option value="gitlab">GitLab</option>
+						<option value="gitea">Gitea / Gogs</option>
+					</select>
+				</div>
+				{#if notifVCSProvider === 'gitlab' || notifVCSProvider === 'gitea'}
+					<div class="space-y-1.5">
+						<label class="field-label" for="notif-vcs-base-url">
+							Instance base URL
+							{#if notifVCSProvider === 'gitea'}
+								<span class="text-zinc-600"> (required)</span>
+							{:else}
+								<span class="text-zinc-600"> (optional — leave blank for gitlab.com)</span>
+							{/if}
+						</label>
+						<input id="notif-vcs-base-url" class="field-input font-mono text-sm"
+							bind:value={notifVCSBaseURL}
+							placeholder="https://gitea.example.com" />
+					</div>
+				{:else}
+					<div></div>
+				{/if}
+				<div class="space-y-1.5">
 					<label class="field-label" for="notif-vcs-token">
-						GitHub / GitLab token
+						VCS token
 						{#if stack.has_vcs_token}
 							<span class="ml-1 text-green-500 text-xs">● set</span>
 						{/if}
 					</label>
 					<input id="notif-vcs-token" class="field-input" type="password"
 						bind:value={notifVCSToken}
-						placeholder={stack.has_vcs_token ? 'Enter new value to replace' : 'ghp_… or GitLab PAT'}
+						placeholder={stack.has_vcs_token ? 'Enter new value to replace' : 'ghp_… / GitLab PAT / Gitea token'}
 						autocomplete="new-password" />
-					<p class="text-xs text-zinc-600">Used to post PR comments and set commit status checks. Needs <code>repo</code> scope (GitHub) or <code>api</code> scope (GitLab).</p>
+					<p class="text-xs text-zinc-600">Used to post PR comments and set commit status checks.</p>
 				</div>
 				<div class="space-y-1.5">
 					<label class="field-label" for="notif-slack">
@@ -601,6 +687,7 @@
 					<option value="aws_sm">AWS Secrets Manager</option>
 					<option value="hc_vault">HashiCorp Vault (KV v2)</option>
 					<option value="bitwarden_sm">Bitwarden Secrets Manager</option>
+					<option value="vaultwarden">Vaultwarden (self-hosted)</option>
 				</select>
 			</div>
 
@@ -701,6 +788,34 @@
 						<input id="bw-id" class="field-input font-mono text-sm" bind:value={bwCfg.identity_url} placeholder="https://identity.bitwarden.com" />
 					</div>
 				</div>
+			{:else if secretStoreProvider === 'vaultwarden'}
+				<div class="grid grid-cols-2 gap-4">
+					<div class="col-span-2 space-y-1.5">
+						<label class="field-label" for="vw-url">Vaultwarden URL</label>
+						<input id="vw-url" class="field-input font-mono text-sm" bind:value={vwCfg.url} placeholder="https://vault.example.com" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="vw-client-id">Client ID</label>
+						<input id="vw-client-id" class="field-input font-mono text-sm" bind:value={vwCfg.client_id} placeholder="user.{uuid}" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="vw-client-secret">Client secret</label>
+						<input id="vw-client-secret" class="field-input font-mono text-sm" type="password" bind:value={vwCfg.client_secret} autocomplete="new-password" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="vw-email">Account email</label>
+						<input id="vw-email" class="field-input" type="email" bind:value={vwCfg.email} required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="vw-master-pw">Master password</label>
+						<input id="vw-master-pw" class="field-input" type="password" bind:value={vwCfg.master_password} autocomplete="new-password" required />
+					</div>
+					<div class="col-span-2 space-y-1.5">
+						<label class="field-label" for="vw-folder">Folder name <span class="text-zinc-600">(optional — leave blank for all SecureNote items)</span></label>
+						<input id="vw-folder" class="field-input" bind:value={vwCfg.folder_name} placeholder="crucible-secrets" />
+					</div>
+				</div>
+				<p class="text-xs text-zinc-600">Each SecureNote's decrypted name becomes the env var key; its notes field becomes the value. Credentials are encrypted at rest.</p>
 			{/if}
 
 			{#if secretStoreProvider}
@@ -716,6 +831,115 @@
 						</button>
 					{/if}
 					{#if secretStoreSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			{/if}
+		</form>
+	</section>
+
+	<!-- External state backend -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">External state backend</h2>
+		<p class="text-xs text-zinc-500">Override the built-in MinIO state storage with an external backend. Only applies if you are not using the HTTP backend built into Crucible.</p>
+
+		<form onsubmit={saveStateBackend} class="border border-zinc-800 rounded-xl p-5 space-y-4">
+			<div class="space-y-1.5">
+				<label class="field-label" for="sb-provider">
+					Provider
+					{#if stack.has_state_backend}
+						<span class="ml-1 text-green-500 text-xs">● {stack.state_backend_provider}</span>
+					{/if}
+				</label>
+				<select id="sb-provider" class="field-input w-64" bind:value={stateBackendProvider}>
+					<option value="">— use built-in MinIO —</option>
+					<option value="s3">Amazon S3 / S3-compatible</option>
+					<option value="gcs">Google Cloud Storage</option>
+					<option value="azurerm">Azure Blob Storage</option>
+				</select>
+			</div>
+
+			{#if stateBackendProvider === 's3'}
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="s3-region">Region</label>
+						<input id="s3-region" class="field-input font-mono text-sm" bind:value={s3Cfg.region} placeholder="us-east-1" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="s3-bucket">Bucket</label>
+						<input id="s3-bucket" class="field-input font-mono text-sm" bind:value={s3Cfg.bucket} placeholder="my-tf-state" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="s3-prefix">Key prefix <span class="text-zinc-600">(optional)</span></label>
+						<input id="s3-prefix" class="field-input font-mono text-sm" bind:value={s3Cfg.key_prefix} placeholder="stacks/" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="s3-endpoint">Endpoint URL <span class="text-zinc-600">(S3-compatible / MinIO)</span></label>
+						<input id="s3-endpoint" class="field-input font-mono text-sm" bind:value={s3Cfg.endpoint_url} placeholder="https://minio.example.com" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="s3-key-id">Access key ID <span class="text-zinc-600">(optional)</span></label>
+						<input id="s3-key-id" class="field-input font-mono text-sm" type="password" bind:value={s3Cfg.access_key_id} placeholder="AKIA…" autocomplete="new-password" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="s3-secret-key">Secret access key</label>
+						<input id="s3-secret-key" class="field-input font-mono text-sm" type="password" bind:value={s3Cfg.secret_access_key} autocomplete="new-password" />
+					</div>
+				</div>
+			{:else if stateBackendProvider === 'gcs'}
+				<div class="space-y-4">
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label class="field-label" for="gcs-bucket">Bucket</label>
+							<input id="gcs-bucket" class="field-input font-mono text-sm" bind:value={gcsCfg.bucket} placeholder="my-tf-state" required />
+						</div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="gcs-prefix">Key prefix <span class="text-zinc-600">(optional)</span></label>
+							<input id="gcs-prefix" class="field-input font-mono text-sm" bind:value={gcsCfg.key_prefix} placeholder="stacks/" />
+						</div>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="gcs-sa">Service account JSON</label>
+						<textarea id="gcs-sa" class="field-input font-mono text-xs h-32 resize-y"
+							bind:value={gcsCfg.service_account_json}
+							placeholder='&#123;"type":"service_account","project_id":"…"&#125;' required></textarea>
+						<p class="text-xs text-zinc-600">Paste the full service account key JSON downloaded from Google Cloud Console.</p>
+					</div>
+				</div>
+			{:else if stateBackendProvider === 'azurerm'}
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="az-account">Storage account name</label>
+						<input id="az-account" class="field-input font-mono text-sm" bind:value={azureCfg.account_name} placeholder="mystorageaccount" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="az-container">Container</label>
+						<input id="az-container" class="field-input font-mono text-sm" bind:value={azureCfg.container} placeholder="tfstate" required />
+					</div>
+					<div class="col-span-2 space-y-1.5">
+						<label class="field-label" for="az-key">Account key</label>
+						<input id="az-key" class="field-input font-mono text-sm" type="password" bind:value={azureCfg.account_key} autocomplete="new-password" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="az-prefix">Key prefix <span class="text-zinc-600">(optional)</span></label>
+						<input id="az-prefix" class="field-input font-mono text-sm" bind:value={azureCfg.key_prefix} placeholder="stacks/" />
+					</div>
+				</div>
+			{/if}
+
+			{#if stateBackendProvider}
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingStateBackend}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingStateBackend ? 'Saving…' : 'Save state backend'}
+					</button>
+					{#if stack.has_state_backend}
+						<button type="button" onclick={removeStateBackend} disabled={removingStateBackend}
+							class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+							{removingStateBackend ? 'Removing…' : 'Remove'}
+						</button>
+					{/if}
+					{#if stateBackendSaved}
 						<span class="text-xs text-green-400">Saved.</span>
 					{/if}
 				</div>

@@ -51,6 +51,8 @@ type runData struct {
 	planDestroy     *int
 	stackName       string
 	repoURL         string
+	vcsProvider     string
+	vcsBaseURL      string
 	vcsTokenEnc     []byte
 	slackWebhookEnc []byte
 	notifyEvents    []string
@@ -63,6 +65,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		       COALESCE(r.commit_sha,''),
 		       r.pr_number, r.plan_add, r.plan_change, r.plan_destroy,
 		       s.name, s.repo_url,
+		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
 		       s.vcs_token_enc, s.slack_webhook_enc, s.notify_events
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
@@ -72,6 +75,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.commitSHA,
 		&d.prNumber, &d.planAdd, &d.planChange, &d.planDestroy,
 		&d.stackName, &d.repoURL,
+		&d.vcsProvider, &d.vcsBaseURL,
 		&d.vcsTokenEnc, &d.slackWebhookEnc, &d.notifyEvents,
 	)
 	return &d, err
@@ -108,15 +112,15 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 
 	vcsToken := n.decryptStr(d.stackID, d.vcsTokenEnc)
 	if vcsToken != "" && d.commitSHA != "" {
-		owner, repo, provider := parseRepo(d.repoURL)
+		owner, repo, provider := parseRepo(d.repoURL, d.vcsProvider, d.vcsBaseURL)
 		if owner != "" {
 			statusDesc := "Plan complete — awaiting approval"
 			if d.runType == "proposed" {
 				statusDesc = "Plan complete"
 			}
-			n.setCommitStatus(ctx, provider, owner, repo, d.commitSHA, "success", statusDesc, vcsToken, runID)
+			n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, "success", statusDesc, vcsToken, runID)
 			if d.prNumber != nil {
-				n.postPRComment(ctx, provider, owner, repo, *d.prNumber, n.planCommentBody(d), vcsToken)
+				n.postPRComment(ctx, provider, d.vcsBaseURL, owner, repo, *d.prNumber, n.planCommentBody(d), vcsToken)
 			}
 		}
 	}
@@ -139,13 +143,13 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 
 	vcsToken := n.decryptStr(d.stackID, d.vcsTokenEnc)
 	if vcsToken != "" && d.commitSHA != "" && d.runType == "apply" {
-		owner, repo, provider := parseRepo(d.repoURL)
+		owner, repo, provider := parseRepo(d.repoURL, d.vcsProvider, d.vcsBaseURL)
 		if owner != "" {
 			state, desc := "success", "Apply succeeded"
 			if !success {
 				state, desc = "failure", "Apply failed"
 			}
-			n.setCommitStatus(ctx, provider, owner, repo, d.commitSHA, state, desc, vcsToken, runID)
+			n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, state, desc, vcsToken, runID)
 		}
 	}
 
@@ -175,39 +179,43 @@ func (n *Notifier) PolicyDenied(ctx context.Context, runID string, messages []st
 		return
 	}
 
-	owner, repo, provider := parseRepo(d.repoURL)
+	owner, repo, provider := parseRepo(d.repoURL, d.vcsProvider, d.vcsBaseURL)
 	if owner == "" {
 		return
 	}
 
-	n.setCommitStatus(ctx, provider, owner, repo, d.commitSHA, "failure", "Policy check failed", vcsToken, runID)
+	n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, "failure", "Policy check failed", vcsToken, runID)
 	if d.prNumber != nil {
 		body := "## Crucible — Policy Denied\n\nThis plan was blocked by the following policies:\n\n"
 		for _, m := range messages {
 			body += "- " + m + "\n"
 		}
 		body += "\n[View run →](" + n.runURL(runID) + ")"
-		n.postPRComment(ctx, provider, owner, repo, *d.prNumber, body, vcsToken)
+		n.postPRComment(ctx, provider, d.vcsBaseURL, owner, repo, *d.prNumber, body, vcsToken)
 	}
 }
 
 // ── VCS helpers ───────────────────────────────────────────────────────────────
 
-func (n *Notifier) setCommitStatus(ctx context.Context, provider, owner, repo, sha, state, desc, token, runID string) {
+func (n *Notifier) setCommitStatus(ctx context.Context, provider, baseURL, owner, repo, sha, state, desc, token, runID string) {
 	switch provider {
 	case "github":
 		n.ghSetStatus(ctx, owner, repo, sha, state, desc, token, runID)
 	case "gitlab":
-		n.glSetStatus(ctx, owner, repo, sha, state, desc, token, runID)
+		n.glSetStatus(ctx, baseURL, owner, repo, sha, state, desc, token, runID)
+	case "gitea":
+		n.gitSetStatus(ctx, baseURL, owner, repo, sha, state, desc, token, runID)
 	}
 }
 
-func (n *Notifier) postPRComment(ctx context.Context, provider, owner, repo string, prNumber int, body, token string) {
+func (n *Notifier) postPRComment(ctx context.Context, provider, baseURL, owner, repo string, prNumber int, body, token string) {
 	switch provider {
 	case "github":
 		n.ghPostComment(ctx, owner, repo, prNumber, body, token)
 	case "gitlab":
-		n.glPostNote(ctx, owner, repo, prNumber, body, token)
+		n.glPostNote(ctx, baseURL, owner, repo, prNumber, body, token)
+	case "gitea":
+		n.gitPostComment(ctx, baseURL, owner, repo, prNumber, body, token)
 	}
 }
 
@@ -235,14 +243,18 @@ func (n *Notifier) ghPostComment(ctx context.Context, owner, repo string, prNumb
 
 // ── GitLab ────────────────────────────────────────────────────────────────────
 
-func (n *Notifier) glSetStatus(ctx context.Context, owner, repo, sha, state, desc, token, runID string) {
+func (n *Notifier) glSetStatus(ctx context.Context, baseURL, owner, repo, sha, state, desc, token, runID string) {
 	// GitLab commit status states: pending | running | success | failed | canceled
 	glState := state
 	if state == "failure" {
 		glState = "failed"
 	}
+	apiBase := strings.TrimRight(baseURL, "/")
+	if apiBase == "" {
+		apiBase = "https://gitlab.com"
+	}
 	encoded := url.PathEscape(owner + "/" + repo)
-	apiURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s/statuses/%s", encoded, sha)
+	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/statuses/%s", apiBase, encoded, sha)
 	payload := map[string]string{
 		"state":       glState,
 		"description": desc,
@@ -254,11 +266,39 @@ func (n *Notifier) glSetStatus(ctx context.Context, owner, repo, sha, state, des
 	}
 }
 
-func (n *Notifier) glPostNote(ctx context.Context, owner, repo string, mrIID int, body, token string) {
+func (n *Notifier) glPostNote(ctx context.Context, baseURL, owner, repo string, mrIID int, body, token string) {
+	apiBase := strings.TrimRight(baseURL, "/")
+	if apiBase == "" {
+		apiBase = "https://gitlab.com"
+	}
 	encoded := url.PathEscape(owner + "/" + repo)
-	apiURL := fmt.Sprintf("https://gitlab.com/api/v4/projects/%s/merge_requests/%d/notes", encoded, mrIID)
+	apiURL := fmt.Sprintf("%s/api/v4/projects/%s/merge_requests/%d/notes", apiBase, encoded, mrIID)
 	if err := n.jsonPost(ctx, apiURL, map[string]string{"body": body}, token); err != nil {
 		slog.Warn("notify: gitlab post note failed", "err", err)
+	}
+}
+
+// ── Gitea ─────────────────────────────────────────────────────────────────────
+
+func (n *Notifier) gitSetStatus(ctx context.Context, baseURL, owner, repo, sha, state, desc, token, runID string) {
+	apiBase := strings.TrimRight(baseURL, "/")
+	apiURL := fmt.Sprintf("%s/api/v1/repos/%s/%s/statuses/%s", apiBase, owner, repo, sha)
+	payload := map[string]string{
+		"state":       state,
+		"description": desc,
+		"context":     "crucible",
+		"target_url":  n.runURL(runID),
+	}
+	if err := n.jsonPost(ctx, apiURL, payload, "token "+token); err != nil {
+		slog.Warn("notify: gitea set status failed", "err", err)
+	}
+}
+
+func (n *Notifier) gitPostComment(ctx context.Context, baseURL, owner, repo string, issueIndex int, body, token string) {
+	apiBase := strings.TrimRight(baseURL, "/")
+	apiURL := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/%d/comments", apiBase, owner, repo, issueIndex)
+	if err := n.jsonPost(ctx, apiURL, map[string]string{"body": body}, "token "+token); err != nil {
+		slog.Warn("notify: gitea post comment failed", "err", err)
 	}
 }
 
@@ -316,16 +356,18 @@ func (n *Notifier) runSlackMessage(d *runData, success bool) string {
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-// parseRepo extracts owner, repo name, and provider ("github" or "gitlab")
-// from a variety of URL formats:
+// parseRepo extracts owner, repo name, and provider from a variety of URL formats.
+// The vcsProvider and vcsBaseURL hints from the stack config take priority over
+// URL-based heuristics, enabling self-hosted instances.
 //
 //	https://github.com/owner/repo.git
 //	git@github.com:owner/repo.git
-func parseRepo(repoURL string) (owner, repo, provider string) {
+//	https://gitea.example.com/owner/repo.git  (with vcsProvider="gitea")
+func parseRepo(repoURL, vcsProvider, vcsBaseURL string) (owner, repo, provider string) {
 	var raw string
 
 	if strings.HasPrefix(repoURL, "git@") {
-		// git@github.com:owner/repo.git
+		// git@host:owner/repo.git
 		parts := strings.SplitN(repoURL, ":", 2)
 		if len(parts) != 2 {
 			return
@@ -342,20 +384,42 @@ func parseRepo(repoURL string) (owner, repo, provider string) {
 
 	raw = strings.TrimSuffix(raw, ".git")
 
-	if strings.Contains(raw, "github.com") {
-		provider = "github"
-	} else if strings.Contains(raw, "gitlab.com") || strings.Contains(raw, "gitlab") {
-		provider = "gitlab"
-	} else {
-		return // unsupported host
+	// Determine provider: explicit hint wins, then URL heuristics.
+	switch vcsProvider {
+	case "github", "gitlab", "gitea":
+		provider = vcsProvider
+	default:
+		if strings.Contains(raw, "github.com") {
+			provider = "github"
+		} else if strings.Contains(raw, "gitlab.com") || strings.Contains(raw, "gitlab") {
+			provider = "gitlab"
+		} else {
+			return // unknown host, no hint
+		}
 	}
 
-	// Strip the host prefix, leaving owner/repo
-	idx := strings.Index(raw, "/")
-	if idx < 0 {
-		return
+	// Strip the host prefix to get owner/repo.
+	// For custom base URLs we strip the host portion of the base URL.
+	stripHost := ""
+	if vcsBaseURL != "" {
+		u, err := url.Parse(vcsBaseURL)
+		if err == nil {
+			stripHost = u.Host
+		}
 	}
-	parts := strings.SplitN(raw[idx+1:], "/", 2)
+	if stripHost == "" {
+		// Fall back to stripping whatever host is in the repo URL.
+		idx := strings.Index(raw, "/")
+		if idx < 0 {
+			return
+		}
+		raw = raw[idx+1:]
+	} else {
+		raw = strings.TrimPrefix(raw, stripHost)
+		raw = strings.TrimPrefix(raw, "/")
+	}
+
+	parts := strings.SplitN(raw, "/", 2)
 	if len(parts) != 2 {
 		return
 	}

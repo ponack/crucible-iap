@@ -81,7 +81,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	authHandler := auth.NewHandler(s.cfg, s.pool)
 	stackHandler := stacks.NewHandler(s.pool, v)
 	runHandler := runs.NewHandler(s.pool, s.cfg, q, d, store)
-	stateHandler := state.NewHandler(s.pool, store)
+	stateHandler := state.NewHandler(s.pool, store, v)
 	auditHandler := audit.NewHandler(s.pool)
 	webhookHandler := webhooks.NewHandler(s.pool, q)
 	orgHandler := orgs.NewHandler(s.pool)
@@ -161,10 +161,15 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
 
-	// Stack external secret store (AWS SM, HashiCorp Vault, Bitwarden SM)
+	// Stack external secret store (AWS SM, HashiCorp Vault, Bitwarden SM, Vaultwarden)
 	api.GET("/stacks/:id/secret-store", stackHandler.GetSecretStore, member)
 	api.PUT("/stacks/:id/secret-store", stackHandler.UpsertSecretStore, member)
 	api.DELETE("/stacks/:id/secret-store", stackHandler.DeleteSecretStore, member)
+
+	// Stack external state backend (S3, GCS, Azure Blob)
+	api.GET("/stacks/:id/state-backend", stackHandler.GetStateBackend, member)
+	api.PUT("/stacks/:id/state-backend", stackHandler.UpsertStateBackend, member)
+	api.DELETE("/stacks/:id/state-backend", stackHandler.DeleteStateBackend, member)
 
 	// Runs
 	api.GET("/stacks/:stackID/runs", runHandler.List)

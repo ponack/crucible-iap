@@ -56,6 +56,12 @@ func Resolve(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, stackID st
 			return nil, fmt.Errorf("unmarshal bitwarden_sm config: %w", err)
 		}
 		return &BitwardenProvider{cfg: cfg}, nil
+	case "vaultwarden":
+		var cfg VaultwardenConfig
+		if err := json.Unmarshal(plaintext, &cfg); err != nil {
+			return nil, fmt.Errorf("unmarshal vaultwarden config: %w", err)
+		}
+		return &VaultwardenProvider{cfg: cfg}, nil
 	default:
 		return nil, fmt.Errorf("unknown secret store provider: %s", provider)
 	}

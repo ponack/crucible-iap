@@ -16,6 +16,8 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 
 	var req struct {
+		VCSProvider  *string  `json:"vcs_provider"`   // nil = no change
+		VCSBaseURL   *string  `json:"vcs_base_url"`   // nil = no change; "" = clear
 		VCSToken     *string  `json:"vcs_token"`      // nil = no change; "" = clear
 		SlackWebhook *string  `json:"slack_webhook"`  // nil = no change; "" = clear
 		NotifyEvents []string `json:"notify_events"`  // nil = no change; [] = clear all
@@ -31,6 +33,25 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 	).Scan(&exists)
 	if !exists {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	validVCSProviders := map[string]bool{"github": true, "gitlab": true, "gitea": true}
+	if req.VCSProvider != nil {
+		if !validVCSProviders[*req.VCSProvider] {
+			return echo.NewHTTPError(http.StatusBadRequest, "vcs_provider must be one of: github, gitlab, gitea")
+		}
+		_, _ = h.pool.Exec(c.Request().Context(),
+			`UPDATE stacks SET vcs_provider = $1 WHERE id = $2`, *req.VCSProvider, stackID)
+	}
+
+	if req.VCSBaseURL != nil {
+		if *req.VCSBaseURL == "" {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET vcs_base_url = NULL WHERE id = $1`, stackID)
+		} else {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET vcs_base_url = $1 WHERE id = $2`, *req.VCSBaseURL, stackID)
+		}
 	}
 
 	if req.VCSToken != nil {

@@ -86,18 +86,22 @@ export interface Stack {
 	auto_apply: boolean;
 	drift_detection: boolean;
 	drift_schedule?: string;
+	vcs_provider: 'github' | 'gitlab' | 'gitea';
+	vcs_base_url?: string;
 	has_vcs_token: boolean;
 	has_slack_webhook: boolean;
 	notify_events: string[];
 	has_secret_store: boolean;
 	secret_store_provider?: string;
+	has_state_backend: boolean;
+	state_backend_provider?: string;
 	created_at: string;
 	updated_at: string;
 }
 
 // ── External secret store ─────────────────────────────────────────────────────
 
-export type SecretStoreProvider = 'aws_sm' | 'hc_vault' | 'bitwarden_sm';
+export type SecretStoreProvider = 'aws_sm' | 'hc_vault' | 'bitwarden_sm' | 'vaultwarden';
 
 export interface SecretStoreInfo {
 	provider: SecretStoreProvider;
@@ -126,6 +130,45 @@ export interface BitwardenSecretStoreConfig {
 	org_id?: string;
 	api_url?: string;
 	identity_url?: string;
+}
+
+export interface VaultwardenSecretStoreConfig {
+	url: string;
+	client_id: string;
+	client_secret: string;
+	email: string;
+	master_password: string;
+	folder_name?: string;
+}
+
+// ── External state backend ────────────────────────────────────────────────────
+
+export type StateBackendProvider = 's3' | 'gcs' | 'azurerm';
+
+export interface StateBackendInfo {
+	provider: StateBackendProvider;
+}
+
+export interface S3StateBackendConfig {
+	region: string;
+	bucket: string;
+	key_prefix?: string;
+	access_key_id?: string;
+	secret_access_key?: string;
+	endpoint_url?: string;
+}
+
+export interface GCSStateBackendConfig {
+	bucket: string;
+	key_prefix?: string;
+	service_account_json: string;
+}
+
+export interface AzureStateBackendConfig {
+	account_name: string;
+	account_key: string;
+	container: string;
+	key_prefix?: string;
 }
 
 export interface StackToken {
@@ -172,7 +215,13 @@ export const stacks = {
 	notifications: {
 		update: (
 			stackID: string,
-			data: { vcs_token?: string; slack_webhook?: string; notify_events?: string[] }
+			data: {
+				vcs_provider?: string;
+				vcs_base_url?: string;
+				vcs_token?: string;
+				slack_webhook?: string;
+				notify_events?: string[];
+			}
 		) =>
 			request<null>(`/stacks/${stackID}/notifications`, {
 				method: 'PUT',
@@ -185,7 +234,11 @@ export const stacks = {
 		upsert: (
 			stackID: string,
 			provider: SecretStoreProvider,
-			config: AWSSecretStoreConfig | HCVaultSecretStoreConfig | BitwardenSecretStoreConfig
+			config:
+				| AWSSecretStoreConfig
+				| HCVaultSecretStoreConfig
+				| BitwardenSecretStoreConfig
+				| VaultwardenSecretStoreConfig
 		) =>
 			request<SecretStoreInfo>(`/stacks/${stackID}/secret-store`, {
 				method: 'PUT',
@@ -193,6 +246,21 @@ export const stacks = {
 			}),
 		delete: (stackID: string) =>
 			request<null>(`/stacks/${stackID}/secret-store`, { method: 'DELETE' })
+	},
+
+	stateBackend: {
+		get: (stackID: string) => request<StateBackendInfo>(`/stacks/${stackID}/state-backend`),
+		upsert: (
+			stackID: string,
+			provider: StateBackendProvider,
+			config: S3StateBackendConfig | GCSStateBackendConfig | AzureStateBackendConfig
+		) =>
+			request<StateBackendInfo>(`/stacks/${stackID}/state-backend`, {
+				method: 'PUT',
+				body: JSON.stringify({ provider, config })
+			}),
+		delete: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/state-backend`, { method: 'DELETE' })
 	}
 };
 
