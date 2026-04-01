@@ -17,7 +17,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 ### GitOps & runs
 
 - **GitOps-driven** — push to a branch triggers a tracked run (plan → confirm → apply); open a PR and Crucible plans it, posts a comment, and sets a commit status check
-- **GitHub and GitLab** — HMAC-verified webhooks, PR/MR comments, and commit status checks out of the box
+- **GitHub, GitLab, Gitea, and Gogs** — HMAC-verified webhooks (modern X-Hub-Signature-256 and legacy per-forge fallbacks), PR/MR comments, and commit status checks; custom instance base URLs supported for self-hosted deployments
 - **Run types** — tracked, proposed (plan-only), destroy, and drift — manual or webhook-triggered
 - **Auto-apply** — skip the confirmation gate for low-risk stacks
 - **Drift detection** — scheduled proposed runs alert when live state diverges from code
@@ -32,10 +32,10 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 ### Infrastructure
 
 - **Multi-tool** — OpenTofu, Terraform, Ansible, and Pulumi in the same platform
-- **Built-in state backend** — Terraform/OpenTofu HTTP backend; no S3 or external storage needed
+- **Flexible state storage** — built-in Terraform/OpenTofu HTTP backend backed by MinIO (zero config); or override per-stack with Amazon S3 / S3-compatible (built-in Sig v4), Google Cloud Storage (RSA-SHA256 JWT), or Azure Blob Storage (SharedKeyLite) — credentials encrypted at rest
 - **Ephemeral job runners** — each run in a fresh Docker container: read-only rootfs, `--cap-drop ALL`, tmpfs workspace, per-job scoped JWT — container is gone when the job ends
 - **Stack env vars** — AES-256-GCM encrypted at rest with per-stack HKDF-derived keys; injected into runners at job time, never logged or returned by the API
-- **External secret stores** — pull secrets directly from AWS Secrets Manager (built-in AWS Sig v4, no external SDK), HashiCorp Vault KV v2 (token or AppRole auth), or Bitwarden Secrets Manager (AES-256-CBC E2E decryption); merged with built-in env vars, built-in takes precedence
+- **External secret stores** — pull secrets from AWS Secrets Manager (built-in Sig v4, no SDK), HashiCorp Vault KV v2 (token or AppRole), Bitwarden Secrets Manager (AES-256-CBC E2E decryption), or Vaultwarden / self-hosted Bitwarden (PBKDF2-SHA256 / Argon2id master key derivation + AES-CBC vault crypto); merged with built-in env vars, built-in takes precedence on collision
 
 ### Auth and access
 
