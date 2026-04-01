@@ -161,6 +161,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
 
+	// Stack external secret store (AWS SM, HashiCorp Vault, Bitwarden SM)
+	api.GET("/stacks/:id/secret-store", stackHandler.GetSecretStore, member)
+	api.PUT("/stacks/:id/secret-store", stackHandler.UpsertSecretStore, member)
+	api.DELETE("/stacks/:id/secret-store", stackHandler.DeleteSecretStore, member)
+
 	// Runs
 	api.GET("/stacks/:stackID/runs", runHandler.List)
 	api.POST("/stacks/:stackID/runs", runHandler.Create, member)

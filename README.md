@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
 ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)
-![Status: Early Development](https://img.shields.io/badge/status-early%20development-orange)
+![Status: Beta](https://img.shields.io/badge/status-beta-blue)
 
 ---
 
@@ -14,14 +14,48 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 ## Features
 
-- **GitOps-driven** — push to a branch or open a PR and runs trigger automatically via GitHub or GitLab webhooks
-- **Policy-as-code** — OPA/Rego for plan validation, approval gates, and trigger chains
-- **Built-in state backend** — Terraform/OpenTofu HTTP backend compatible; no S3 required
-- **Ephemeral job runners** — each run in an isolated, read-only Docker container
-- **SSO via OIDC** — Authentik, Okta, GitHub, Keycloak, or any OIDC-compatible provider
-- **Drift detection** — scheduled proposed runs with optional auto-remediation
-- **Full audit log** — every action recorded; append-only, tamper-resistant at the database level
-- **Flexible deployment** — bundled Caddy for zero-config TLS, or bring your own reverse proxy
+### GitOps & runs
+
+- **GitOps-driven** — push to a branch triggers a tracked run (plan → confirm → apply); open a PR and Crucible plans it, posts a comment, and sets a commit status check
+- **GitHub and GitLab** — HMAC-verified webhooks, PR/MR comments, and commit status checks out of the box
+- **Run types** — tracked, proposed (plan-only), destroy, and drift — manual or webhook-triggered
+- **Auto-apply** — skip the confirmation gate for low-risk stacks
+- **Drift detection** — scheduled proposed runs alert when live state diverges from code
+
+### Policy and compliance
+
+- **Policy-as-code** — OPA/Rego policies evaluate in microseconds; attach multiple policies per stack
+- **Policy hooks** — `pre_plan`, `post_plan`, `pre_apply`, `trigger` (downstream stacks), `login`
+- **Deny and warn** — blocking denials halt the run; non-blocking warnings surface to the operator
+- **Full audit log** — every state-mutating action recorded; append-only and tamper-resistant at the database level
+
+### Infrastructure
+
+- **Multi-tool** — OpenTofu, Terraform, Ansible, and Pulumi in the same platform
+- **Built-in state backend** — Terraform/OpenTofu HTTP backend; no S3 or external storage needed
+- **Ephemeral job runners** — each run in a fresh Docker container: read-only rootfs, `--cap-drop ALL`, tmpfs workspace, per-job scoped JWT — container is gone when the job ends
+- **Stack env vars** — AES-256-GCM encrypted at rest with per-stack HKDF-derived keys; injected into runners at job time, never logged or returned by the API
+- **External secret stores** — pull secrets directly from AWS Secrets Manager (built-in AWS Sig v4, no external SDK), HashiCorp Vault KV v2 (token or AppRole auth), or Bitwarden Secrets Manager (AES-256-CBC E2E decryption); merged with built-in env vars, built-in takes precedence
+
+### Auth and access
+
+- **SSO via OIDC** — Authentik (bundled optional), Okta, GitHub, Keycloak, or any OIDC provider; PKCE always enforced
+- **Local auth** — single operator account for deployments without an IdP
+- **RBAC** — viewer / member / admin roles enforced at the API layer; org invite flow with single-use tokens
+- **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup
+
+### Observability and operations
+
+- **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; metrics internal-only by default
+- **Slack notifications** — per-stack event subscriptions: plan complete, run succeeded, run failed
+- **Structured health endpoint** — `/health` reports DB status, version, and uptime
+- **Automatic migrations** — schema migrations run on startup; `migrate` subcommand available for manual control
+
+### Deployment
+
+- **Single `docker compose up`** — Caddy, API, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
+- **Zero-config TLS** — Let's Encrypt via Caddy; bring your own cert or reverse proxy with the `external-proxy` profile
+- **Bundled Authentik** — optional `--profile authentik` for a fully self-hosted IdP
 
 ## Quick start
 
@@ -259,7 +293,7 @@ cd api && go test -race ./...
 - [x] Stack-level environment variables — AES-256-GCM encrypted at rest, injected into runner containers
 - [x] PR/MR feedback — plan summary comments and commit status checks on GitHub and GitLab
 - [x] Slack notifications — configurable per-stack event subscriptions
-- [ ] External secret store integrations (AWS Secrets Manager, HashiCorp Vault, Bitwarden)
+- [x] External secret store integrations — AWS Secrets Manager (Sig v4, no SDK), HashiCorp Vault KV v2 (token + AppRole), Bitwarden Secrets Manager (E2E decryption)
 - [ ] Multi-cloud state backend options (S3, GCS, Azure Blob)
 
 ## License

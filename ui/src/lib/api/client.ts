@@ -89,8 +89,43 @@ export interface Stack {
 	has_vcs_token: boolean;
 	has_slack_webhook: boolean;
 	notify_events: string[];
+	has_secret_store: boolean;
+	secret_store_provider?: string;
 	created_at: string;
 	updated_at: string;
+}
+
+// ── External secret store ─────────────────────────────────────────────────────
+
+export type SecretStoreProvider = 'aws_sm' | 'hc_vault' | 'bitwarden_sm';
+
+export interface SecretStoreInfo {
+	provider: SecretStoreProvider;
+}
+
+export interface AWSSecretStoreConfig {
+	region: string;
+	access_key_id?: string;
+	secret_access_key?: string;
+	secret_names: string[];
+}
+
+export interface HCVaultSecretStoreConfig {
+	address: string;
+	namespace?: string;
+	token?: string;
+	role_id?: string;
+	secret_id?: string;
+	mount: string;
+	path: string;
+}
+
+export interface BitwardenSecretStoreConfig {
+	access_token: string;
+	project_id?: string;
+	org_id?: string;
+	api_url?: string;
+	identity_url?: string;
 }
 
 export interface StackToken {
@@ -143,6 +178,21 @@ export const stacks = {
 				method: 'PUT',
 				body: JSON.stringify(data)
 			})
+	},
+
+	secretStore: {
+		get: (stackID: string) => request<SecretStoreInfo>(`/stacks/${stackID}/secret-store`),
+		upsert: (
+			stackID: string,
+			provider: SecretStoreProvider,
+			config: AWSSecretStoreConfig | HCVaultSecretStoreConfig | BitwardenSecretStoreConfig
+		) =>
+			request<SecretStoreInfo>(`/stacks/${stackID}/secret-store`, {
+				method: 'PUT',
+				body: JSON.stringify({ provider, config })
+			}),
+		delete: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/secret-store`, { method: 'DELETE' })
 	}
 };
 

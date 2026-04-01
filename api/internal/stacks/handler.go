@@ -50,11 +50,13 @@ type Stack struct {
 	DriftSchedule  string    `json:"drift_schedule,omitempty"`
 	WebhookSecret   string    `json:"webhook_secret,omitempty"` // only populated on Get
 	WebhookURL      string    `json:"webhook_url,omitempty"`    // only populated on Get
-	HasVCSToken     bool      `json:"has_vcs_token"`
-	HasSlackWebhook bool      `json:"has_slack_webhook"`
-	NotifyEvents    []string  `json:"notify_events"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	HasVCSToken         bool     `json:"has_vcs_token"`
+	HasSlackWebhook     bool     `json:"has_slack_webhook"`
+	NotifyEvents        []string `json:"notify_events"`
+	HasSecretStore      bool     `json:"has_secret_store"`
+	SecretStoreProvider string   `json:"secret_store_provider,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type Token struct {
@@ -166,18 +168,21 @@ func (h *Handler) Get(c echo.Context) error {
 	var s Stack
 	var webhookSecretPtr *string
 	err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT id, org_id, slug, name, COALESCE(description,''), tool,
-		       COALESCE(tool_version,''), repo_url, repo_branch, project_root,
-		       COALESCE(runner_image,''), auto_apply, drift_detection,
-		       COALESCE(drift_schedule,''), webhook_secret,
-		       vcs_token_enc IS NOT NULL, slack_webhook_enc IS NOT NULL,
-		       COALESCE(notify_events, '{}'),
-		       created_at, updated_at
-		FROM stacks WHERE id = $1 AND org_id = $2
+		SELECT s.id, s.org_id, s.slug, s.name, COALESCE(s.description,''), s.tool,
+		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
+		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
+		       COALESCE(s.drift_schedule,''), s.webhook_secret,
+		       s.vcs_token_enc IS NOT NULL, s.slack_webhook_enc IS NOT NULL,
+		       COALESCE(s.notify_events, '{}'),
+		       EXISTS(SELECT 1 FROM stack_secret_stores WHERE stack_id = s.id),
+		       COALESCE((SELECT ss.provider FROM stack_secret_stores ss WHERE ss.stack_id = s.id), ''),
+		       s.created_at, s.updated_at
+		FROM stacks s WHERE s.id = $1 AND s.org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
 		&webhookSecretPtr, &s.HasVCSToken, &s.HasSlackWebhook, &s.NotifyEvents,
+		&s.HasSecretStore, &s.SecretStoreProvider,
 		&s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")

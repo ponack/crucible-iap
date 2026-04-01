@@ -22,6 +22,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
+	"github.com/ponack/crucible-iap/internal/secretstore"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/vault"
 )
@@ -129,13 +130,24 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	var logBuf bytes.Buffer
 	logWriter := io.MultiWriter(&logBuf, &brokerWriter{broker: w.broker, runID: args.RunID})
 
-	// Decrypt and collect stack-level env vars. Log a warning on failure but
-	// don't abort the run — some stacks may have no env vars at all.
-	extraEnv, evErr := envvars.LoadForStack(ctx, w.pool, w.vault, args.StackID)
+	// External secret store secrets (fetched first so built-in env vars take precedence).
+	storeEnv, storeErr := secretstore.LoadForStack(ctx, w.pool, w.vault, args.StackID)
+	if storeErr != nil {
+		log.Warn("failed to load external secret store", "err", storeErr)
+		storeEnv = nil
+	}
+
+	// Built-in stack env vars (encrypted at rest in the DB).
+	builtinEnv, evErr := envvars.LoadForStack(ctx, w.pool, w.vault, args.StackID)
 	if evErr != nil {
 		log.Warn("failed to load stack env vars", "err", evErr)
-		extraEnv = nil
+		builtinEnv = nil
 	}
+
+	// Merge: external secrets first, then built-in. Later entries win in most
+	// container runtimes (Docker sets env vars in order, last wins), so placing
+	// built-in vars last ensures they override any same-named external secret.
+	extraEnv := append(storeEnv, builtinEnv...)
 
 	spec := runner.JobSpec{
 		RunID:       args.RunID,

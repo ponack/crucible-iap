@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar } from '$lib/api/client';
+	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type SecretStoreProvider, type AWSSecretStoreConfig, type HCVaultSecretStoreConfig, type BitwardenSecretStoreConfig } from '$lib/api/client';
 
 	const stackID = $derived(page.params.id as string);
 
@@ -48,6 +48,19 @@
 	let savingNotif = $state(false);
 	let notifSaved = $state(false);
 
+	// Secret store
+	let secretStoreProvider = $state<SecretStoreProvider | ''>('');
+	let savingSecretStore = $state(false);
+	let secretStoreSaved = $state(false);
+	let removingSecretStore = $state(false);
+	// AWS SM
+	let awsCfg = $state<AWSSecretStoreConfig>({ region: '', secret_names: [] });
+	let awsNewSecretName = $state('');
+	// HashiCorp Vault
+	let vaultCfg = $state<HCVaultSecretStoreConfig>({ address: '', mount: 'secret', path: '' });
+	// Bitwarden SM
+	let bwCfg = $state<BitwardenSecretStoreConfig>({ access_token: '' });
+
 	const notifyEventOptions = [
 		{ value: 'plan_complete', label: 'Plan complete' },
 		{ value: 'run_finished', label: 'Run succeeded' },
@@ -79,6 +92,9 @@
 			stackPolicies = stackPoliciesRes;
 			allPolicies = allPoliciesRes;
 			envVars = envVarsRes;
+			if (stackRes.secret_store_provider) {
+				secretStoreProvider = stackRes.secret_store_provider as SecretStoreProvider;
+			}
 			resetForm();
 		} catch (e) {
 			error = (e as Error).message;
@@ -219,6 +235,43 @@
 		if (!confirm(`Remove env var "${name}"?`)) return;
 		await stacks.env.delete(stackID, name);
 		envVars = envVars.filter((v) => v.name !== name);
+	}
+
+	async function saveSecretStore(e: SubmitEvent) {
+		e.preventDefault();
+		if (!secretStoreProvider) return;
+		savingSecretStore = true;
+		secretStoreSaved = false;
+		try {
+			let cfg: AWSSecretStoreConfig | HCVaultSecretStoreConfig | BitwardenSecretStoreConfig;
+			if (secretStoreProvider === 'aws_sm') cfg = awsCfg;
+			else if (secretStoreProvider === 'hc_vault') cfg = vaultCfg;
+			else cfg = bwCfg;
+			await stacks.secretStore.upsert(stackID, secretStoreProvider, cfg);
+			secretStoreSaved = true;
+			stack = await stacks.get(stackID);
+		} catch (err) {
+			alert((err as Error).message);
+		} finally {
+			savingSecretStore = false;
+		}
+	}
+
+	async function removeSecretStore() {
+		if (!confirm('Remove the external secret store? Secrets will no longer be injected into runs.')) return;
+		removingSecretStore = true;
+		try {
+			await stacks.secretStore.delete(stackID);
+			secretStoreProvider = '';
+			awsCfg = { region: '', secret_names: [] };
+			vaultCfg = { address: '', mount: 'secret', path: '' };
+			bwCfg = { access_token: '' };
+			stack = await stacks.get(stackID);
+		} catch (err) {
+			alert((err as Error).message);
+		} finally {
+			removingSecretStore = false;
+		}
 	}
 
 	const unattachedPolicies = $derived(
@@ -527,6 +580,146 @@
 					<span class="text-xs text-green-400">Saved.</span>
 				{/if}
 			</div>
+		</form>
+	</section>
+
+	<!-- External secret store -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">External secret store</h2>
+		<p class="text-xs text-zinc-500">Pull secrets from an external store and inject them into runner containers. Built-in env vars override any same-named external secret.</p>
+
+		<form onsubmit={saveSecretStore} class="border border-zinc-800 rounded-xl p-5 space-y-4">
+			<div class="space-y-1.5">
+				<label class="field-label" for="ss-provider">
+					Provider
+					{#if stack.has_secret_store}
+						<span class="ml-1 text-green-500 text-xs">● {stack.secret_store_provider}</span>
+					{/if}
+				</label>
+				<select id="ss-provider" class="field-input w-64" bind:value={secretStoreProvider}>
+					<option value="">— none —</option>
+					<option value="aws_sm">AWS Secrets Manager</option>
+					<option value="hc_vault">HashiCorp Vault (KV v2)</option>
+					<option value="bitwarden_sm">Bitwarden Secrets Manager</option>
+				</select>
+			</div>
+
+			{#if secretStoreProvider === 'aws_sm'}
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="aws-region">Region</label>
+						<input id="aws-region" class="field-input font-mono text-sm" bind:value={awsCfg.region} placeholder="us-east-1" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="aws-key-id">Access key ID <span class="text-zinc-600">(optional — uses env if omitted)</span></label>
+						<input id="aws-key-id" class="field-input font-mono text-sm" type="password" bind:value={awsCfg.access_key_id} placeholder="AKIA…" autocomplete="new-password" />
+					</div>
+					<div class="col-span-2 space-y-1.5">
+						<label class="field-label" for="aws-secret-key">Secret access key</label>
+						<input id="aws-secret-key" class="field-input font-mono text-sm" type="password" bind:value={awsCfg.secret_access_key} placeholder="…" autocomplete="new-password" />
+					</div>
+				</div>
+				<div class="space-y-2">
+					<p class="text-xs text-zinc-400">Secret names / ARNs to fetch</p>
+					{#if awsCfg.secret_names.length > 0}
+						<ul class="border border-zinc-800 rounded-lg divide-y divide-zinc-800">
+							{#each awsCfg.secret_names as name, i}
+								<li class="flex items-center justify-between px-3 py-2 text-xs font-mono text-zinc-300">
+									{name}
+									<button type="button" onclick={() => { awsCfg.secret_names = awsCfg.secret_names.filter((_, j) => j !== i); }}
+										class="text-zinc-500 hover:text-red-400 ml-2">✕</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<div class="flex gap-2">
+						<input class="field-input font-mono text-xs" bind:value={awsNewSecretName} placeholder="myapp/db_password or ARN" />
+						<button type="button" onclick={() => { if (awsNewSecretName.trim()) { awsCfg.secret_names = [...awsCfg.secret_names, awsNewSecretName.trim()]; awsNewSecretName = ''; } }}
+							class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+							Add
+						</button>
+					</div>
+				</div>
+			{:else if secretStoreProvider === 'hc_vault'}
+				<div class="grid grid-cols-2 gap-4">
+					<div class="col-span-2 space-y-1.5">
+						<label class="field-label" for="vault-addr">Vault address</label>
+						<input id="vault-addr" class="field-input font-mono text-sm" bind:value={vaultCfg.address} placeholder="https://vault.example.com" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="vault-mount">KV mount</label>
+						<input id="vault-mount" class="field-input font-mono text-sm" bind:value={vaultCfg.mount} placeholder="secret" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="vault-path">Secret path</label>
+						<input id="vault-path" class="field-input font-mono text-sm" bind:value={vaultCfg.path} placeholder="myapp/config" required />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="vault-ns">Namespace <span class="text-zinc-600">(HCP Vault)</span></label>
+						<input id="vault-ns" class="field-input font-mono text-sm" bind:value={vaultCfg.namespace} placeholder="admin" />
+					</div>
+				</div>
+				<div class="space-y-1.5">
+					<p class="text-xs text-zinc-400">Authentication — token or AppRole</p>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label class="field-label" for="vault-token">Token</label>
+							<input id="vault-token" class="field-input font-mono text-sm" type="password" bind:value={vaultCfg.token} placeholder="hvs.…" autocomplete="new-password" />
+						</div>
+						<div class="space-y-1.5"></div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="vault-role">AppRole — Role ID</label>
+							<input id="vault-role" class="field-input font-mono text-sm" bind:value={vaultCfg.role_id} placeholder="role UUID" />
+						</div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="vault-secret">AppRole — Secret ID</label>
+							<input id="vault-secret" class="field-input font-mono text-sm" type="password" bind:value={vaultCfg.secret_id} placeholder="secret UUID" autocomplete="new-password" />
+						</div>
+					</div>
+				</div>
+			{:else if secretStoreProvider === 'bitwarden_sm'}
+				<div class="grid grid-cols-2 gap-4">
+					<div class="col-span-2 space-y-1.5">
+						<label class="field-label" for="bw-token">Machine account access token</label>
+						<input id="bw-token" class="field-input font-mono text-sm" type="password" bind:value={bwCfg.access_token} placeholder="0.…" autocomplete="new-password" required />
+						<p class="text-xs text-zinc-600">Format: <code>0.&lt;serviceAccountId&gt;.&lt;clientSecret&gt;.&lt;encryptionKey&gt;</code></p>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="bw-project">Project ID <span class="text-zinc-600">(recommended)</span></label>
+						<input id="bw-project" class="field-input font-mono text-sm" bind:value={bwCfg.project_id} placeholder="UUID" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="bw-org">Org ID <span class="text-zinc-600">(fallback if no project)</span></label>
+						<input id="bw-org" class="field-input font-mono text-sm" bind:value={bwCfg.org_id} placeholder="UUID" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="bw-api">API URL <span class="text-zinc-600">(self-hosted)</span></label>
+						<input id="bw-api" class="field-input font-mono text-sm" bind:value={bwCfg.api_url} placeholder="https://api.bitwarden.com" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="bw-id">Identity URL <span class="text-zinc-600">(self-hosted)</span></label>
+						<input id="bw-id" class="field-input font-mono text-sm" bind:value={bwCfg.identity_url} placeholder="https://identity.bitwarden.com" />
+					</div>
+				</div>
+			{/if}
+
+			{#if secretStoreProvider}
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingSecretStore}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingSecretStore ? 'Saving…' : 'Save secret store'}
+					</button>
+					{#if stack.has_secret_store}
+						<button type="button" onclick={removeSecretStore} disabled={removingSecretStore}
+							class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+							{removingSecretStore ? 'Removing…' : 'Remove'}
+						</button>
+					{/if}
+					{#if secretStoreSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			{/if}
 		</form>
 	</section>
 
