@@ -67,6 +67,10 @@
 	let notifVCSProvider = $state('');
 	let notifVCSBaseURL = $state('');
 
+	// Webhook
+	let rotatingWebhook = $state(false);
+	let newWebhookSecret = $state<string | null>(null);
+
 	// State backend
 	let stateBackendProvider = $state<StateBackendProvider | ''>('');
 	let savingStateBackend = $state(false);
@@ -315,6 +319,20 @@
 			alert((err as Error).message);
 		} finally {
 			savingStateBackend = false;
+		}
+	}
+
+	async function rotateWebhookSecret() {
+		if (!confirm('Rotate the webhook secret? The old secret will stop working immediately — update your repository webhook settings before the next push.')) return;
+		rotatingWebhook = true;
+		newWebhookSecret = null;
+		try {
+			const res = await stacks.webhook.rotateSecret(stackID);
+			newWebhookSecret = res.webhook_secret;
+		} catch (e) {
+			alert((e as Error).message);
+		} finally {
+			rotatingWebhook = false;
 		}
 	}
 
@@ -945,6 +963,55 @@
 				</div>
 			{/if}
 		</form>
+	</section>
+
+	<!-- Webhooks -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Webhooks</h2>
+		<p class="text-xs text-zinc-500">
+			Point your GitHub, GitLab, or Gitea repository webhook at the URL below.
+			Set the content type to <code class="text-zinc-300">application/json</code> and paste the secret.
+			Push events trigger tracked runs; pull-request/merge-request events trigger proposed runs.
+		</p>
+
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-3">
+			<div class="space-y-1">
+				<p class="text-xs text-zinc-500 uppercase tracking-wide">Webhook URL</p>
+				<div class="flex items-center gap-2">
+					<code class="flex-1 text-xs text-zinc-200 break-all">{window?.location?.origin ?? ''}/api/v1/webhooks/{stackID}</code>
+					<button
+						onclick={() => navigator.clipboard.writeText(`${window?.location?.origin ?? ''}/api/v1/webhooks/${stackID}`)}
+						class="shrink-0 text-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 px-2 py-1 rounded transition-colors">
+						Copy
+					</button>
+				</div>
+			</div>
+
+			<div class="space-y-1">
+				<p class="text-xs text-zinc-500 uppercase tracking-wide">Secret</p>
+				{#if newWebhookSecret}
+					<div class="bg-yellow-950 border border-yellow-800 rounded-lg p-3 space-y-2">
+						<p class="text-yellow-300 text-xs font-medium">New secret — copy it now and update your repository webhook. It won't be shown again.</p>
+						<div class="flex items-center gap-2">
+							<code class="flex-1 text-xs text-yellow-200 break-all font-mono">{newWebhookSecret}</code>
+							<button
+								onclick={() => navigator.clipboard.writeText(newWebhookSecret!)}
+								class="shrink-0 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 px-2 py-1 rounded transition-colors">
+								Copy
+							</button>
+						</div>
+						<button onclick={() => (newWebhookSecret = null)} class="text-xs text-yellow-600 hover:text-yellow-400">Dismiss</button>
+					</div>
+				{:else}
+					<p class="text-xs text-zinc-600 italic">Kept secret. Rotate to generate a new one.</p>
+				{/if}
+			</div>
+		</div>
+
+		<button onclick={rotateWebhookSecret} disabled={rotatingWebhook}
+			class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+			{rotatingWebhook ? 'Rotating…' : 'Rotate secret'}
+		</button>
 	</section>
 
 	<!-- Recent runs -->
