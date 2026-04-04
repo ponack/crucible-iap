@@ -32,6 +32,11 @@
 	let triggeringRun = $state(false);
 	let triggeringDrift = $state(false);
 
+	// Destroy modal
+	let showDestroyModal = $state(false);
+	let destroyConfirmName = $state('');
+	let triggeringDestroy = $state(false);
+
 	// Policy attachment
 	let attachingPolicy = $state('');
 
@@ -183,6 +188,18 @@
 		} catch (e) {
 			alert((e as Error).message);
 			triggeringDrift = false;
+		}
+	}
+
+	async function triggerDestroy() {
+		if (!stack || destroyConfirmName !== stack.name) return;
+		triggeringDestroy = true;
+		try {
+			const run = await runs.create(stackID, 'destroy');
+			goto(`/runs/${run.id}`);
+		} catch (e) {
+			alert((e as Error).message);
+			triggeringDestroy = false;
 		}
 	}
 
@@ -452,6 +469,10 @@
 			<button onclick={toggleDisabled} disabled={togglingDisabled}
 				class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 				{togglingDisabled ? '…' : stack.is_disabled ? 'Enable' : 'Disable'}
+			</button>
+			<button onclick={() => { showDestroyModal = true; destroyConfirmName = ''; }}
+				class="border border-orange-900 hover:border-orange-700 text-orange-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
+				Destroy infra
 			</button>
 			<button onclick={deleteStack}
 				class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
@@ -1070,7 +1091,7 @@
 										{run.status}
 									</a>
 								</td>
-								<td class="px-4 py-2.5 text-zinc-400">
+								<td class="px-4 py-2.5 {run.type === 'destroy' ? 'text-orange-400 font-medium' : 'text-zinc-400'}">
 									{run.type}{#if run.is_drift} <span class="text-xs text-amber-500">drift</span>{/if}
 									{#if run.pr_number}
 										<a href={run.pr_url} target="_blank" rel="noopener"
@@ -1154,6 +1175,50 @@
 		</form>
 	</section>
 
+</div>
+{/if}
+
+<!-- Destroy confirmation modal -->
+{#if showDestroyModal && stack}
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+	<div class="bg-zinc-900 border border-orange-900 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+		<div class="space-y-1">
+			<h2 class="text-white font-semibold text-base">Destroy infrastructure?</h2>
+			<p class="text-zinc-400 text-sm">
+				This will run <code class="text-orange-300">tofu destroy</code> on <span class="text-white font-medium">{stack.name}</span>.
+				A plan will be generated and you'll confirm before anything is deleted.
+			</p>
+		</div>
+		<div class="bg-orange-950/50 border border-orange-900 rounded-lg px-4 py-3 text-orange-300 text-xs space-y-1">
+			<p class="font-semibold">This will permanently destroy all managed infrastructure.</p>
+			<p>You will review the plan before the destroy is executed.</p>
+		</div>
+		<div class="space-y-1.5">
+			<label class="text-xs text-zinc-400" for="destroy-confirm">
+				Type <span class="font-mono text-white">{stack.name}</span> to confirm
+			</label>
+			<input
+				id="destroy-confirm"
+				class="field-input"
+				bind:value={destroyConfirmName}
+				placeholder={stack.name}
+				autocomplete="off"
+			/>
+		</div>
+		<div class="flex gap-3 pt-1">
+			<button
+				onclick={triggerDestroy}
+				disabled={destroyConfirmName !== stack.name || triggeringDestroy}
+				class="flex-1 bg-orange-700 hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium">
+				{triggeringDestroy ? 'Queuing…' : 'Queue destroy run'}
+			</button>
+			<button
+				onclick={() => { showDestroyModal = false; destroyConfirmName = ''; }}
+				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-4 py-2 rounded-lg transition-colors">
+				Cancel
+			</button>
+		</div>
+	</div>
 </div>
 {/if}
 
