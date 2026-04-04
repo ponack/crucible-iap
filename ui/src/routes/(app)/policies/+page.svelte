@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { policies, type Policy } from '$lib/api/client';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	let items = $state<Policy[]>([]);
 	let loading = $state(true);
@@ -11,6 +12,8 @@
 	let creating = $state(false);
 	let saving = $state(false);
 	let formError = $state<string | null>(null);
+	let validating = $state(false);
+	let validateResult = $state<{ ok: boolean; error?: string } | null>(null);
 	let form = $state({
 		name: '',
 		description: '',
@@ -64,6 +67,18 @@ warn_msgs[msg] {
 		} catch (e) {
 			formError = (e as Error).message;
 			saving = false;
+		}
+	}
+
+	async function validateRego() {
+		validating = true;
+		validateResult = null;
+		try {
+			validateResult = await policies.validate(form.type, form.body);
+		} catch (e) {
+			validateResult = { ok: false, error: (e as Error).message };
+		} finally {
+			validating = false;
 		}
 	}
 
@@ -122,9 +137,22 @@ warn_msgs[msg] {
 					<input id="p-desc" class="field-input" bind:value={form.description} placeholder="Optional" />
 				</div>
 				<div class="space-y-1.5">
-					<label class="field-label" for="p-body">Rego source</label>
+					<div class="flex items-center justify-between">
+						<label class="field-label" for="p-body">Rego source</label>
+						<button type="button" onclick={validateRego} disabled={validating || !form.body}
+							class="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40 transition-colors">
+							{validating ? 'Validating…' : 'Validate syntax'}
+						</button>
+					</div>
 					<textarea id="p-body" class="field-input font-mono text-xs" rows="14"
 						bind:value={form.body} required></textarea>
+					{#if validateResult}
+						{#if validateResult.ok}
+							<p class="text-xs text-green-400">Syntax valid — no compile errors.</p>
+						{:else}
+							<p class="text-xs text-red-400 whitespace-pre-wrap font-mono">{validateResult.error}</p>
+						{/if}
+					{/if}
 				</div>
 				<div class="flex items-center justify-between">
 					<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">

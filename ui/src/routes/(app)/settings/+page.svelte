@@ -17,7 +17,7 @@
 	let inviteError = $state<string | null>(null);
 
 	const isAdmin = $derived(
-		members.find((m) => m.user_id === auth.user?.id)?.role === 'admin'
+		auth.isAdmin || members.find((m) => m.user_id === auth.user?.id)?.role === 'admin'
 	);
 
 	onMount(async () => {

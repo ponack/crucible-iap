@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { policies, type Policy } from '$lib/api/client';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	const id = $derived(page.params.id!);
 
@@ -91,10 +92,12 @@
 				</span>
 			</div>
 		</div>
-		<button onclick={deletePolicy}
-			class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
-			Delete
-		</button>
+		{#if auth.isAdmin}
+			<button onclick={deletePolicy}
+				class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
+				Delete
+			</button>
+		{/if}
 	</div>
 
 	<!-- Editor -->

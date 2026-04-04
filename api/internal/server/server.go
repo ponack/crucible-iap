@@ -121,6 +121,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.Use(auth.JWTMiddleware(s.cfg.SecretKey))
 
 	// Org members & invites
+	api.GET("/org/me", orgHandler.Me)
 	api.GET("/org/members", orgHandler.ListMembers)
 	api.PATCH("/org/members/:userID", orgHandler.UpdateMember, admin)
 	api.DELETE("/org/members/:userID", orgHandler.RemoveMember, admin)
@@ -130,6 +131,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.POST("/invites/:token/accept", orgHandler.AcceptInvite)
 
 	// Policies
+	api.POST("/policies/validate", policyHandler.Validate)
 	api.GET("/policies", policyHandler.List)
 	api.POST("/policies", policyHandler.Create, member)
 	api.GET("/policies/:id", policyHandler.Get)
