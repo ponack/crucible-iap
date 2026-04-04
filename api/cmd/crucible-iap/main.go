@@ -69,8 +69,6 @@ func runServe() {
 	}
 	defer pool.Close()
 
-	audit.StartPartitionMaintainer(ctx, pool)
-
 	store, err := storage.New(cfg)
 	if err != nil {
 		slog.Error("failed to connect to object storage", "err", err)
@@ -103,6 +101,8 @@ func runServe() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	audit.StartPartitionMaintainer(ctx, pool)
 
 	// Start worker dispatcher in background
 	go func() {
