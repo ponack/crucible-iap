@@ -7,6 +7,7 @@
 	let offset = $state(0);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let expandedID = $state<number | null>(null);
 
 	async function load() {
 		loading = true;
@@ -15,6 +16,7 @@
 			const res = await audit.list(offset);
 			events = res.data;
 			pagination = res.pagination;
+			expandedID = null;
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -31,11 +33,25 @@
 		return new Date(iso).toLocaleString();
 	}
 
+	function toggleExpand(id: number) {
+		expandedID = expandedID === id ? null : id;
+	}
+
+	function hasContext(ctx: Record<string, unknown>): boolean {
+		return ctx != null && Object.keys(ctx).length > 0;
+	}
+
 	const actionColour: Record<string, string> = {
 		'run.created': 'text-blue-400',
 		'run.confirmed': 'text-green-400',
 		'run.discarded': 'text-zinc-400',
 		'run.canceled': 'text-zinc-400',
+		'run.preparing': 'text-blue-400',
+		'run.planning': 'text-blue-400',
+		'run.unconfirmed': 'text-yellow-400',
+		'run.applying': 'text-blue-400',
+		'run.finished': 'text-green-400',
+		'run.failed': 'text-red-400',
 		'stack.created': 'text-indigo-400',
 		'stack.deleted': 'text-red-400'
 	};
@@ -61,11 +77,15 @@
 						<th class="text-left px-4 py-3">Action</th>
 						<th class="text-left px-4 py-3">Resource</th>
 						<th class="text-left px-4 py-3">Actor</th>
+						<th class="px-4 py-3"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-zinc-800">
 					{#each events as event (event.id)}
-						<tr class="hover:bg-zinc-900/50 transition-colors">
+						<tr
+							class="hover:bg-zinc-900/50 transition-colors {hasContext(event.context) ? 'cursor-pointer' : ''}"
+							onclick={() => hasContext(event.context) && toggleExpand(event.id)}
+						>
 							<td class="px-4 py-3 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(event.occurred_at)}</td>
 							<td class="px-4 py-3">
 								<span class="font-mono text-xs {actionColour[event.action] ?? 'text-zinc-300'}">
@@ -85,7 +105,19 @@
 							<td class="px-4 py-3 text-zinc-500 text-xs font-mono">
 								{event.actor_type}{event.actor_id ? '/' + event.actor_id.slice(0, 8) : ''}
 							</td>
+							<td class="px-4 py-3 text-right text-zinc-600 text-xs">
+								{#if hasContext(event.context)}
+									{expandedID === event.id ? '▲' : '▼'}
+								{/if}
+							</td>
 						</tr>
+						{#if expandedID === event.id}
+							<tr class="bg-zinc-950">
+								<td colspan="5" class="px-4 py-3">
+									<pre class="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all">{JSON.stringify(event.context, null, 2)}</pre>
+								</td>
+							</tr>
+						{/if}
 					{/each}
 				</tbody>
 			</table>

@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/notify"
@@ -112,17 +113,21 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 
 	log.Info("starting run job")
 
-	if err := w.setStatus(ctx, args.RunID, "preparing", nil); err != nil {
+	// Load orgID once — needed for audit events throughout the job lifecycle.
+	var orgID string
+	_ = w.pool.QueryRow(ctx, `SELECT org_id FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID)
+
+	if err := w.setStatus(ctx, orgID, args.RunID, "preparing", nil); err != nil {
 		return err
 	}
 
 	// Issue a short-lived JWT scoped to this run only
 	jobToken, err := w.issueJobToken(args.RunID, args.StackID)
 	if err != nil {
-		return w.failRun(ctx, args.RunID, fmt.Errorf("issue job token: %w", err))
+		return w.failRun(ctx, orgID, args.RunID, fmt.Errorf("issue job token: %w", err))
 	}
 
-	if err := w.setStatus(ctx, args.RunID, "planning", nil); err != nil {
+	if err := w.setStatus(ctx, orgID, args.RunID, "planning", nil); err != nil {
 		return err
 	}
 
@@ -172,7 +177,7 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 
 	if runErr != nil {
 		go w.notifier.RunFinished(context.Background(), args.RunID, false)
-		return w.failRun(ctx, args.RunID, runErr)
+		return w.failRun(ctx, orgID, args.RunID, runErr)
 	}
 
 	// For tracked runs that aren't auto-apply, transition to unconfirmed
@@ -184,7 +189,7 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	}
 
 	now := time.Now()
-	if err := w.setStatus(ctx, args.RunID, finalStatus, &now); err != nil {
+	if err := w.setStatus(ctx, orgID, args.RunID, finalStatus, &now); err != nil {
 		return err
 	}
 
@@ -205,26 +210,44 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	return nil
 }
 
-func (w *RunWorker) setStatus(ctx context.Context, runID, status string, finishedAt *time.Time) error {
+func (w *RunWorker) setStatus(ctx context.Context, orgID, runID, status string, finishedAt *time.Time) error {
+	var err error
 	if finishedAt != nil {
-		_, err := w.pool.Exec(ctx, `
+		_, err = w.pool.Exec(ctx, `
 			UPDATE runs SET status = $1, finished_at = $2 WHERE id = $3
 		`, status, finishedAt, runID)
+	} else {
+		_, err = w.pool.Exec(ctx, `
+			UPDATE runs SET status = $1,
+			       started_at = CASE WHEN started_at IS NULL THEN now() ELSE started_at END
+			WHERE id = $2
+		`, status, runID)
+	}
+	if err != nil {
 		return err
 	}
-	_, err := w.pool.Exec(ctx, `
-		UPDATE runs SET status = $1,
-		       started_at = CASE WHEN started_at IS NULL THEN now() ELSE started_at END
-		WHERE id = $2
-	`, status, runID)
-	return err
+	audit.Record(ctx, w.pool, audit.Event{
+		ActorType:    "runner",
+		Action:       "run." + status,
+		ResourceID:   runID,
+		ResourceType: "run",
+		OrgID:        orgID,
+	})
+	return nil
 }
 
-func (w *RunWorker) failRun(ctx context.Context, runID string, cause error) error {
+func (w *RunWorker) failRun(ctx context.Context, orgID, runID string, cause error) error {
 	now := time.Now()
 	_, _ = w.pool.Exec(ctx, `
 		UPDATE runs SET status = 'failed', finished_at = $1 WHERE id = $2
 	`, now, runID)
+	audit.Record(ctx, w.pool, audit.Event{
+		ActorType:    "runner",
+		Action:       "run.failed",
+		ResourceID:   runID,
+		ResourceType: "run",
+		OrgID:        orgID,
+	})
 	return cause // returning causes River to record the error and retry/discard
 }
 

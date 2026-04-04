@@ -59,8 +59,10 @@ type Stack struct {
 	SecretStoreProvider string   `json:"secret_store_provider,omitempty"`
 	HasStateBackend     bool     `json:"has_state_backend"`
 	StateBackendProvider string  `json:"state_backend_provider,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	LastRunStatus string     `json:"last_run_status,omitempty"`
+	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 type Token struct {
@@ -76,14 +78,20 @@ func (h *Handler) List(c echo.Context) error {
 	p := pagination.Parse(c)
 
 	rows, err := h.pool.Query(c.Request().Context(), `
-		SELECT id, org_id, slug, name, COALESCE(description,''), tool,
-		       COALESCE(tool_version,''), repo_url, repo_branch, project_root,
-		       COALESCE(runner_image,''), auto_apply, drift_detection,
-		       COALESCE(drift_schedule,''), created_at, updated_at,
+		SELECT s.id, s.org_id, s.slug, s.name, COALESCE(s.description,''), s.tool,
+		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
+		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
+		       COALESCE(s.drift_schedule,''), s.created_at, s.updated_at,
+		       COALESCE(lr.status,''), lr.queued_at,
 		       COUNT(*) OVER () AS total
-		FROM stacks
-		WHERE org_id = $1
-		ORDER BY created_at DESC
+		FROM stacks s
+		LEFT JOIN LATERAL (
+		    SELECT status, queued_at FROM runs
+		    WHERE stack_id = s.id
+		    ORDER BY queued_at DESC LIMIT 1
+		) lr ON true
+		WHERE s.org_id = $1
+		ORDER BY s.created_at DESC
 		LIMIT $2 OFFSET $3
 	`, orgID, p.Limit, p.Offset)
 	if err != nil {
@@ -98,7 +106,9 @@ func (h *Handler) List(c echo.Context) error {
 		if err := rows.Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 			&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.CreatedAt, &s.UpdatedAt, &total); err != nil {
+			&s.CreatedAt, &s.UpdatedAt,
+			&s.LastRunStatus, &s.LastRunAt,
+			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		out = append(out, s)

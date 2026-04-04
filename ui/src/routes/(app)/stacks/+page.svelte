@@ -33,6 +33,18 @@
 		ansible: 'bg-red-900 text-red-300',
 		pulumi: 'bg-sky-900 text-sky-300'
 	};
+
+	const runStatusColour: Record<string, string> = {
+		finished: 'text-green-400',
+		failed: 'text-red-400',
+		unconfirmed: 'text-yellow-400',
+		applying: 'text-blue-400',
+		planning: 'text-blue-400',
+		preparing: 'text-blue-400',
+		queued: 'text-zinc-400',
+		canceled: 'text-zinc-500',
+		discarded: 'text-zinc-500'
+	};
 </script>
 
 <div class="p-6 space-y-4">
@@ -62,6 +74,7 @@
 						<th class="text-left px-4 py-3">Name</th>
 						<th class="text-left px-4 py-3">Tool</th>
 						<th class="text-left px-4 py-3">Branch</th>
+						<th class="text-left px-4 py-3">Last run</th>
 						<th class="text-left px-4 py-3">Auto-apply</th>
 					</tr>
 				</thead>
@@ -82,6 +95,15 @@
 								</span>
 							</td>
 							<td class="px-4 py-3 text-zinc-400 font-mono text-xs">{stack.repo_branch}</td>
+							<td class="px-4 py-3 text-xs">
+								{#if stack.last_run_status}
+									<span class="font-medium {runStatusColour[stack.last_run_status] ?? 'text-zinc-400'}">
+										{stack.last_run_status}
+									</span>
+								{:else}
+									<span class="text-zinc-600">—</span>
+								{/if}
+							</td>
 							<td class="px-4 py-3 text-zinc-400">
 								{stack.auto_apply ? '✓' : '—'}
 							</td>
