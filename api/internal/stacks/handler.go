@@ -59,6 +59,7 @@ type Stack struct {
 	SecretStoreProvider string   `json:"secret_store_provider,omitempty"`
 	HasStateBackend     bool     `json:"has_state_backend"`
 	StateBackendProvider string  `json:"state_backend_provider,omitempty"`
+	IsDisabled    bool       `json:"is_disabled"`
 	LastRunStatus string     `json:"last_run_status,omitempty"`
 	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -81,7 +82,7 @@ func (h *Handler) List(c echo.Context) error {
 		SELECT s.id, s.org_id, s.slug, s.name, COALESCE(s.description,''), s.tool,
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
-		       COALESCE(s.drift_schedule,''), s.created_at, s.updated_at,
+		       COALESCE(s.drift_schedule,''), s.is_disabled, s.created_at, s.updated_at,
 		       COALESCE(lr.status,''), lr.queued_at,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
@@ -106,7 +107,7 @@ func (h *Handler) List(c echo.Context) error {
 		if err := rows.Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 			&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.CreatedAt, &s.UpdatedAt,
+			&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt,
 			&s.LastRunStatus, &s.LastRunAt,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -193,7 +194,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE((SELECT ss.provider FROM stack_secret_stores ss WHERE ss.stack_id = s.id), ''),
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
-		       s.created_at, s.updated_at
+		       s.is_disabled, s.created_at, s.updated_at
 		FROM stacks s WHERE s.id = $1 AND s.org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
@@ -202,7 +203,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.HasVCSToken, &s.HasSlackWebhook, &s.NotifyEvents,
 		&s.HasSecretStore, &s.SecretStoreProvider,
 		&s.HasStateBackend, &s.StateBackendProvider,
-		&s.CreatedAt, &s.UpdatedAt)
+		&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -226,6 +227,7 @@ func (h *Handler) Update(c echo.Context) error {
 		AutoApply      *bool   `json:"auto_apply"`
 		DriftDetection *bool   `json:"drift_detection"`
 		DriftSchedule  *string `json:"drift_schedule"`
+		IsDisabled     *bool   `json:"is_disabled"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -263,13 +265,16 @@ func (h *Handler) Update(c echo.Context) error {
 	if req.DriftSchedule != nil {
 		add("drift_schedule", *req.DriftSchedule)
 	}
+	if req.IsDisabled != nil {
+		add("is_disabled", *req.IsDisabled)
+	}
 
 	query := fmt.Sprintf(`
 		UPDATE stacks SET %s WHERE id = $1 AND org_id = $2
 		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
 		          COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		          COALESCE(runner_image,''), auto_apply, drift_detection,
-		          COALESCE(drift_schedule,''), created_at, updated_at
+		          COALESCE(drift_schedule,''), is_disabled, created_at, updated_at
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -277,7 +282,7 @@ func (h *Handler) Update(c echo.Context) error {
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.CreatedAt, &s.UpdatedAt)
+			&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}

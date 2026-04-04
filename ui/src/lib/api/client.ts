@@ -95,6 +95,7 @@ export interface Stack {
 	secret_store_provider?: string;
 	has_state_backend: boolean;
 	state_backend_provider?: string;
+	is_disabled: boolean;
 	last_run_status?: string;
 	last_run_at?: string;
 	created_at: string;

@@ -33,7 +33,7 @@
 	onDestroy(() => sse?.close());
 
 	function startSSE() {
-		if (!run || terminalStatuses.has(run.status)) return;
+		if (!run) return;
 
 		const token = auth.accessToken;
 		// EventSource doesn't support headers — use query param for token
@@ -98,6 +98,17 @@
 
 	function fmtDate(iso?: string) {
 		return iso ? new Date(iso).toLocaleString() : '—';
+	}
+
+	function downloadLog() {
+		if (logLines.length === 0) return;
+		const blob = new Blob([logLines.join('\n')], { type: 'text/plain' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = `run-${runID.slice(0, 8)}.log`;
+		a.click();
+		URL.revokeObjectURL(url);
 	}
 
 	function duration(start?: string, end?: string) {
@@ -179,15 +190,25 @@
 	<div class="flex-1 flex flex-col min-h-0">
 		<div class="flex items-center justify-between px-4 py-2 bg-zinc-950 border-b border-zinc-800">
 			<span class="text-xs text-zinc-500 font-mono">Run output</span>
-			<label class="flex items-center gap-1.5 text-xs text-zinc-500 cursor-pointer">
-				<input type="checkbox" bind:checked={autoScroll} class="rounded" />
-				Auto-scroll
-			</label>
+			<div class="flex items-center gap-3">
+				{#if logLines.length > 0}
+					<button onclick={downloadLog}
+						class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+						Download
+					</button>
+				{/if}
+				<label class="flex items-center gap-1.5 text-xs text-zinc-500 cursor-pointer">
+					<input type="checkbox" bind:checked={autoScroll} class="rounded" />
+					Auto-scroll
+				</label>
+			</div>
 		</div>
 		<div bind:this={logEl}
 			class="flex-1 overflow-y-auto bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-300 leading-relaxed">
 			{#if logLines.length === 0}
-				{#if terminalStatuses.has(run.status)}
+				{#if run.status === 'queued'}
+					<span class="text-zinc-600 animate-pulse">Waiting for output…</span>
+				{:else if terminalStatuses.has(run.status)}
 					<span class="text-zinc-600">No log output recorded.</span>
 				{:else}
 					<span class="text-zinc-600 animate-pulse">Waiting for output…</span>
