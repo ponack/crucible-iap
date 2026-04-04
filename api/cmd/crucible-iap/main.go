@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/db"
 	"github.com/ponack/crucible-iap/internal/notify"
@@ -67,6 +68,8 @@ func runServe() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+
+	audit.StartPartitionMaintainer(ctx, pool)
 
 	store, err := storage.New(cfg)
 	if err != nil {

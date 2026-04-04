@@ -5,6 +5,8 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"time"
@@ -48,9 +50,8 @@ func Record(ctx context.Context, pool *pgxpool.Pool, e Event) {
 		nilIfEmpty(e.ResourceID), nilIfEmpty(e.ResourceType),
 		nilIfEmpty(e.OrgID), parseIP(e.IPAddress), e.Context)
 	if err != nil {
-		// Audit failures are logged but never fatal — don't break the request
-		// TODO: structured log here
-		_ = err
+		// Audit failures are logged but never fatal — don't break the request.
+		slog.Error("audit: failed to record event", "action", e.Action, "err", err)
 	}
 }
 
@@ -104,4 +105,64 @@ func parseIP(s string) any {
 		return nil
 	}
 	return addr.String()
+}
+
+// ── Partition maintenance ─────────────────────────────────────────────────────
+
+// EnsurePartitions creates monthly audit_events partitions for the current
+// month and the next [ahead] months. Safe to call repeatedly — uses
+// CREATE TABLE IF NOT EXISTS so existing partitions are left untouched.
+func EnsurePartitions(ctx context.Context, pool *pgxpool.Pool, ahead int) error {
+	now := time.Now().UTC()
+	for i := 0; i <= ahead; i++ {
+		target := now.AddDate(0, i, 0)
+		y, m, _ := target.Date()
+		tableName := fmt.Sprintf("audit_events_%04d_%02d", y, int(m))
+		from := fmt.Sprintf("%04d-%02d-01", y, int(m))
+		next := time.Date(y, m+1, 1, 0, 0, 0, 0, time.UTC)
+		to := fmt.Sprintf("%04d-%02d-01", next.Year(), int(next.Month()))
+
+		_, err := pool.Exec(ctx, fmt.Sprintf(
+			`CREATE TABLE IF NOT EXISTS %s PARTITION OF audit_events`+
+				` FOR VALUES FROM ('%s') TO ('%s')`,
+			tableName, from, to,
+		))
+		if err != nil {
+			return fmt.Errorf("create partition %s: %w", tableName, err)
+		}
+	}
+	return nil
+}
+
+// StartPartitionMaintainer calls EnsurePartitions immediately, then again at
+// the start of each calendar month, always staying [ahead] months ahead.
+// Must be called after the database pool is ready.
+func StartPartitionMaintainer(ctx context.Context, pool *pgxpool.Pool) {
+	const ahead = 2
+
+	if err := EnsurePartitions(ctx, pool, ahead); err != nil {
+		slog.Error("audit: partition maintenance failed at startup", "err", err)
+	} else {
+		slog.Info("audit: partitions ensured", "months_ahead", ahead)
+	}
+
+	go func() {
+		for {
+			// Sleep until the 2nd of next month (UTC) to avoid midnight edge cases.
+			now := time.Now().UTC()
+			next := time.Date(now.Year(), now.Month()+1, 2, 0, 0, 0, 0, time.UTC)
+			timer := time.NewTimer(next.Sub(now))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+				if err := EnsurePartitions(ctx, pool, ahead); err != nil {
+					slog.Error("audit: monthly partition maintenance failed", "err", err)
+				} else {
+					slog.Info("audit: monthly partition maintenance complete", "months_ahead", ahead)
+				}
+			}
+		}
+	}()
 }
