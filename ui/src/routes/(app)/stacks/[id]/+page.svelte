@@ -71,6 +71,9 @@
 	let rotatingWebhook = $state(false);
 	let newWebhookSecret = $state<string | null>(null);
 
+	// Disable/enable
+	let togglingDisabled = $state(false);
+
 	// State backend
 	let stateBackendProvider = $state<StateBackendProvider | ''>('');
 	let savingStateBackend = $state(false);
@@ -322,6 +325,23 @@
 		}
 	}
 
+	async function toggleDisabled() {
+		if (!stack) return;
+		const next = !stack.is_disabled;
+		const msg = next
+			? 'Disable this stack? Webhook triggers and drift checks will be paused.'
+			: 'Re-enable this stack?';
+		if (!confirm(msg)) return;
+		togglingDisabled = true;
+		try {
+			stack = await stacks.update(stackID, { is_disabled: next });
+		} catch (e) {
+			alert((e as Error).message);
+		} finally {
+			togglingDisabled = false;
+		}
+	}
+
 	async function rotateWebhookSecret() {
 		if (!confirm('Rotate the webhook secret? The old secret will stop working immediately — update your repository webhook settings before the next push.')) return;
 		rotatingWebhook = true;
@@ -386,6 +406,13 @@
 {:else}
 <div class="p-6 space-y-6 max-w-3xl">
 
+	<!-- Disabled banner -->
+	{#if stack.is_disabled}
+		<div class="bg-zinc-800 border border-zinc-700 rounded-xl px-5 py-3 flex items-center justify-between gap-4">
+			<p class="text-zinc-300 text-sm">This stack is <span class="font-semibold text-white">disabled</span>. Webhook triggers and drift checks are paused. Manual runs can still be triggered.</p>
+		</div>
+	{/if}
+
 	<!-- Header -->
 	<div class="flex items-start justify-between">
 		<div>
@@ -421,6 +448,10 @@
 			<button onclick={() => { editing = !editing; resetForm(); }}
 				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{editing ? 'Cancel' : 'Edit'}
+			</button>
+			<button onclick={toggleDisabled} disabled={togglingDisabled}
+				class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+				{togglingDisabled ? '…' : stack.is_disabled ? 'Enable' : 'Disable'}
 			</button>
 			<button onclick={deleteStack}
 				class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">

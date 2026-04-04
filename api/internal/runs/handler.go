@@ -2,6 +2,7 @@
 package runs
 
 import (
+	"bufio"
 	"fmt"
 	"net/http"
 	"time"
@@ -284,12 +285,31 @@ func (h *Handler) Cancel(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// Logs streams live run output via Server-Sent Events.
+// archivedStatuses are run states where the log has been fully written to
+// object storage. For these we serve the archived file rather than the
+// live broker (which has no data once the worker exits).
+var archivedStatuses = map[string]bool{
+	"unconfirmed": true, // plan done, awaiting approval
+	"finished":    true,
+	"failed":      true,
+	"canceled":    true,
+	"discarded":   true,
+}
+
+// Logs serves run output as Server-Sent Events.
+// For in-progress runs it tails the live log broker; for completed/archived
+// runs it streams the log stored in object storage line by line.
 func (h *Handler) Logs(c echo.Context) error {
 	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
 
 	var status string
-	if err := h.pool.QueryRow(c.Request().Context(), `SELECT status FROM runs WHERE id = $1`, id).Scan(&status); err != nil {
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT r.status FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1 AND s.org_id = $2
+	`, id, orgID).Scan(&status)
+	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found")
 	}
 
@@ -297,7 +317,7 @@ func (h *Handler) Logs(c echo.Context) error {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no") // disable nginx/caddy buffering
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
 	flusher, ok := w.Writer.(http.Flusher)
@@ -305,12 +325,38 @@ func (h *Handler) Logs(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "streaming not supported")
 	}
 
-	lines, cancel := h.dispatcher.Subscribe(id)
-	defer cancel()
-
-	// Confirm connection immediately
 	fmt.Fprintf(w, ": connected run=%s\n\n", id)
 	flusher.Flush()
+
+	// Archived path: stream stored log from object storage.
+	if archivedStatuses[status] {
+		obj, err := h.storage.GetLog(c.Request().Context(), id)
+		if err != nil {
+			// Log not found (e.g. run was canceled before any output) — just close.
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			flusher.Flush()
+			return nil
+		}
+		defer obj.Close()
+
+		scanner := bufio.NewScanner(obj)
+		for scanner.Scan() {
+			select {
+			case <-c.Request().Context().Done():
+				return nil
+			default:
+			}
+			fmt.Fprintf(w, "data: %s\n\n", scanner.Text())
+			flusher.Flush()
+		}
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		flusher.Flush()
+		return nil
+	}
+
+	// Live path: tail the in-memory log broker.
+	lines, cancel := h.dispatcher.Subscribe(id)
+	defer cancel()
 
 	for {
 		select {

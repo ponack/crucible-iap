@@ -82,9 +82,14 @@
 					{#each items as stack (stack.id)}
 						<tr class="hover:bg-zinc-900/50 transition-colors">
 							<td class="px-4 py-3">
-								<a href="/stacks/{stack.id}" class="text-white hover:text-indigo-400 font-medium">
-									{stack.name}
-								</a>
+								<div class="flex items-center gap-2">
+									<a href="/stacks/{stack.id}" class="font-medium {stack.is_disabled ? 'text-zinc-500 hover:text-zinc-300' : 'text-white hover:text-indigo-400'}">
+										{stack.name}
+									</a>
+									{#if stack.is_disabled}
+										<span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">disabled</span>
+									{/if}
+								</div>
 								{#if stack.description}
 									<p class="text-zinc-500 text-xs mt-0.5">{stack.description}</p>
 								{/if}
