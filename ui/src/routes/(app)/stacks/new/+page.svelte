@@ -9,11 +9,14 @@
 		name: '',
 		description: '',
 		tool: 'opentofu' as 'opentofu' | 'terraform' | 'ansible' | 'pulumi',
+		tool_version: '',
 		repo_url: '',
 		repo_branch: 'main',
 		project_root: '.',
+		runner_image: '',
 		auto_apply: false,
-		drift_detection: false
+		drift_detection: false,
+		drift_schedule: '0 */6 * * *'
 	});
 
 	async function submit(e: SubmitEvent) {
@@ -21,7 +24,12 @@
 		submitting = true;
 		error = null;
 		try {
-			const stack = await stacks.create(form);
+			const payload: Record<string, unknown> = { ...form };
+			// Strip optional string fields that are empty so the backend uses its defaults
+			if (!payload.tool_version) delete payload.tool_version;
+			if (!payload.runner_image) delete payload.runner_image;
+			if (!payload.drift_detection) delete payload.drift_schedule;
+			const stack = await stacks.create(payload);
 			goto(`/stacks/${stack.id}`);
 		} catch (e) {
 			error = (e as Error).message;
@@ -64,6 +72,12 @@
 			</div>
 
 			<div class="space-y-1.5">
+				<label class="field-label" for="tool_version">Tool version <span class="text-zinc-600">(optional)</span></label>
+				<input id="tool_version" class="field-input font-mono text-sm" bind:value={form.tool_version}
+					placeholder="e.g. 1.7.0 — leave blank to use the runner default" />
+			</div>
+
+			<div class="space-y-1.5">
 				<label class="field-label" for="description">Description <span class="text-zinc-600">(optional)</span></label>
 				<input id="description" class="field-input" bind:value={form.description} placeholder="What does this stack manage?" />
 			</div>
@@ -90,6 +104,17 @@
 			</div>
 		</fieldset>
 
+		<fieldset class="border border-zinc-800 rounded-xl p-5 space-y-4">
+			<legend class="text-xs text-zinc-500 uppercase tracking-widest px-1">Runner</legend>
+
+			<div class="space-y-1.5">
+				<label class="field-label" for="runner_image">Runner image <span class="text-zinc-600">(optional)</span></label>
+				<input id="runner_image" class="field-input font-mono text-sm" bind:value={form.runner_image}
+					placeholder="e.g. ghcr.io/ponack/crucible-iap-runner:latest" />
+				<p class="text-xs text-zinc-600">Leave blank to use the server default runner image.</p>
+			</div>
+		</fieldset>
+
 		<fieldset class="border border-zinc-800 rounded-xl p-5 space-y-3">
 			<legend class="text-xs text-zinc-500 uppercase tracking-widest px-1">Behaviour</legend>
 
@@ -108,6 +133,19 @@
 					Drift detection — schedule periodic plan runs to detect configuration drift
 				</span>
 			</label>
+
+			{#if form.drift_detection}
+				<div class="space-y-1.5 pl-7">
+					<label class="field-label" for="drift_schedule">Drift schedule (cron)</label>
+					<select id="drift_schedule" class="field-input" bind:value={form.drift_schedule}>
+						<option value="0 */1 * * *">Every hour</option>
+						<option value="0 */6 * * *">Every 6 hours</option>
+						<option value="0 */12 * * *">Every 12 hours</option>
+						<option value="0 0 * * *">Daily (midnight UTC)</option>
+						<option value="0 0 * * 1">Weekly (Monday midnight UTC)</option>
+					</select>
+				</div>
+			{/if}
 		</fieldset>
 
 		<div class="flex items-center gap-3">
