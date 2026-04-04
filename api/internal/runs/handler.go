@@ -31,6 +31,7 @@ func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, d *work
 type Run struct {
 	ID          string     `json:"id"`
 	StackID     string     `json:"stack_id"`
+	StackName   string     `json:"stack_name,omitempty"` // populated by ListAll
 	Status      string     `json:"status"`
 	Type        string     `json:"type"`
 	Trigger     string     `json:"trigger"`
@@ -45,6 +46,46 @@ type Run struct {
 	QueuedAt    time.Time  `json:"queued_at"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+}
+
+// ListAll returns paginated runs across all stacks in the authenticated org.
+func (h *Handler) ListAll(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	p := pagination.Parse(c)
+
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT r.id, r.stack_id, s.name,
+		       r.status, r.type, r.trigger,
+		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''),
+		       r.is_drift, r.pr_number, r.pr_url, r.plan_add, r.plan_change, r.plan_destroy,
+		       r.queued_at, r.started_at, r.finished_at,
+		       COUNT(*) OVER () AS total
+		FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE s.org_id = $1
+		ORDER BY r.queued_at DESC
+		LIMIT $2 OFFSET $3
+	`, orgID, p.Limit, p.Offset)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+
+	var out []Run
+	var total int
+	for rows.Next() {
+		var r Run
+		if err := rows.Scan(&r.ID, &r.StackID, &r.StackName,
+			&r.Status, &r.Type, &r.Trigger,
+			&r.CommitSHA, &r.Branch, &r.IsDrift,
+			&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
+			&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
+			&total); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		out = append(out, r)
+	}
+	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
 }
 
 // List returns runs for a specific stack.
@@ -148,17 +189,20 @@ func (h *Handler) Create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, r)
 }
 
-// Get returns a single run by ID.
+// Get returns a single run by ID, scoped to the caller's org.
 func (h *Handler) Get(c echo.Context) error {
 	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
 	var r Run
 	err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT id, stack_id, status, type, trigger,
-		       COALESCE(commit_sha,''), COALESCE(branch,''),
-		       is_drift, pr_number, pr_url, plan_add, plan_change, plan_destroy,
-		       queued_at, started_at, finished_at
-		FROM runs WHERE id = $1
-	`, id).Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
+		SELECT r.id, r.stack_id, r.status, r.type, r.trigger,
+		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''),
+		       r.is_drift, r.pr_number, r.pr_url, r.plan_add, r.plan_change, r.plan_destroy,
+		       r.queued_at, r.started_at, r.finished_at
+		FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1 AND s.org_id = $2
+	`, id, orgID).Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
 		&r.CommitSHA, &r.Branch, &r.IsDrift,
 		&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
 		&r.QueuedAt, &r.StartedAt, &r.FinishedAt)

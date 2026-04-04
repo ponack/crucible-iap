@@ -1,34 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { stacks, runs, type Run, type PageMeta } from '$lib/api/client';
+	import { runs, type Run, type PageMeta } from '$lib/api/client';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let allRuns = $state<(Run & { stackName?: string })[]>([]);
+	let allRuns = $state<Run[]>([]);
 	let pagination = $state<PageMeta | null>(null);
 	let offset = $state(0);
-	// stackName map populated once; reused across page changes
-	let stackMap = $state(new Map<string, string>());
 
 	async function load() {
 		loading = true;
 		error = null;
 		try {
-			if (stackMap.size === 0) {
-				const stackRes = await stacks.list(0, 200);
-				stackMap = new Map(stackRes.data.map((s) => [s.id, s.name]));
-			}
-			// Fetch all stacks' runs concurrently for this page
-			const runLists = await Promise.all(
-				[...stackMap.keys()].map((id) => runs.list(id, offset))
-			);
-			const merged = runLists
-				.flatMap((r) => r.data.map((run) => ({ ...run, stackName: stackMap.get(run.stack_id) })))
-				.sort((a, b) => new Date(b.queued_at).getTime() - new Date(a.queued_at).getTime());
-			allRuns = merged;
-			// Use the first non-null pagination as reference
-			const first = runLists.find((r) => r.pagination);
-			pagination = first?.pagination ?? null;
+			const res = await runs.listAll(offset);
+			allRuns = res.data;
+			pagination = res.pagination;
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -92,10 +78,16 @@
 							</td>
 							<td class="px-4 py-3">
 								<a href="/stacks/{run.stack_id}" class="text-zinc-300 hover:text-white">
-									{run.stackName ?? run.stack_id.slice(0, 8)}
+									{run.stack_name ?? run.stack_id.slice(0, 8)}
 								</a>
 							</td>
-							<td class="px-4 py-3 text-zinc-400">{run.type}</td>
+							<td class="px-4 py-3 text-zinc-400">
+								{run.type}{#if run.is_drift} <span class="text-xs text-amber-500">drift</span>{/if}
+								{#if run.pr_number}
+									<a href={run.pr_url} target="_blank" rel="noopener"
+										class="ml-1 text-xs text-blue-400 hover:text-blue-300">#{run.pr_number}</a>
+								{/if}
+							</td>
 							<td class="px-4 py-3 text-zinc-500">{run.trigger}</td>
 							<td class="px-4 py-3 text-zinc-500 text-xs">{fmtDate(run.queued_at)}</td>
 						</tr>
@@ -105,13 +97,16 @@
 		</div>
 
 		{#if pagination && pagination.total > pagination.limit}
-			<div class="flex items-center justify-end gap-2 text-xs text-zinc-500">
-				<button onclick={prev} disabled={offset === 0} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
-					Previous
-				</button>
-				<button onclick={next} disabled={!pagination.has_more} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
-					Next
-				</button>
+			<div class="flex items-center justify-between text-xs text-zinc-500">
+				<span>{offset + 1}–{Math.min(offset + allRuns.length, pagination.total)} of {pagination.total}</span>
+				<div class="flex gap-2">
+					<button onclick={prev} disabled={offset === 0} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+						Previous
+					</button>
+					<button onclick={next} disabled={!pagination.has_more} class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 transition-colors">
+						Next
+					</button>
+				</div>
 			</div>
 		{/if}
 	{/if}

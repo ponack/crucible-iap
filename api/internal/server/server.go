@@ -172,6 +172,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.DELETE("/stacks/:id/state-backend", stackHandler.DeleteStateBackend, member)
 
 	// Runs
+	api.GET("/runs", runHandler.ListAll)
 	api.GET("/stacks/:stackID/runs", runHandler.List)
 	api.POST("/stacks/:stackID/runs", runHandler.Create, member)
 	api.POST("/stacks/:stackID/drift", runHandler.TriggerDrift, member)

@@ -95,6 +95,8 @@ export interface Stack {
 	secret_store_provider?: string;
 	has_state_backend: boolean;
 	state_backend_provider?: string;
+	last_run_status?: string;
+	last_run_at?: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -261,6 +263,11 @@ export const stacks = {
 			}),
 		delete: (stackID: string) =>
 			request<null>(`/stacks/${stackID}/state-backend`, { method: 'DELETE' })
+	},
+
+	webhook: {
+		rotateSecret: (stackID: string) =>
+			request<{ webhook_secret: string }>(`/stacks/${stackID}/webhook/rotate`, { method: 'POST' })
 	}
 };
 
@@ -278,6 +285,7 @@ export interface StackEnvVar {
 export interface Run {
 	id: string;
 	stack_id: string;
+	stack_name?: string; // populated by listAll
 	status:
 		| 'queued'
 		| 'preparing'
@@ -305,6 +313,8 @@ export interface Run {
 }
 
 export const runs = {
+	listAll: (offset = 0, limit = 50) =>
+		request<Paginated<Run>>(`/runs?limit=${limit}&offset=${offset}`),
 	list: (stackID: string, offset = 0, limit = 50) =>
 		request<Paginated<Run>>(`/stacks/${stackID}/runs?limit=${limit}&offset=${offset}`),
 	get: (id: string) => request<Run>(`/runs/${id}`),
