@@ -9,11 +9,17 @@
 	let error = $state<string | null>(null);
 	let expandedID = $state<number | null>(null);
 
+	let filterAction = $state('');
+	let filterResourceType = $state('');
+
 	async function load() {
 		loading = true;
 		error = null;
 		try {
-			const res = await audit.list(offset);
+			const res = await audit.list(offset, 50, {
+				action: filterAction || undefined,
+				resource_type: filterResourceType || undefined
+			});
 			events = res.data;
 			pagination = res.pagination;
 			expandedID = null;
@@ -28,6 +34,11 @@
 
 	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
 	function next() { offset += pagination?.limit ?? 50; load(); }
+
+	function applyFilters() { offset = 0; load(); }
+	function clearFilters() { filterAction = ''; filterResourceType = ''; offset = 0; load(); }
+
+	const hasFilters = $derived(filterAction !== '' || filterResourceType !== '');
 
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleString();
@@ -58,7 +69,34 @@
 </script>
 
 <div class="p-6 space-y-4">
-	<h1 class="text-lg font-semibold text-white">Audit log</h1>
+	<div class="flex items-center justify-between flex-wrap gap-2">
+		<h1 class="text-lg font-semibold text-white">Audit log</h1>
+		<div class="flex items-center gap-2">
+			<input
+				type="search" placeholder="Filter by action prefix…"
+				bind:value={filterAction}
+				onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 w-52"
+			/>
+			<select bind:value={filterResourceType} onchange={applyFilters}
+				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+				<option value="">All resources</option>
+				<option value="stack">Stack</option>
+				<option value="run">Run</option>
+				<option value="policy">Policy</option>
+				<option value="org">Org</option>
+			</select>
+			<button onclick={applyFilters}
+				class="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+				Filter
+			</button>
+			{#if hasFilters}
+				<button onclick={clearFilters} class="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+					Clear
+				</button>
+			{/if}
+		</div>
+	</div>
 
 	{#if loading}
 		<p class="text-zinc-500 text-sm">Loading…</p>

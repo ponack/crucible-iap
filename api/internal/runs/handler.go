@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,7 +62,23 @@ func (h *Handler) ListAll(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 	p := pagination.Parse(c)
 
-	rows, err := h.pool.Query(c.Request().Context(), `
+	conds := []string{"s.org_id = $1"}
+	args := []any{orgID}
+
+	if status := c.QueryParam("status"); status != "" {
+		args = append(args, status)
+		conds = append(conds, fmt.Sprintf("r.status = $%d", len(args)))
+	}
+	if typ := c.QueryParam("type"); typ != "" {
+		args = append(args, typ)
+		conds = append(conds, fmt.Sprintf("r.type = $%d", len(args)))
+	}
+
+	where := strings.Join(conds, " AND ")
+	args = append(args, p.Limit, p.Offset)
+	nLimit, nOffset := len(args)-1, len(args)
+
+	rows, err := h.pool.Query(c.Request().Context(), fmt.Sprintf(`
 		SELECT r.id, r.stack_id, s.name,
 		       r.status, r.type, r.trigger,
 		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''), COALESCE(r.commit_message,''),
@@ -70,10 +87,10 @@ func (h *Handler) ListAll(c echo.Context) error {
 		       COUNT(*) OVER () AS total
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
-		WHERE s.org_id = $1
+		WHERE %s
 		ORDER BY r.queued_at DESC
-		LIMIT $2 OFFSET $3
-	`, orgID, p.Limit, p.Offset)
+		LIMIT $%d OFFSET $%d
+	`, where, nLimit, nOffset), args...)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -101,16 +118,33 @@ func (h *Handler) List(c echo.Context) error {
 	stackID := c.Param("stackID")
 	p := pagination.Parse(c)
 
-	rows, err := h.pool.Query(c.Request().Context(), `
+	conds := []string{"stack_id = $1"}
+	args := []any{stackID}
+
+	if status := c.QueryParam("status"); status != "" {
+		args = append(args, status)
+		conds = append(conds, fmt.Sprintf("status = $%d", len(args)))
+	}
+	if typ := c.QueryParam("type"); typ != "" {
+		args = append(args, typ)
+		conds = append(conds, fmt.Sprintf("type = $%d", len(args)))
+	}
+
+	where := strings.Join(conds, " AND ")
+	args = append(args, p.Limit, p.Offset)
+	nLimit, nOffset := len(args)-1, len(args)
+
+	rows, err := h.pool.Query(c.Request().Context(), fmt.Sprintf(`
 		SELECT id, stack_id, status, type, trigger,
 		       COALESCE(commit_sha,''), COALESCE(branch,''), COALESCE(commit_message,''),
 		       is_drift, pr_number, pr_url, plan_add, plan_change, plan_destroy,
 		       queued_at, started_at, finished_at,
 		       COUNT(*) OVER () AS total
-		FROM runs WHERE stack_id = $1
+		FROM runs
+		WHERE %s
 		ORDER BY queued_at DESC
-		LIMIT $2 OFFSET $3
-	`, stackID, p.Limit, p.Offset)
+		LIMIT $%d OFFSET $%d
+	`, where, nLimit, nOffset), args...)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

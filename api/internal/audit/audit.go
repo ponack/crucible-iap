@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,20 +57,41 @@ func Record(ctx context.Context, pool *pgxpool.Pool, e Event) {
 }
 
 // List returns audit events for the authenticated org, newest first.
+// Supports optional query params: ?action=, ?resource_type=, ?actor_id=
 func (h *Handler) List(c echo.Context) error {
 	orgID := c.Get("orgID")
 	p := pagination.Parse(c)
 
-	rows, err := h.pool.Query(c.Request().Context(), `
+	conds := []string{"org_id = $1"}
+	args := []any{orgID}
+
+	if action := c.QueryParam("action"); action != "" {
+		args = append(args, action+"%")
+		conds = append(conds, fmt.Sprintf("action LIKE $%d", len(args)))
+	}
+	if rt := c.QueryParam("resource_type"); rt != "" {
+		args = append(args, rt)
+		conds = append(conds, fmt.Sprintf("resource_type = $%d", len(args)))
+	}
+	if actor := c.QueryParam("actor_id"); actor != "" {
+		args = append(args, actor)
+		conds = append(conds, fmt.Sprintf("actor_id::text = $%d", len(args)))
+	}
+
+	where := strings.Join(conds, " AND ")
+	args = append(args, p.Limit, p.Offset)
+	nLimit, nOffset := len(args)-1, len(args)
+
+	rows, err := h.pool.Query(c.Request().Context(), fmt.Sprintf(`
 		SELECT id, occurred_at, COALESCE(actor_id::text,''), actor_type,
 		       action, COALESCE(resource_id,''), COALESCE(resource_type,''),
 		       COALESCE(org_id::text,''), context,
 		       COUNT(*) OVER () AS total
 		FROM audit_events
-		WHERE org_id = $1
+		WHERE %s
 		ORDER BY occurred_at DESC
-		LIMIT $2 OFFSET $3
-	`, orgID, p.Limit, p.Offset)
+		LIMIT $%d OFFSET $%d
+	`, where, nLimit, nOffset), args...)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

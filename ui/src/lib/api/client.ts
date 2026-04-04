@@ -184,8 +184,13 @@ export interface StackToken {
 }
 
 export const stacks = {
-	list: (offset = 0, limit = 50) =>
-		request<Paginated<Stack>>(`/stacks?limit=${limit}&offset=${offset}`),
+	list: (offset = 0, limit = 50, filters: { q?: string; tool?: string; status?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.q) p.set('q', filters.q);
+		if (filters.tool) p.set('tool', filters.tool);
+		if (filters.status) p.set('status', filters.status);
+		return request<Paginated<Stack>>(`/stacks?${p}`);
+	},
 	get: (id: string) => request<Stack>(`/stacks/${id}`),
 	create: (data: Partial<Stack>) =>
 		request<Stack>('/stacks', { method: 'POST', body: JSON.stringify(data) }),
@@ -321,10 +326,18 @@ export interface Run {
 }
 
 export const runs = {
-	listAll: (offset = 0, limit = 50) =>
-		request<Paginated<Run>>(`/runs?limit=${limit}&offset=${offset}`),
-	list: (stackID: string, offset = 0, limit = 50) =>
-		request<Paginated<Run>>(`/stacks/${stackID}/runs?limit=${limit}&offset=${offset}`),
+	listAll: (offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.status) p.set('status', filters.status);
+		if (filters.type) p.set('type', filters.type);
+		return request<Paginated<Run>>(`/runs?${p}`);
+	},
+	list: (stackID: string, offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.status) p.set('status', filters.status);
+		if (filters.type) p.set('type', filters.type);
+		return request<Paginated<Run>>(`/stacks/${stackID}/runs?${p}`);
+	},
 	get: (id: string) => request<Run>(`/runs/${id}`),
 	create: (stackID: string, type = 'tracked') =>
 		request<Run>(`/stacks/${stackID}/runs`, { method: 'POST', body: JSON.stringify({ type }) }),
@@ -361,8 +374,13 @@ export interface AuditEvent {
 }
 
 export const audit = {
-	list: (offset = 0, limit = 50) =>
-		request<Paginated<AuditEvent>>(`/audit?limit=${limit}&offset=${offset}`)
+	list: (offset = 0, limit = 50, filters: { action?: string; resource_type?: string; actor_id?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.action) p.set('action', filters.action);
+		if (filters.resource_type) p.set('resource_type', filters.resource_type);
+		if (filters.actor_id) p.set('actor_id', filters.actor_id);
+		return request<Paginated<AuditEvent>>(`/audit?${p}`);
+	}
 };
 
 // ── Policies ──────────────────────────────────────────────────────────────────
