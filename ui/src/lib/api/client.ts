@@ -404,6 +404,11 @@ export interface StackPolicyRef {
 }
 
 export const policies = {
+	validate: (type: string, body: string) =>
+		request<{ ok: boolean; error?: string }>('/policies/validate', {
+			method: 'POST',
+			body: JSON.stringify({ type, body })
+		}),
 	list: () => request<Policy[]>('/policies'),
 	get: (id: string) => request<Policy>(`/policies/${id}`),
 	create: (data: Partial<Policy>) =>
@@ -439,6 +444,7 @@ export interface OrgInvite {
 }
 
 export const org = {
+	me: () => request<{ role: string }>('/org/me'),
 	members: {
 		list: () => request<OrgMember[]>('/org/members'),
 		update: (userID: string, role: string) =>

@@ -2,7 +2,8 @@
 	import '../app.css';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/stores/auth.svelte';
+	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
+	import { org } from '$lib/api/client';
 	import { page } from '$app/state';
 
 	const { children } = $props();
@@ -20,6 +21,10 @@
 	$effect(() => {
 		if (mounted && !isAuthRoute && !auth.isAuthenticated) {
 			goto('/login', { replaceState: true });
+		}
+		// Fetch org role once authenticated and not yet known.
+		if (mounted && !isAuthRoute && auth.isAuthenticated && !auth.orgRole) {
+			org.me().then((r) => auth.setOrgRole(r.role as OrgRole)).catch(() => {});
 		}
 	});
 

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type SecretStoreProvider, type AWSSecretStoreConfig, type HCVaultSecretStoreConfig, type BitwardenSecretStoreConfig, type VaultwardenSecretStoreConfig, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig } from '$lib/api/client';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	const stackID = $derived(page.params.id as string);
 
@@ -466,18 +467,24 @@
 				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{editing ? 'Cancel' : 'Edit'}
 			</button>
-			<button onclick={toggleDisabled} disabled={togglingDisabled}
-				class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-				{togglingDisabled ? '…' : stack.is_disabled ? 'Enable' : 'Disable'}
-			</button>
-			<button onclick={() => { showDestroyModal = true; destroyConfirmName = ''; }}
-				class="border border-orange-900 hover:border-orange-700 text-orange-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
-				Destroy infra
-			</button>
-			<button onclick={deleteStack}
-				class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
-				Delete
-			</button>
+			{#if auth.isMemberOrAbove}
+				<button onclick={toggleDisabled} disabled={togglingDisabled}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+					{togglingDisabled ? '…' : stack.is_disabled ? 'Enable' : 'Disable'}
+				</button>
+			{/if}
+			{#if auth.isMemberOrAbove}
+				<button onclick={() => { showDestroyModal = true; destroyConfirmName = ''; }}
+					class="border border-orange-900 hover:border-orange-700 text-orange-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Destroy infra
+				</button>
+			{/if}
+			{#if auth.isAdmin}
+				<button onclick={deleteStack}
+					class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Delete
+				</button>
+			{/if}
 		</div>
 	</div>
 

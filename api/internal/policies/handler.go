@@ -59,6 +59,28 @@ func (h *Handler) Init(ctx context.Context) error {
 	return nil
 }
 
+// Validate compiles Rego without saving and returns any compile errors.
+// POST /api/v1/policies/validate  { type, body }
+func (h *Handler) Validate(c echo.Context) error {
+	var req struct {
+		Type string `json:"type"`
+		Body string `json:"body"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.Type == "" || req.Body == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "type and body are required")
+	}
+
+	const tempID = "__validate__"
+	if err := h.engine.Load(c.Request().Context(), tempID, tempID, policy.Type(req.Type), req.Body); err != nil {
+		return c.JSON(http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+	}
+	h.engine.Unload(tempID)
+	return c.JSON(http.StatusOK, map[string]any{"ok": true})
+}
+
 // List returns all policies for the caller's org.
 func (h *Handler) List(c echo.Context) error {
 	orgID, _ := c.Get("orgID").(string)

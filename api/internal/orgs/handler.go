@@ -34,6 +34,20 @@ type Invite struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+// Me returns the current user's role in the authenticated org.
+func (h *Handler) Me(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	userID := c.Get("userID").(string)
+	var role string
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2
+	`, orgID, userID).Scan(&role)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "not a member of this organization")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"role": role})
+}
+
 // ListMembers returns all members of the authenticated org.
 func (h *Handler) ListMembers(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
