@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { org, type OrgMember, type OrgInvite } from '$lib/api/client';
+	import { org, system, type OrgMember, type OrgInvite, type HealthStatus } from '$lib/api/client';
 
 	let members = $state<OrgMember[]>([]);
 	let invites = $state<OrgInvite[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let health = $state<HealthStatus | null>(null);
 
 	// Invite form
 	let inviteEmail = $state('');
@@ -29,6 +30,7 @@
 		} finally {
 			loading = false;
 		}
+		system.health().then((h) => (health = h)).catch(() => {});
 	});
 
 	async function sendInvite(e: Event) {
@@ -66,6 +68,24 @@
 
 <div class="p-8 max-w-2xl space-y-8">
 	<h1 class="text-xl font-semibold text-white">Settings</h1>
+
+	<!-- Update banner -->
+	{#if health?.update_available}
+		<div class="bg-yellow-950 border border-yellow-700 rounded-xl px-5 py-4 flex items-center justify-between gap-4">
+			<div>
+				<p class="text-yellow-300 text-sm font-medium">Update available</p>
+				<p class="text-yellow-500 text-xs mt-0.5">
+					Running <span class="font-mono">{health.version}</span> —
+					<span class="font-mono">{health.latest_version}</span> is available.
+				</p>
+			</div>
+			<a href="https://github.com/ponack/crucible-iap/releases/latest"
+				target="_blank" rel="noopener"
+				class="shrink-0 text-xs bg-yellow-700 hover:bg-yellow-600 text-yellow-100 px-3 py-1.5 rounded-lg transition-colors">
+				View release
+			</a>
+		</div>
+	{/if}
 
 	<!-- Account -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
@@ -196,6 +216,29 @@
 					</table>
 				</div>
 			{/if}
+		</div>
+	{/if}
+
+	<!-- Instance info -->
+	{#if health}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
+			<div class="px-6 py-4">
+				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Instance</p>
+				<dl class="space-y-1.5 text-sm">
+					<div class="flex justify-between">
+						<dt class="text-zinc-500">Version</dt>
+						<dd class="font-mono text-zinc-300">{health.version}</dd>
+					</div>
+					<div class="flex justify-between">
+						<dt class="text-zinc-500">Uptime</dt>
+						<dd class="text-zinc-400">{health.uptime}</dd>
+					</div>
+					<div class="flex justify-between">
+						<dt class="text-zinc-500">Database</dt>
+						<dd class="{health.db === 'ok' ? 'text-green-400' : 'text-red-400'}">{health.db}</dd>
+					</div>
+				</dl>
+			</div>
 		</div>
 	{/if}
 </div>

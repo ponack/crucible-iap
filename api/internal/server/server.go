@@ -25,6 +25,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/stacks"
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/updater"
 	"github.com/ponack/crucible-iap/internal/vault"
 	"github.com/ponack/crucible-iap/internal/webhooks"
 	"github.com/ponack/crucible-iap/internal/worker"
@@ -37,6 +38,7 @@ type Server struct {
 	dispatcher    *worker.Dispatcher
 	queue         *queue.Client
 	policyHandler *policies.Handler
+	updater       *updater.Checker
 	startTime     time.Time
 }
 
@@ -69,6 +71,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 		dispatcher:    d,
 		queue:         q,
 		policyHandler: policyHandler,
+		updater:       updater.New(version),
 		startTime:     time.Now(),
 	}
 	s.registerRoutes(store, q, d, policyHandler, v, n)
@@ -201,6 +204,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	metrics.PollQueueDepth(ctx, s.pool)
 	worker.StartDriftScheduler(ctx, s.pool, s.cfg, s.queue)
+	s.updater.Start(ctx)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -228,12 +232,18 @@ func (s *Server) handleHealth(c echo.Context) error {
 		status = "degraded"
 	}
 
-	return c.JSON(http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":  status,
 		"db":      dbStatus,
 		"uptime":  time.Since(s.startTime).Round(time.Second).String(),
 		"version": version,
-	})
+	}
+	if latest := s.updater.LatestVersion(); latest != "" {
+		resp["latest_version"] = latest
+		resp["update_available"] = s.updater.UpdateAvailable()
+	}
+
+	return c.JSON(http.StatusOK, resp)
 }
 
 // version is injected at build time via -ldflags.

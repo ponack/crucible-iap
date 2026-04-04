@@ -418,3 +418,18 @@ export const org = {
 			request<{ org_id: string; role: string }>(`/invites/${token}/accept`, { method: 'POST' })
 	}
 };
+
+// ── Health / version ──────────────────────────────────────────────────────────
+
+export interface HealthStatus {
+	status: 'ok' | 'degraded';
+	db: string;
+	uptime: string;
+	version: string;
+	latest_version?: string;
+	update_available?: boolean;
+}
+
+export const system = {
+	health: () => fetch('/health').then((r) => r.json() as Promise<HealthStatus>)
+};
