@@ -139,6 +139,14 @@
 {:else}
 <div class="flex flex-col h-full">
 
+	<!-- Destroy warning banner -->
+	{#if run.type === 'destroy' && run.status === 'unconfirmed'}
+		<div class="flex-shrink-0 bg-orange-950 border-b border-orange-900 px-6 py-3 flex items-center gap-3">
+			<span class="text-orange-300 text-sm font-medium">Destroy plan ready.</span>
+			<span class="text-orange-400 text-xs">Review the plan output below, then confirm to permanently destroy all managed infrastructure.</span>
+		</div>
+	{/if}
+
 	<!-- Header bar -->
 	<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-4 flex items-start justify-between gap-4">
 		<div class="space-y-1">
@@ -168,10 +176,17 @@
 		<!-- Action buttons -->
 		<div class="flex items-center gap-2 flex-shrink-0">
 			{#if run.status === 'unconfirmed'}
-				<button onclick={confirm} disabled={acting !== null}
-					class="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-					{acting === 'confirm' ? 'Confirming…' : 'Confirm & apply'}
-				</button>
+				{#if run.type === 'destroy'}
+					<button onclick={confirm} disabled={acting !== null}
+						class="bg-orange-700 hover:bg-orange-600 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors font-medium">
+						{acting === 'confirm' ? 'Confirming…' : 'Confirm destroy'}
+					</button>
+				{:else}
+					<button onclick={confirm} disabled={acting !== null}
+						class="bg-green-700 hover:bg-green-600 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+						{acting === 'confirm' ? 'Confirming…' : 'Confirm & apply'}
+					</button>
+				{/if}
 				<button onclick={discard} disabled={acting !== null}
 					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 					{acting === 'discard' ? 'Discarding…' : 'Discard'}

@@ -81,7 +81,7 @@
 									{run.stack_name ?? run.stack_id.slice(0, 8)}
 								</a>
 							</td>
-							<td class="px-4 py-3 text-zinc-400">
+							<td class="px-4 py-3 {run.type === 'destroy' ? 'text-orange-400 font-medium' : 'text-zinc-400'}">
 								{run.type}{#if run.is_drift} <span class="text-xs text-amber-500">drift</span>{/if}
 								{#if run.pr_number}
 									<a href={run.pr_url} target="_blank" rel="noopener"
