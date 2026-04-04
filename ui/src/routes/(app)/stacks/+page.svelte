@@ -8,11 +8,19 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
+	let filterQ = $state('');
+	let filterTool = $state('');
+	let filterStatus = $state('');
+
 	async function load() {
 		loading = true;
 		error = null;
 		try {
-			const res = await stacks.list(offset);
+			const res = await stacks.list(offset, 50, {
+				q: filterQ || undefined,
+				tool: filterTool || undefined,
+				status: filterStatus || undefined
+			});
 			items = res.data;
 			pagination = res.pagination;
 		} catch (e) {
@@ -26,6 +34,11 @@
 
 	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
 	function next() { offset += pagination?.limit ?? 50; load(); }
+
+	function applyFilters() { offset = 0; load(); }
+	function clearFilters() { filterQ = ''; filterTool = ''; filterStatus = ''; offset = 0; load(); }
+
+	const hasFilters = $derived(filterQ !== '' || filterTool !== '' || filterStatus !== '');
 
 	const toolBadge: Record<string, string> = {
 		opentofu: 'bg-violet-900 text-violet-300',
@@ -53,6 +66,42 @@
 		<a href="/stacks/new" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 			New stack
 		</a>
+	</div>
+
+	<!-- Filter bar -->
+	<div class="flex items-center gap-2 flex-wrap">
+		<input
+			type="search" placeholder="Search stacks…"
+			bind:value={filterQ}
+			onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 w-56"
+		/>
+		<select bind:value={filterTool} onchange={applyFilters}
+			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+			<option value="">All tools</option>
+			<option value="opentofu">OpenTofu</option>
+			<option value="terraform">Terraform</option>
+			<option value="ansible">Ansible</option>
+			<option value="pulumi">Pulumi</option>
+		</select>
+		<select bind:value={filterStatus} onchange={applyFilters}
+			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+			<option value="">Any status</option>
+			<option value="finished">Finished</option>
+			<option value="failed">Failed</option>
+			<option value="unconfirmed">Needs approval</option>
+			<option value="applying">Applying</option>
+			<option value="planning">Planning</option>
+		</select>
+		<button onclick={applyFilters}
+			class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+			Search
+		</button>
+		{#if hasFilters}
+			<button onclick={clearFilters} class="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+				Clear
+			</button>
+		{/if}
 	</div>
 
 	{#if loading}

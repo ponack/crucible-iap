@@ -78,7 +78,28 @@ func (h *Handler) List(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 	p := pagination.Parse(c)
 
-	rows, err := h.pool.Query(c.Request().Context(), `
+	conds := []string{"s.org_id = $1"}
+	args := []any{orgID}
+
+	if q := c.QueryParam("q"); q != "" {
+		n := len(args) + 1
+		conds = append(conds, fmt.Sprintf("(s.name ILIKE $%d OR s.description ILIKE $%d)", n, n))
+		args = append(args, "%"+q+"%")
+	}
+	if tool := c.QueryParam("tool"); tool != "" {
+		args = append(args, tool)
+		conds = append(conds, fmt.Sprintf("s.tool = $%d", len(args)))
+	}
+	if status := c.QueryParam("status"); status != "" {
+		args = append(args, status)
+		conds = append(conds, fmt.Sprintf("lr.status = $%d", len(args)))
+	}
+
+	where := strings.Join(conds, " AND ")
+	args = append(args, p.Limit, p.Offset)
+	nLimit, nOffset := len(args)-1, len(args)
+
+	rows, err := h.pool.Query(c.Request().Context(), fmt.Sprintf(`
 		SELECT s.id, s.org_id, s.slug, s.name, COALESCE(s.description,''), s.tool,
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
@@ -91,10 +112,10 @@ func (h *Handler) List(c echo.Context) error {
 		    WHERE stack_id = s.id
 		    ORDER BY queued_at DESC LIMIT 1
 		) lr ON true
-		WHERE s.org_id = $1
+		WHERE %s
 		ORDER BY s.created_at DESC
-		LIMIT $2 OFFSET $3
-	`, orgID, p.Limit, p.Offset)
+		LIMIT $%d OFFSET $%d
+	`, where, nLimit, nOffset), args...)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}

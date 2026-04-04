@@ -184,8 +184,13 @@ export interface StackToken {
 }
 
 export const stacks = {
-	list: (offset = 0, limit = 50) =>
-		request<Paginated<Stack>>(`/stacks?limit=${limit}&offset=${offset}`),
+	list: (offset = 0, limit = 50, filters: { q?: string; tool?: string; status?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.q) p.set('q', filters.q);
+		if (filters.tool) p.set('tool', filters.tool);
+		if (filters.status) p.set('status', filters.status);
+		return request<Paginated<Stack>>(`/stacks?${p}`);
+	},
 	get: (id: string) => request<Stack>(`/stacks/${id}`),
 	create: (data: Partial<Stack>) =>
 		request<Stack>('/stacks', { method: 'POST', body: JSON.stringify(data) }),
@@ -301,6 +306,7 @@ export interface Run {
 	type: 'tracked' | 'proposed' | 'destroy';
 	trigger: string;
 	commit_sha?: string;
+	commit_message?: string;
 	branch?: string;
 	is_drift: boolean;
 	pr_number?: number;
@@ -308,16 +314,30 @@ export interface Run {
 	plan_add?: number;
 	plan_change?: number;
 	plan_destroy?: number;
+	has_plan?: boolean;
+	triggered_by_name?: string;
+	triggered_by_email?: string;
+	approved_by_name?: string;
+	approved_by_email?: string;
+	approved_at?: string;
 	queued_at: string;
 	started_at?: string;
 	finished_at?: string;
 }
 
 export const runs = {
-	listAll: (offset = 0, limit = 50) =>
-		request<Paginated<Run>>(`/runs?limit=${limit}&offset=${offset}`),
-	list: (stackID: string, offset = 0, limit = 50) =>
-		request<Paginated<Run>>(`/stacks/${stackID}/runs?limit=${limit}&offset=${offset}`),
+	listAll: (offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.status) p.set('status', filters.status);
+		if (filters.type) p.set('type', filters.type);
+		return request<Paginated<Run>>(`/runs?${p}`);
+	},
+	list: (stackID: string, offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.status) p.set('status', filters.status);
+		if (filters.type) p.set('type', filters.type);
+		return request<Paginated<Run>>(`/stacks/${stackID}/runs?${p}`);
+	},
 	get: (id: string) => request<Run>(`/runs/${id}`),
 	create: (stackID: string, type = 'tracked') =>
 		request<Run>(`/stacks/${stackID}/runs`, { method: 'POST', body: JSON.stringify({ type }) }),
@@ -325,7 +345,17 @@ export const runs = {
 		request<Run>(`/stacks/${stackID}/drift`, { method: 'POST' }),
 	confirm: (id: string) => request<null>(`/runs/${id}/confirm`, { method: 'POST' }),
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
-	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' })
+	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' }),
+	downloadPlan: async (id: string): Promise<Blob> => {
+		const headers: Record<string, string> = {};
+		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
+		const res = await fetch(`${BASE}/runs/${id}/plan`, { headers });
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ error: res.statusText }));
+			throw new Error(err.error ?? 'Download failed');
+		}
+		return res.blob();
+	}
 };
 
 // ── Audit ─────────────────────────────────────────────────────────────────────
@@ -344,8 +374,13 @@ export interface AuditEvent {
 }
 
 export const audit = {
-	list: (offset = 0, limit = 50) =>
-		request<Paginated<AuditEvent>>(`/audit?limit=${limit}&offset=${offset}`)
+	list: (offset = 0, limit = 50, filters: { action?: string; resource_type?: string; actor_id?: string } = {}) => {
+		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+		if (filters.action) p.set('action', filters.action);
+		if (filters.resource_type) p.set('resource_type', filters.resource_type);
+		if (filters.actor_id) p.set('actor_id', filters.actor_id);
+		return request<Paginated<AuditEvent>>(`/audit?${p}`);
+	}
 };
 
 // ── Policies ──────────────────────────────────────────────────────────────────

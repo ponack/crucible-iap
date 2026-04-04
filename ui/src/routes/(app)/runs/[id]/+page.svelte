@@ -111,6 +111,20 @@
 		URL.revokeObjectURL(url);
 	}
 
+	async function downloadPlan() {
+		try {
+			const blob = await runs.downloadPlan(runID);
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `run-${runID.slice(0, 8)}.tfplan`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			alert((e as Error).message);
+		}
+	}
+
 	function duration(start?: string, end?: string) {
 		if (!start) return null;
 		const ms = new Date(end ?? new Date()).getTime() - new Date(start).getTime();
@@ -163,6 +177,9 @@
 			<div class="flex items-center gap-4 text-xs text-zinc-500">
 				<span>Type: <span class="text-zinc-300">{run.type}</span></span>
 				<span>Trigger: <span class="text-zinc-300">{run.trigger}</span></span>
+				{#if run.triggered_by_name}
+					<span>By: <span class="text-zinc-300">{run.triggered_by_name}</span></span>
+				{/if}
 				{#if run.branch}
 					<span>Branch: <span class="text-zinc-300 font-mono">{run.branch}</span></span>
 				{/if}
@@ -171,10 +188,27 @@
 					<span>Duration: <span class="text-zinc-300">{duration(run.started_at, run.finished_at)}</span></span>
 				{/if}
 			</div>
+			{#if run.commit_message}
+				<div class="text-xs text-zinc-500 font-mono truncate max-w-xl" title={run.commit_message}>
+					{run.commit_sha ? run.commit_sha.slice(0, 7) + ' ' : ''}{run.commit_message}
+				</div>
+			{/if}
+			{#if run.approved_by_name}
+				<div class="text-xs text-zinc-500">
+					Approved by <span class="text-zinc-300">{run.approved_by_name}</span>
+					{#if run.approved_at}<span> · {fmtDate(run.approved_at)}</span>{/if}
+				</div>
+			{/if}
 		</div>
 
 		<!-- Action buttons -->
 		<div class="flex items-center gap-2 flex-shrink-0">
+			{#if run.has_plan}
+				<button onclick={downloadPlan}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Plan file
+				</button>
+			{/if}
 			{#if run.status === 'unconfirmed'}
 				{#if run.type === 'destroy'}
 					<button onclick={confirm} disabled={acting !== null}

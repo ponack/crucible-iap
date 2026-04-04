@@ -184,6 +184,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.POST("/runs/:id/discard", runHandler.Discard, member)
 	api.POST("/runs/:id/cancel", runHandler.Cancel, member)
 	api.GET("/runs/:id/logs", runHandler.Logs)
+	api.GET("/runs/:id/plan", runHandler.DownloadPlan)
 
 	// Audit log
 	api.GET("/audit", auditHandler.List)
