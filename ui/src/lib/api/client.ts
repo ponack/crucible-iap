@@ -301,6 +301,7 @@ export interface Run {
 	type: 'tracked' | 'proposed' | 'destroy';
 	trigger: string;
 	commit_sha?: string;
+	commit_message?: string;
 	branch?: string;
 	is_drift: boolean;
 	pr_number?: number;
@@ -308,6 +309,12 @@ export interface Run {
 	plan_add?: number;
 	plan_change?: number;
 	plan_destroy?: number;
+	has_plan?: boolean;
+	triggered_by_name?: string;
+	triggered_by_email?: string;
+	approved_by_name?: string;
+	approved_by_email?: string;
+	approved_at?: string;
 	queued_at: string;
 	started_at?: string;
 	finished_at?: string;
@@ -325,7 +332,17 @@ export const runs = {
 		request<Run>(`/stacks/${stackID}/drift`, { method: 'POST' }),
 	confirm: (id: string) => request<null>(`/runs/${id}/confirm`, { method: 'POST' }),
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
-	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' })
+	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' }),
+	downloadPlan: async (id: string): Promise<Blob> => {
+		const headers: Record<string, string> = {};
+		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
+		const res = await fetch(`${BASE}/runs/${id}/plan`, { headers });
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ error: res.statusText }));
+			throw new Error(err.error ?? 'Download failed');
+		}
+		return res.blob();
+	}
 };
 
 // ── Audit ─────────────────────────────────────────────────────────────────────

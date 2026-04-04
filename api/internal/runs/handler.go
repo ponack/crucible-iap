@@ -30,23 +30,30 @@ func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, d *work
 }
 
 type Run struct {
-	ID          string     `json:"id"`
-	StackID     string     `json:"stack_id"`
-	StackName   string     `json:"stack_name,omitempty"` // populated by ListAll
-	Status      string     `json:"status"`
-	Type        string     `json:"type"`
-	Trigger     string     `json:"trigger"`
-	CommitSHA   string     `json:"commit_sha,omitempty"`
-	Branch      string     `json:"branch,omitempty"`
-	IsDrift     bool       `json:"is_drift"`
-	PRNumber    *int       `json:"pr_number,omitempty"`
-	PRURL       *string    `json:"pr_url,omitempty"`
-	PlanAdd     *int       `json:"plan_add,omitempty"`
-	PlanChange  *int       `json:"plan_change,omitempty"`
-	PlanDestroy *int       `json:"plan_destroy,omitempty"`
-	QueuedAt    time.Time  `json:"queued_at"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+	ID               string     `json:"id"`
+	StackID          string     `json:"stack_id"`
+	StackName        string     `json:"stack_name,omitempty"` // populated by ListAll
+	Status           string     `json:"status"`
+	Type             string     `json:"type"`
+	Trigger          string     `json:"trigger"`
+	CommitSHA        string     `json:"commit_sha,omitempty"`
+	CommitMessage    string     `json:"commit_message,omitempty"`
+	Branch           string     `json:"branch,omitempty"`
+	IsDrift          bool       `json:"is_drift"`
+	PRNumber         *int       `json:"pr_number,omitempty"`
+	PRURL            *string    `json:"pr_url,omitempty"`
+	PlanAdd          *int       `json:"plan_add,omitempty"`
+	PlanChange       *int       `json:"plan_change,omitempty"`
+	PlanDestroy      *int       `json:"plan_destroy,omitempty"`
+	HasPlan          bool       `json:"has_plan"`
+	TriggeredByName  string     `json:"triggered_by_name,omitempty"`
+	TriggeredByEmail string     `json:"triggered_by_email,omitempty"`
+	ApprovedByName   string     `json:"approved_by_name,omitempty"`
+	ApprovedByEmail  string     `json:"approved_by_email,omitempty"`
+	ApprovedAt       *time.Time `json:"approved_at,omitempty"`
+	QueuedAt         time.Time  `json:"queued_at"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	FinishedAt       *time.Time `json:"finished_at,omitempty"`
 }
 
 // ListAll returns paginated runs across all stacks in the authenticated org.
@@ -57,7 +64,7 @@ func (h *Handler) ListAll(c echo.Context) error {
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT r.id, r.stack_id, s.name,
 		       r.status, r.type, r.trigger,
-		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''),
+		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''), COALESCE(r.commit_message,''),
 		       r.is_drift, r.pr_number, r.pr_url, r.plan_add, r.plan_change, r.plan_destroy,
 		       r.queued_at, r.started_at, r.finished_at,
 		       COUNT(*) OVER () AS total
@@ -78,7 +85,7 @@ func (h *Handler) ListAll(c echo.Context) error {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.StackID, &r.StackName,
 			&r.Status, &r.Type, &r.Trigger,
-			&r.CommitSHA, &r.Branch, &r.IsDrift,
+			&r.CommitSHA, &r.Branch, &r.CommitMessage, &r.IsDrift,
 			&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
 			&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
 			&total); err != nil {
@@ -96,7 +103,7 @@ func (h *Handler) List(c echo.Context) error {
 
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT id, stack_id, status, type, trigger,
-		       COALESCE(commit_sha,''), COALESCE(branch,''),
+		       COALESCE(commit_sha,''), COALESCE(branch,''), COALESCE(commit_message,''),
 		       is_drift, pr_number, pr_url, plan_add, plan_change, plan_destroy,
 		       queued_at, started_at, finished_at,
 		       COUNT(*) OVER () AS total
@@ -114,7 +121,7 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
-			&r.CommitSHA, &r.Branch, &r.IsDrift,
+			&r.CommitSHA, &r.Branch, &r.CommitMessage, &r.IsDrift,
 			&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
 			&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
 			&total); err != nil {
@@ -197,20 +204,60 @@ func (h *Handler) Get(c echo.Context) error {
 	var r Run
 	err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT r.id, r.stack_id, r.status, r.type, r.trigger,
-		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''),
+		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''), COALESCE(r.commit_message,''),
 		       r.is_drift, r.pr_number, r.pr_url, r.plan_add, r.plan_change, r.plan_destroy,
+		       r.plan_url IS NOT NULL,
+		       COALESCE(tb.name,''), COALESCE(tb.email,''),
+		       COALESCE(ab.name,''), COALESCE(ab.email,''),
+		       r.approved_at,
 		       r.queued_at, r.started_at, r.finished_at
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
+		LEFT JOIN users tb ON tb.id = r.triggered_by
+		LEFT JOIN users ab ON ab.id = r.approved_by
 		WHERE r.id = $1 AND s.org_id = $2
-	`, id, orgID).Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
-		&r.CommitSHA, &r.Branch, &r.IsDrift,
+	`, id, orgID).Scan(
+		&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
+		&r.CommitSHA, &r.Branch, &r.CommitMessage, &r.IsDrift,
 		&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
+		&r.HasPlan,
+		&r.TriggeredByName, &r.TriggeredByEmail,
+		&r.ApprovedByName, &r.ApprovedByEmail,
+		&r.ApprovedAt,
 		&r.QueuedAt, &r.StartedAt, &r.FinishedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found")
 	}
 	return c.JSON(http.StatusOK, r)
+}
+
+// DownloadPlan streams the plan artifact for an unconfirmed or finished run.
+func (h *Handler) DownloadPlan(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var hasPlan bool
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT r.plan_url IS NOT NULL
+		FROM runs r JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1 AND s.org_id = $2
+	`, id, orgID).Scan(&hasPlan)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+	if !hasPlan {
+		return echo.NewHTTPError(http.StatusNotFound, "no plan artifact for this run")
+	}
+
+	obj, err := h.storage.GetPlan(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "plan artifact not found in storage")
+	}
+	defer obj.Close()
+
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+id[:8]+`.tfplan"`)
+	c.Response().Header().Set("Content-Type", "application/octet-stream")
+	return c.Stream(http.StatusOK, "application/octet-stream", obj)
 }
 
 // Confirm approves an unconfirmed run and enqueues the apply phase.

@@ -80,6 +80,11 @@
 								<a href="/stacks/{run.stack_id}" class="text-zinc-300 hover:text-white">
 									{run.stack_name ?? run.stack_id.slice(0, 8)}
 								</a>
+								{#if run.commit_message}
+									<div class="text-xs text-zinc-600 font-mono truncate max-w-xs mt-0.5" title={run.commit_message}>
+										{run.commit_sha ? run.commit_sha.slice(0, 7) + ' ' : ''}{run.commit_message}
+									</div>
+								{/if}
 							</td>
 							<td class="px-4 py-3 {run.type === 'destroy' ? 'text-orange-400 font-medium' : 'text-zinc-400'}">
 								{run.type}{#if run.is_drift} <span class="text-xs text-amber-500">drift</span>{/if}
