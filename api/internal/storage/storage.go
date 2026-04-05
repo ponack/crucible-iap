@@ -94,6 +94,10 @@ func (c *Client) GetPlan(ctx context.Context, runID string) (*minio.Object, erro
 	return c.mc.GetObject(ctx, c.bucketArtifacts, planKey(runID), minio.GetObjectOptions{})
 }
 
+func (c *Client) DeletePlan(ctx context.Context, runID string) error {
+	return c.mc.RemoveObject(ctx, c.bucketArtifacts, planKey(runID), minio.RemoveObjectOptions{})
+}
+
 // ── Run logs ──────────────────────────────────────────────────────────────────
 
 // AppendLog writes the full log output for a completed run.
@@ -107,6 +111,10 @@ func (c *Client) PutLog(ctx context.Context, runID string, data []byte) error {
 // GetLog returns a reader for the archived log of a finished run.
 func (c *Client) GetLog(ctx context.Context, runID string) (*minio.Object, error) {
 	return c.mc.GetObject(ctx, c.bucketArtifacts, logKey(runID), minio.GetObjectOptions{})
+}
+
+func (c *Client) DeleteLog(ctx context.Context, runID string) error {
+	return c.mc.RemoveObject(ctx, c.bucketArtifacts, logKey(runID), minio.RemoveObjectOptions{})
 }
 
 // ── Object key helpers ────────────────────────────────────────────────────────

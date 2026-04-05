@@ -53,6 +53,8 @@
 	let notifEvents = $state<string[]>([]);
 	let savingNotif = $state(false);
 	let notifSaved = $state(false);
+	let testingSlack = $state(false);
+	let slackTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 
 	// Secret store
 	let secretStoreProvider = $state<SecretStoreProvider | ''>('');
@@ -259,6 +261,19 @@
 			alert((err as Error).message);
 		} finally {
 			savingNotif = false;
+		}
+	}
+
+	async function testSlack() {
+		testingSlack = true;
+		slackTestResult = null;
+		try {
+			await stacks.notifications.test(stackID);
+			slackTestResult = { ok: true, msg: 'Test message sent — check your Slack channel.' };
+		} catch (e) {
+			slackTestResult = { ok: false, msg: (e as Error).message };
+		} finally {
+			testingSlack = false;
 		}
 	}
 
@@ -734,13 +749,24 @@
 				</div>
 			</div>
 
-			<div class="flex items-center gap-3">
+			<div class="flex items-center gap-3 flex-wrap">
 				<button type="submit" disabled={savingNotif}
 					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{savingNotif ? 'Saving…' : 'Save notifications'}
 				</button>
+				{#if stack.has_slack_webhook}
+					<button type="button" onclick={testSlack} disabled={testingSlack}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						{testingSlack ? 'Sending…' : 'Test Slack'}
+					</button>
+				{/if}
 				{#if notifSaved}
 					<span class="text-xs text-green-400">Saved.</span>
+				{/if}
+				{#if slackTestResult}
+					<span class="text-xs {slackTestResult.ok ? 'text-green-400' : 'text-red-400'}">
+						{slackTestResult.msg}
+					</span>
 				{/if}
 			</div>
 		</form>

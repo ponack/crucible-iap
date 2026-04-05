@@ -366,6 +366,46 @@ func (h *Handler) Cancel(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// Delete removes a run record and its associated MinIO artifacts.
+// Only terminal runs (finished, failed, canceled, discarded) can be deleted.
+func (h *Handler) Delete(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID := c.Get("userID").(string)
+
+	// Verify org ownership and terminal status in one query.
+	var status string
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT r.status FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1 AND s.org_id = $2
+	`, id, orgID).Scan(&status)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+
+	terminalStates := map[string]bool{
+		"finished": true, "failed": true, "canceled": true, "discarded": true,
+	}
+	if !terminalStates[status] {
+		return echo.NewHTTPError(http.StatusConflict, "only terminal runs can be deleted")
+	}
+
+	// Best-effort MinIO cleanup before DB delete.
+	_ = h.storage.DeleteLog(c.Request().Context(), id)
+	_ = h.storage.DeletePlan(c.Request().Context(), id)
+
+	tag, err := h.pool.Exec(c.Request().Context(), `DELETE FROM runs WHERE id = $1`, id)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete run")
+	}
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "run.deleted", ResourceID: id, ResourceType: "run",
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
 // archivedStatuses are run states where the log has been fully written to
 // object storage. For these we serve the archived file rather than the
 // live broker (which has no data once the worker exits).

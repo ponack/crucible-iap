@@ -89,3 +89,26 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 
 	return c.NoContent(http.StatusNoContent)
 }
+
+// TestNotification sends a test Slack message to verify the webhook is working.
+func (h *Handler) TestNotification(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var exists bool
+	_ = h.pool.QueryRow(c.Request().Context(),
+		`SELECT true FROM stacks WHERE id = $1 AND org_id = $2`, stackID, orgID,
+	).Scan(&exists)
+	if !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	if h.notifier == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "notifier not configured")
+	}
+
+	if err := h.notifier.TestSlack(c.Request().Context(), stackID); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
