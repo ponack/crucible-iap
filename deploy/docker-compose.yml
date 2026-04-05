@@ -11,14 +11,16 @@ name: crucible-iap
 #
 # Bundled Authentik IdP:
 #   docker compose --profile authentik up -d
+#
+# Updating:
+#   docker compose pull && docker compose up -d
+#   docker compose exec crucible-api /crucible-iap migrate
 
 services:
 
   # ── API ─────────────────────────────────────────────────────────────────────
   crucible-api:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.api
+    image: ghcr.io/ponack/crucible-iap-api:${CRUCIBLE_VERSION:-latest}
     restart: unless-stopped
     env_file: ../.env
     environment:
@@ -45,9 +47,7 @@ services:
 
   # ── UI ──────────────────────────────────────────────────────────────────────
   crucible-ui:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.ui
+    image: ghcr.io/ponack/crucible-iap-ui:${CRUCIBLE_VERSION:-latest}
     restart: unless-stopped
     expose:
       - "3000"
@@ -112,17 +112,11 @@ services:
       - crucible-ui
     networks:
       - internal
-    profiles:
-      - ""          # default (no profile = included by default)
-      - caddy
 
-  # ── Caddy is skipped when using external-proxy profile; ─────────────────────
-  # the api and ui are instead exposed directly on host ports below.
-
+  # ── API + UI exposed on host ports (external-proxy profile) ─────────────────
+  # Use instead of Caddy when TLS termination is handled externally.
   crucible-api-proxy:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.api
+    image: ghcr.io/ponack/crucible-iap-api:${CRUCIBLE_VERSION:-latest}
     restart: unless-stopped
     env_file: ../.env
     environment:
@@ -142,9 +136,7 @@ services:
       - external-proxy
 
   crucible-ui-proxy:
-    build:
-      context: ..
-      dockerfile: deploy/Dockerfile.ui
+    image: ghcr.io/ponack/crucible-iap-ui:${CRUCIBLE_VERSION:-latest}
     restart: unless-stopped
     ports:
       - "${CRUCIBLE_UI_EXPOSE:-127.0.0.1}:${CRUCIBLE_UI_PORT:-3000}:3000"
