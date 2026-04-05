@@ -40,6 +40,19 @@
 
 	const hasFilters = $derived(filterAction !== '' || filterResourceType !== '');
 
+	async function exportCSV() {
+		const blob = await audit.exportCSV({
+			action: filterAction || undefined,
+			resource_type: filterResourceType || undefined
+		});
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = 'audit-export.csv';
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleString();
 	}
@@ -95,6 +108,10 @@
 					Clear
 				</button>
 			{/if}
+			<button onclick={exportCSV}
+				class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-sm px-3 py-1.5 rounded-lg transition-colors ml-2">
+				Export CSV
+			</button>
 		</div>
 	</div>
 

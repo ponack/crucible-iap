@@ -1,13 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { org, system, type OrgMember, type OrgInvite, type HealthStatus } from '$lib/api/client';
+	import { org, system, type OrgMember, type OrgInvite, type HealthStatus, type SystemSettings } from '$lib/api/client';
 
 	let members = $state<OrgMember[]>([]);
 	let invites = $state<OrgInvite[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let health = $state<HealthStatus | null>(null);
+
+	// Runner settings
+	let runnerSettings = $state<SystemSettings | null>(null);
+	let runnerForm = $state({ runner_default_image: '', runner_max_concurrent: 5, runner_job_timeout_mins: 60, runner_memory_limit: '', runner_cpu_limit: '' });
+	let savingRunner = $state(false);
+	let runnerSaved = $state(false);
+	let runnerError = $state<string | null>(null);
 
 	// Invite form
 	let inviteEmail = $state('');
@@ -31,6 +38,16 @@
 			loading = false;
 		}
 		system.health().then((h) => (health = h)).catch(() => {});
+		system.settings.get().then((s) => {
+			runnerSettings = s;
+			runnerForm = {
+				runner_default_image: s.runner_default_image,
+				runner_max_concurrent: s.runner_max_concurrent,
+				runner_job_timeout_mins: s.runner_job_timeout_mins,
+				runner_memory_limit: s.runner_memory_limit,
+				runner_cpu_limit: s.runner_cpu_limit
+			};
+		}).catch(() => {});
 	});
 
 	async function sendInvite(e: Event) {
@@ -63,6 +80,22 @@
 	async function changeRole(userID: string, role: string) {
 		await org.members.update(userID, role);
 		members = members.map((m) => m.user_id === userID ? { ...m, role: role as OrgMember['role'] } : m);
+	}
+
+	async function saveRunnerSettings(e: SubmitEvent) {
+		e.preventDefault();
+		savingRunner = true;
+		runnerSaved = false;
+		runnerError = null;
+		try {
+			runnerSettings = await system.settings.update(runnerForm);
+			runnerSaved = true;
+			setTimeout(() => (runnerSaved = false), 3000);
+		} catch (err) {
+			runnerError = (err as Error).message;
+		} finally {
+			savingRunner = false;
+		}
 	}
 </script>
 
@@ -216,6 +249,60 @@
 					</table>
 				</div>
 			{/if}
+		</div>
+	{/if}
+
+	<!-- Runner settings -->
+	{#if isAdmin && runnerSettings}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
+			<div class="px-6 py-4 border-b border-zinc-800">
+				<p class="text-xs text-zinc-500 uppercase tracking-widest">Runner</p>
+				<p class="text-xs text-zinc-600 mt-1">Changes apply to new runs. Max concurrency takes effect after restart.</p>
+			</div>
+			<form onsubmit={saveRunnerSettings} class="px-6 py-5 space-y-4">
+				{#if runnerError}
+					<div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">{runnerError}</div>
+				{/if}
+				<div class="space-y-1.5">
+					<label class="field-label" for="runner-image">Default runner image</label>
+					<input id="runner-image" class="field-input font-mono text-sm"
+						bind:value={runnerForm.runner_default_image}
+						placeholder="ghcr.io/ponack/crucible-iap-runner:latest" />
+				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="runner-concurrency">Max concurrent runs</label>
+						<input id="runner-concurrency" type="number" min="1" max="50" class="field-input"
+							bind:value={runnerForm.runner_max_concurrent} />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="runner-timeout">Job timeout (minutes)</label>
+						<input id="runner-timeout" type="number" min="1" max="480" class="field-input"
+							bind:value={runnerForm.runner_job_timeout_mins} />
+					</div>
+				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="runner-memory">Memory limit</label>
+						<input id="runner-memory" class="field-input font-mono text-sm"
+							bind:value={runnerForm.runner_memory_limit} placeholder="2g" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="runner-cpu">CPU limit</label>
+						<input id="runner-cpu" class="field-input font-mono text-sm"
+							bind:value={runnerForm.runner_cpu_limit} placeholder="1.0" />
+					</div>
+				</div>
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingRunner}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingRunner ? 'Saving…' : 'Save runner settings'}
+					</button>
+					{#if runnerSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			</form>
 		</div>
 	{/if}
 

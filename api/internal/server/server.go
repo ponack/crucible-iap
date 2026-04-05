@@ -13,6 +13,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
 	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/metrics"
 	cruciblemw "github.com/ponack/crucible-iap/internal/middleware"
@@ -86,6 +87,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	runHandler := runs.NewHandler(s.pool, s.cfg, q, d, store)
 	stateHandler := state.NewHandler(s.pool, store, v)
 	auditHandler := audit.NewHandler(s.pool)
+	settingsHandler := settings.NewHandler(s.pool, s.cfg)
 	webhookHandler := webhooks.NewHandler(s.pool, q)
 	orgHandler := orgs.NewHandler(s.pool)
 	envVarHandler := envvars.NewHandler(s.pool, v)
@@ -192,6 +194,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 
 	// Audit log
 	api.GET("/audit", auditHandler.List)
+	api.GET("/audit/export", auditHandler.Export)
+
+	// System settings
+	api.GET("/system/settings", settingsHandler.Get)
+	api.PUT("/system/settings", settingsHandler.Update, admin)
 
 	// ── Internal runner callbacks ──────────────────────────────────────────────
 	internal := e.Group("/api/v1/internal")

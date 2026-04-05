@@ -4,6 +4,7 @@ package audit
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -109,6 +110,66 @@ func (h *Handler) List(c echo.Context) error {
 		events = append(events, e)
 	}
 	return c.JSON(http.StatusOK, pagination.Wrap(events, p, total))
+}
+
+// Export streams all matching audit events as a CSV file download.
+// Supports the same ?action=, ?resource_type=, ?actor_id= filters as List.
+func (h *Handler) Export(c echo.Context) error {
+	orgID := c.Get("orgID")
+
+	conds := []string{"org_id = $1"}
+	args := []any{orgID}
+
+	if action := c.QueryParam("action"); action != "" {
+		args = append(args, action+"%")
+		conds = append(conds, fmt.Sprintf("action LIKE $%d", len(args)))
+	}
+	if rt := c.QueryParam("resource_type"); rt != "" {
+		args = append(args, rt)
+		conds = append(conds, fmt.Sprintf("resource_type = $%d", len(args)))
+	}
+	if actor := c.QueryParam("actor_id"); actor != "" {
+		args = append(args, actor)
+		conds = append(conds, fmt.Sprintf("actor_id::text = $%d", len(args)))
+	}
+
+	where := strings.Join(conds, " AND ")
+	rows, err := h.pool.Query(c.Request().Context(), fmt.Sprintf(`
+		SELECT id, occurred_at, COALESCE(actor_id::text,''), actor_type,
+		       action, COALESCE(resource_id,''), COALESCE(resource_type,''), context
+		FROM audit_events
+		WHERE %s
+		ORDER BY occurred_at DESC
+	`, where), args...)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="audit-export.csv"`)
+	c.Response().Header().Set("Content-Type", "text/csv; charset=utf-8")
+	c.Response().WriteHeader(http.StatusOK)
+
+	w := csv.NewWriter(c.Response())
+	_ = w.Write([]string{"id", "occurred_at", "actor_id", "actor_type", "action", "resource_id", "resource_type", "context"})
+
+	for rows.Next() {
+		var id int64
+		var occurredAt time.Time
+		var actorID, actorType, action, resourceID, resourceType string
+		var ctx json.RawMessage
+		if err := rows.Scan(&id, &occurredAt, &actorID, &actorType, &action, &resourceID, &resourceType, &ctx); err != nil {
+			break
+		}
+		_ = w.Write([]string{
+			fmt.Sprintf("%d", id),
+			occurredAt.UTC().Format(time.RFC3339),
+			actorID, actorType, action, resourceID, resourceType,
+			string(ctx),
+		})
+	}
+	w.Flush()
+	return nil
 }
 
 func nilIfEmpty(s string) any {

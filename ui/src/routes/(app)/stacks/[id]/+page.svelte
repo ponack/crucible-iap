@@ -1101,9 +1101,19 @@
 
 	<!-- Recent runs -->
 	<section class="space-y-3">
-		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Recent runs</h2>
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Recent runs</h2>
+			{#if recentRuns.length > 0}
+				<a href="/runs?stack={stackID}" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+					View all →
+				</a>
+			{/if}
+		</div>
 		{#if recentRuns.length === 0}
-			<p class="text-zinc-600 text-sm">No runs yet.</p>
+			<div class="border border-zinc-800 rounded-xl p-8 text-center space-y-3">
+				<p class="text-zinc-500 text-sm">No runs yet.</p>
+				<p class="text-zinc-600 text-xs">Trigger a run to deploy or plan this stack's infrastructure.</p>
+			</div>
 		{:else}
 			<div class="border border-zinc-800 rounded-xl overflow-hidden">
 				<table class="w-full text-sm">

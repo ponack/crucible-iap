@@ -24,6 +24,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
 	"github.com/ponack/crucible-iap/internal/secretstore"
+	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/vault"
 )
@@ -154,18 +155,34 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	// built-in vars last ensures they override any same-named external secret.
 	extraEnv := append(storeEnv, builtinEnv...)
 
+	// Load DB-level system settings (falls back to env-config defaults if table absent).
+	sysSettings, settingsErr := settings.Load(ctx, w.pool, w.cfg)
+	if settingsErr != nil {
+		slog.Warn("failed to load system settings, using env defaults", "err", settingsErr)
+	}
+
+	memLimit, cpuLimit, timeoutMins := w.cfg.RunnerMemoryLimit, w.cfg.RunnerCPULimit, w.cfg.RunnerJobTimeoutMinutes
+	if sysSettings != nil {
+		memLimit = sysSettings.RunnerMemoryLimit
+		cpuLimit = sysSettings.RunnerCPULimit
+		timeoutMins = sysSettings.RunnerJobTimeoutMins
+	}
+
 	spec := runner.JobSpec{
-		RunID:       args.RunID,
-		StackID:     args.StackID,
-		Tool:        args.Tool,
-		RunnerImage: args.RunnerImage,
-		JobToken:    jobToken,
-		APIURL:      args.APIURL,
-		RepoURL:     args.RepoURL,
-		RepoBranch:  args.RepoBranch,
-		ProjectRoot: args.ProjectRoot,
-		RunType:     args.RunType,
-		ExtraEnv:    extraEnv,
+		RunID:          args.RunID,
+		StackID:        args.StackID,
+		Tool:           args.Tool,
+		RunnerImage:    args.RunnerImage,
+		JobToken:       jobToken,
+		APIURL:         args.APIURL,
+		RepoURL:        args.RepoURL,
+		RepoBranch:     args.RepoBranch,
+		ProjectRoot:    args.ProjectRoot,
+		RunType:        args.RunType,
+		ExtraEnv:       extraEnv,
+		MemoryLimit:    memLimit,
+		CPULimit:       cpuLimit,
+		TimeoutMinutes: timeoutMins,
 	}
 
 	runErr := w.runner.Execute(ctx, spec, logWriter)

@@ -383,8 +383,29 @@ export const audit = {
 		if (filters.resource_type) p.set('resource_type', filters.resource_type);
 		if (filters.actor_id) p.set('actor_id', filters.actor_id);
 		return request<Paginated<AuditEvent>>(`/audit?${p}`);
+	},
+	exportCSV: async (filters: { action?: string; resource_type?: string; actor_id?: string } = {}): Promise<Blob> => {
+		const p = new URLSearchParams();
+		if (filters.action) p.set('action', filters.action);
+		if (filters.resource_type) p.set('resource_type', filters.resource_type);
+		if (filters.actor_id) p.set('actor_id', filters.actor_id);
+		const headers: Record<string, string> = {};
+		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
+		const res = await fetch(`${BASE}/audit/export?${p}`, { headers });
+		if (!res.ok) throw new Error(`Export failed: ${res.statusText}`);
+		return res.blob();
 	}
 };
+
+export interface SystemSettings {
+	runner_default_image: string;
+	runner_max_concurrent: number;
+	runner_job_timeout_mins: number;
+	runner_memory_limit: string;
+	runner_cpu_limit: string;
+	updated_at: string;
+}
+
 
 // ── Policies ──────────────────────────────────────────────────────────────────
 
@@ -476,5 +497,10 @@ export interface HealthStatus {
 }
 
 export const system = {
-	health: () => fetch('/health').then((r) => r.json() as Promise<HealthStatus>)
+	health: () => fetch('/health').then((r) => r.json() as Promise<HealthStatus>),
+	settings: {
+		get: () => request<SystemSettings>('/system/settings'),
+		update: (data: Partial<Omit<SystemSettings, 'updated_at'>>) =>
+			request<SystemSettings>('/system/settings', { method: 'PUT', body: JSON.stringify(data) })
+	}
 };

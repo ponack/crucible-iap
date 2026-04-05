@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { runs, type Run, type PageMeta } from '$lib/api/client';
 
 	let loading = $state(true);
@@ -10,15 +11,16 @@
 
 	let filterStatus = $state('');
 	let filterType = $state('');
+	let filterStack = $state(page.url.searchParams.get('stack') ?? '');
 
 	async function load() {
 		loading = true;
 		error = null;
 		try {
-			const res = await runs.listAll(offset, 50, {
-				status: filterStatus || undefined,
-				type: filterType || undefined
-			});
+			const filters = { status: filterStatus || undefined, type: filterType || undefined };
+			const res = filterStack
+				? await runs.list(filterStack, offset, 50, filters)
+				: await runs.listAll(offset, 50, filters);
 			allRuns = res.data;
 			pagination = res.pagination;
 		} catch (e) {
@@ -34,9 +36,9 @@
 	function next() { offset += pagination?.limit ?? 50; load(); }
 
 	function applyFilters() { offset = 0; load(); }
-	function clearFilters() { filterStatus = ''; filterType = ''; offset = 0; load(); }
+	function clearFilters() { filterStatus = ''; filterType = ''; filterStack = ''; offset = 0; load(); }
 
-	const hasFilters = $derived(filterStatus !== '' || filterType !== '');
+	const hasFilters = $derived(filterStatus !== '' || filterType !== '' || filterStack !== '');
 
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleString();
