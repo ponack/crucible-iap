@@ -1,6 +1,6 @@
 # Crucible IAP
 
-![Crucible IAP](assets/CrucibleIAP_master_transparent.png)
+![Crucible IAP](assets/CrucibleIAP_master_TRANSPARENT.png)
 
 **Crucible IAP - Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
 
