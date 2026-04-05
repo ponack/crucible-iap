@@ -1,4 +1,7 @@
-.PHONY: help dev build test lint clean docker-up docker-down migrate
+.PHONY: help dev build test lint clean docker-up docker-down migrate release
+
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS  := -s -w -X github.com/ponack/crucible-iap/internal/server.version=$(VERSION)
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -16,8 +19,8 @@ dev-ui: ## Run UI in development mode
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
-build-api: ## Build API binary
-	cd api && go build -o bin/crucible-iap ./cmd/crucible-iap
+build-api: ## Build API binary (version injected from git tag)
+	cd api && go build -ldflags="$(LDFLAGS)" -o bin/crucible-iap ./cmd/crucible-iap
 
 build-ui: ## Build UI for production
 	cd ui && pnpm build
@@ -60,11 +63,16 @@ docker-up: ## Start full stack with Docker Compose
 docker-down: ## Stop full stack
 	docker compose -f deploy/docker-compose.yml down
 
-docker-build: ## Build Docker images
-	docker compose -f deploy/docker-compose.yml build
+docker-build: ## Build Docker images (version injected from git tag)
+	docker compose -f deploy/docker-compose.yml build --build-arg VERSION=$(VERSION)
 
 docker-logs: ## Follow logs
 	docker compose -f deploy/docker-compose.yml logs -f
+
+# ── Release ───────────────────────────────────────────────────────────────────
+
+release: build ## Build everything with version stamp (use after git tag)
+	@echo "Built $(VERSION)"
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 
