@@ -312,9 +312,26 @@
 			<div class="px-6 py-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Instance</p>
 				<dl class="space-y-1.5 text-sm">
-					<div class="flex justify-between">
+					<div class="flex justify-between items-start">
 						<dt class="text-zinc-500">Version</dt>
-						<dd class="font-mono text-zinc-300">{health.version}</dd>
+						<dd class="text-right">
+							<span class="font-mono text-zinc-300">
+								{health.version === 'dev' ? 'dev (local build)' : health.version}
+							</span>
+							{#if health.version === 'dev'}
+								<p class="text-xs text-zinc-600 mt-0.5">Version injected at release build time.</p>
+							{:else if !/^v\d/.test(health.version)}
+								<p class="text-xs text-zinc-600 mt-0.5">Pre-release build — tag a version to get update checks.</p>
+							{:else if health.update_available}
+								<p class="text-xs text-yellow-400 mt-0.5">
+									<a href="https://github.com/ponack/crucible-iap/releases/latest" target="_blank" rel="noopener" class="hover:underline">
+										{health.latest_version} available ↗
+									</a>
+								</p>
+							{:else if health.latest_version}
+								<p class="text-xs text-green-500 mt-0.5">Up to date</p>
+							{/if}
+						</dd>
 					</div>
 					<div class="flex justify-between">
 						<dt class="text-zinc-500">Uptime</dt>
