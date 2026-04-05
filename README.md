@@ -145,6 +145,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, backup, monitoring, troubleshooting |
 | [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting |
 | [docs/policies.md](docs/policies.md) | Rego policy authoring guide with examples |
+| [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 
 ## Connecting a Git repository
 
