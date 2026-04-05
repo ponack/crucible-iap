@@ -18,17 +18,20 @@ import (
 
 // JobSpec defines what the runner needs to execute.
 type JobSpec struct {
-	RunID       string
-	StackID     string
-	Tool        string // opentofu | terraform | ansible | pulumi
-	RunnerImage string
-	JobToken    string // short-lived JWT scoped to this run
-	APIURL      string // Crucible API base URL for callbacks
-	RepoURL     string
-	RepoBranch  string
-	ProjectRoot string
-	RunType     string // tracked | proposed | destroy
-	ExtraEnv    []string // decrypted stack env vars as KEY=VALUE strings
+	RunID          string
+	StackID        string
+	Tool           string   // opentofu | terraform | ansible | pulumi
+	RunnerImage    string
+	JobToken       string   // short-lived JWT scoped to this run
+	APIURL         string   // Crucible API base URL for callbacks
+	RepoURL        string
+	RepoBranch     string
+	ProjectRoot    string
+	RunType        string   // tracked | proposed | destroy
+	ExtraEnv       []string // decrypted stack env vars as KEY=VALUE strings
+	MemoryLimit    string   // Docker memory limit, e.g. "2g" — overrides config default if non-empty
+	CPULimit       string   // Docker CPU limit, e.g. "1.0" — overrides config default if non-empty
+	TimeoutMinutes int      // Job timeout — overrides config default if > 0
 }
 
 type Runner struct {
@@ -83,8 +86,8 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 			SecurityOpt: []string{"no-new-privileges"},
 			CapDrop:     []string{"ALL"},
 			Resources: container.Resources{
-				Memory:   parseMemory(r.cfg.RunnerMemoryLimit),
-				NanoCPUs: parseCPU(r.cfg.RunnerCPULimit),
+				Memory:   parseMemory(coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit)),
+				NanoCPUs: parseCPU(coalesce(spec.CPULimit, r.cfg.RunnerCPULimit)),
 			},
 			Mounts: []mount.Mount{
 				{
@@ -118,7 +121,11 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	slog.Info("runner started", "container", containerName, "run_id", spec.RunID)
 
 	// Stream logs back to caller
-	logCtx, cancel := context.WithTimeout(ctx, time.Duration(r.cfg.RunnerJobTimeoutMinutes)*time.Minute)
+	timeoutMins := spec.TimeoutMinutes
+	if timeoutMins <= 0 {
+		timeoutMins = r.cfg.RunnerJobTimeoutMinutes
+	}
+	logCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMins)*time.Minute)
 	defer cancel()
 
 	logs, err := r.docker.ContainerLogs(logCtx, resp.ID, container.LogsOptions{
@@ -145,13 +152,21 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	case err := <-errCh:
 		return fmt.Errorf("container wait: %w", err)
 	case <-logCtx.Done():
-		return fmt.Errorf("run timed out after %d minutes", r.cfg.RunnerJobTimeoutMinutes)
+		return fmt.Errorf("run timed out after %d minutes", timeoutMins)
 	}
 
 	return nil
 }
 
 func timeoutPtr(i int) *int { return &i }
+
+// coalesce returns a if non-empty, otherwise b.
+func coalesce(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
 
 // parseMemory converts "2g" → bytes (simplified).
 func parseMemory(s string) int64 {
