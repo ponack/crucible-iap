@@ -115,7 +115,7 @@
 	async function deleteRun() {
 		if (!confirm('Delete this run and its artifacts? This cannot be undone.')) return;
 		try {
-			await runs.delete(runID);
+			await runs.remove(runID);
 			goto('/runs');
 		} catch (e) {
 			alert((e as Error).message);
