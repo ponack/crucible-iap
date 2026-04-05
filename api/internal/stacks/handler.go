@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	vaultpkg "github.com/ponack/crucible-iap/internal/vault"
 )
@@ -27,11 +28,14 @@ func webhookSecret() (string, error) {
 }
 
 type Handler struct {
-	pool  *pgxpool.Pool
-	vault *vaultpkg.Vault
+	pool     *pgxpool.Pool
+	vault    *vaultpkg.Vault
+	notifier *notify.Notifier
 }
 
-func NewHandler(pool *pgxpool.Pool, v *vaultpkg.Vault) *Handler { return &Handler{pool: pool, vault: v} }
+func NewHandler(pool *pgxpool.Pool, v *vaultpkg.Vault, n *notify.Notifier) *Handler {
+	return &Handler{pool: pool, vault: v, notifier: n}
+}
 
 type Stack struct {
 	ID             string    `json:"id"`

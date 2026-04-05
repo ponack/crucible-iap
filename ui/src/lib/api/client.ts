@@ -234,7 +234,9 @@ export const stacks = {
 			request<null>(`/stacks/${stackID}/notifications`, {
 				method: 'PUT',
 				body: JSON.stringify(data)
-			})
+			}),
+		test: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/notifications/test`, { method: 'POST' })
 	},
 
 	secretStore: {
@@ -346,6 +348,7 @@ export const runs = {
 	confirm: (id: string) => request<null>(`/runs/${id}/confirm`, { method: 'POST' }),
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
 	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' }),
+	remove: (id: string) => request<null>(`/runs/${id}`, { method: 'DELETE' }),
 	downloadPlan: async (id: string): Promise<Blob> => {
 		const headers: Record<string, string> = {};
 		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;

@@ -82,7 +82,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	e := s.echo
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
-	stackHandler := stacks.NewHandler(s.pool, v)
+	stackHandler := stacks.NewHandler(s.pool, v, n)
 	runHandler := runs.NewHandler(s.pool, s.cfg, q, d, store)
 	stateHandler := state.NewHandler(s.pool, store, v)
 	auditHandler := audit.NewHandler(s.pool)
@@ -165,6 +165,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 
 	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
+	api.POST("/stacks/:id/notifications/test", stackHandler.TestNotification, member)
 
 	// Stack external secret store (AWS SM, HashiCorp Vault, Bitwarden SM, Vaultwarden)
 	api.GET("/stacks/:id/secret-store", stackHandler.GetSecretStore, member)
@@ -187,6 +188,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.POST("/runs/:id/cancel", runHandler.Cancel, member)
 	api.GET("/runs/:id/logs", runHandler.Logs)
 	api.GET("/runs/:id/plan", runHandler.DownloadPlan)
+	api.DELETE("/runs/:id", runHandler.Delete, admin)
 
 	// Audit log
 	api.GET("/audit", auditHandler.List)

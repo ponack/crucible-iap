@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
 	import { runs, type Run } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
@@ -111,6 +112,16 @@
 		URL.revokeObjectURL(url);
 	}
 
+	async function deleteRun() {
+		if (!window.confirm('Delete this run and its artifacts? This cannot be undone.')) return;
+		try {
+			await runs.remove(runID);
+			goto('/runs');
+		} catch (e) {
+			alert((e as Error).message);
+		}
+	}
+
 	async function downloadPlan() {
 		try {
 			const blob = await runs.downloadPlan(runID);
@@ -207,6 +218,12 @@
 				<button onclick={downloadPlan}
 					class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-sm px-3 py-1.5 rounded-lg transition-colors">
 					Plan file
+				</button>
+			{/if}
+			{#if auth.isAdmin && terminalStatuses.has(run.status)}
+				<button onclick={deleteRun}
+					class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Delete
 				</button>
 			{/if}
 			{#if run.status === 'unconfirmed'}

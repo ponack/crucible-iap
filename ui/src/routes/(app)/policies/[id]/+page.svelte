@@ -13,6 +13,8 @@
 	let saving = $state(false);
 	let saveError = $state<string | null>(null);
 	let saved = $state(false);
+	let validating = $state(false);
+	let validateResult = $state<{ ok: boolean; error?: string } | null>(null);
 
 	let form = $state({ name: '', description: '', body: '', is_active: true });
 
@@ -50,6 +52,19 @@
 			saveError = (e as Error).message;
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function validateRego() {
+		if (!policy) return;
+		validating = true;
+		validateResult = null;
+		try {
+			validateResult = await policies.validate(policy.type, form.body);
+		} catch (e) {
+			validateResult = { ok: false, error: (e as Error).message };
+		} finally {
+			validating = false;
 		}
 	}
 
@@ -126,9 +141,22 @@
 		</div>
 
 		<div class="space-y-1.5">
-			<label class="field-label" for="p-body">Rego source</label>
+			<div class="flex items-center justify-between">
+				<label class="field-label" for="p-body">Rego source</label>
+				<button type="button" onclick={validateRego} disabled={validating || !form.body}
+					class="text-xs text-zinc-400 hover:text-zinc-200 disabled:opacity-40 transition-colors">
+					{validating ? 'Validating…' : 'Validate syntax'}
+				</button>
+			</div>
 			<textarea id="p-body" class="field-input font-mono text-xs" rows="20"
 				bind:value={form.body} required spellcheck="false"></textarea>
+			{#if validateResult}
+				{#if validateResult.ok}
+					<p class="text-xs text-green-400">Syntax valid — no compile errors.</p>
+				{:else}
+					<p class="text-xs text-red-400 whitespace-pre-wrap font-mono">{validateResult.error}</p>
+				{/if}
+			{/if}
 			<p class="text-xs text-zinc-600">
 				Policies must export <code class="text-zinc-400">deny_msgs</code> (blocking) and optionally
 				<code class="text-zinc-400">warn_msgs</code>. The input is the Terraform/OpenTofu plan JSON.

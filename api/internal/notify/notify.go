@@ -166,6 +166,45 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 	}
 }
 
+// TestSlack sends a test message to the Slack webhook configured on a stack.
+// Returns an error if no webhook is configured or the POST fails.
+func (n *Notifier) TestSlack(ctx context.Context, stackID string) error {
+	var slackWebhookEnc []byte
+	var stackName string
+	err := n.pool.QueryRow(ctx, `
+		SELECT name, slack_webhook_enc FROM stacks WHERE id = $1
+	`, stackID).Scan(&stackName, &slackWebhookEnc)
+	if err != nil {
+		return fmt.Errorf("stack not found")
+	}
+	if len(slackWebhookEnc) == 0 {
+		return fmt.Errorf("no Slack webhook configured for this stack")
+	}
+	webhookURL := n.decryptStr(stackID, slackWebhookEnc)
+	if webhookURL == "" {
+		return fmt.Errorf("failed to decrypt Slack webhook")
+	}
+
+	payload := map[string]string{
+		"text": fmt.Sprintf("✅ *%s* — Crucible test notification. Your Slack webhook is working correctly.", stackName),
+	}
+	b, _ := json.Marshal(payload)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Slack request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("Slack returned HTTP %d — check webhook URL", resp.StatusCode)
+	}
+	return nil
+}
+
 // PolicyDenied posts a PR comment and sets a failing commit status when a
 // policy blocks a plan.
 func (n *Notifier) PolicyDenied(ctx context.Context, runID string, messages []string) {
