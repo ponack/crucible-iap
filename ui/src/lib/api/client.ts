@@ -212,10 +212,10 @@ export const stacks = {
 
 	env: {
 		list: (stackID: string) => request<StackEnvVar[]>(`/stacks/${stackID}/env`),
-		upsert: (stackID: string, name: string, value: string) =>
+		upsert: (stackID: string, name: string, value: string, isSecret = true) =>
 			request<StackEnvVar>(`/stacks/${stackID}/env`, {
 				method: 'PUT',
-				body: JSON.stringify({ name, value })
+				body: JSON.stringify({ name, value, is_secret: isSecret })
 			}),
 		delete: (stackID: string, name: string) =>
 			request<null>(`/stacks/${stackID}/env/${encodeURIComponent(name)}`, { method: 'DELETE' })
@@ -297,6 +297,7 @@ export const stacks = {
 export interface StackEnvVar {
 	id: string;
 	name: string;
+	is_secret: boolean;
 	created_at: string;
 	updated_at: string;
 }
