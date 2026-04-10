@@ -26,8 +26,11 @@ type RunJobArgs struct {
 	RepoURL     string `json:"repo_url"`
 	RepoBranch  string `json:"repo_branch"`
 	ProjectRoot string `json:"project_root"`
-	RunType     string `json:"run_type"`    // tracked | proposed | destroy
+	RunType     string `json:"run_type"`    // tracked | proposed | destroy | apply
 	APIURL      string `json:"api_url"`
+	// AutoApply skips the unconfirmed gate on tracked runs and queues the apply
+	// phase immediately. Used by auto-apply stacks and drift auto-remediation.
+	AutoApply bool `json:"auto_apply,omitempty"`
 }
 
 func (RunJobArgs) Kind() string { return "run" }

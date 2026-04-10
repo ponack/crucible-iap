@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -38,10 +39,11 @@ type Dispatcher struct {
 	vault    *vault.Vault
 	notifier *notify.Notifier
 	broker   *LogBroker
+	queue    *queue.Client
 	river    *river.Client[pgx.Tx]
 }
 
-func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault, n *notify.Notifier) (*Dispatcher, error) {
+func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault, n *notify.Notifier, q *queue.Client) (*Dispatcher, error) {
 	broker := newLogBroker()
 
 	workers := river.NewWorkers()
@@ -53,6 +55,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		vault:    v,
 		notifier: n,
 		broker:   broker,
+		queue:    q,
 	})
 
 	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
@@ -73,6 +76,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		vault:    v,
 		notifier: n,
 		broker:   broker,
+		queue:    q,
 		river:    rc,
 	}, nil
 }
@@ -106,6 +110,7 @@ type RunWorker struct {
 	vault    *vault.Vault
 	notifier *notify.Notifier
 	broker   *LogBroker
+	queue    *queue.Client
 }
 
 func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) error {
@@ -150,10 +155,16 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		builtinEnv = nil
 	}
 
-	// Merge: external secrets first, then built-in. Later entries win in most
-	// container runtimes (Docker sets env vars in order, last wins), so placing
-	// built-in vars last ensures they override any same-named external secret.
-	extraEnv := append(storeEnv, builtinEnv...)
+	// Remote state source credentials: injected before built-in env vars so
+	// built-in vars still take precedence on any collision.
+	remoteStateEnv, rsErr := loadRemoteStateEnv(ctx, w.pool, w.vault, args.StackID, args.APIURL)
+	if rsErr != nil {
+		log.Warn("failed to load remote state sources", "err", rsErr)
+		remoteStateEnv = nil
+	}
+
+	// Merge order: external secrets → remote state → built-in (last wins).
+	extraEnv := append(append(storeEnv, remoteStateEnv...), builtinEnv...)
 
 	// Load DB-level system settings (falls back to env-config defaults if table absent).
 	sysSettings, settingsErr := settings.Load(ctx, w.pool, w.cfg)
@@ -197,11 +208,29 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		return w.failRun(ctx, orgID, args.RunID, runErr)
 	}
 
-	// For tracked runs that aren't auto-apply, transition to unconfirmed
-	// The runner container writes a plan artifact; the apply step waits for human approval.
-	// For proposed runs (plan-only) or auto-apply, mark finished directly.
+	// For tracked runs: transition to unconfirmed unless AutoApply is set (which
+	// skips the confirmation gate and immediately queues the apply phase).
+	// For proposed runs (plan-only) or the apply phase, mark finished directly.
 	finalStatus := "finished"
 	if args.RunType == "tracked" {
+		if args.AutoApply {
+			// Auto-confirm: mark confirmed and queue apply without human approval.
+			now := time.Now()
+			if _, err := w.pool.Exec(ctx,
+				`UPDATE runs SET status = 'confirmed', approved_by = NULL, approved_at = $1 WHERE id = $2`,
+				now, args.RunID,
+			); err != nil {
+				return w.failRun(ctx, orgID, args.RunID, err)
+			}
+			_, _ = w.queue.EnqueueRun(ctx, queue.RunJobArgs{
+				RunID: args.RunID, StackID: args.StackID,
+				Tool: args.Tool, RunnerImage: args.RunnerImage,
+				RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
+				RunType: "apply", APIURL: args.APIURL,
+			})
+			log.Info("run job complete (auto-apply queued)")
+			return nil
+		}
 		finalStatus = "unconfirmed"
 	}
 
@@ -216,8 +245,9 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		// Plan phase done — post PR comment / set commit status to awaiting approval
 		go w.notifier.PlanComplete(context.Background(), args.RunID)
 	case finalStatus == "finished" && args.RunType == "proposed":
-		// Proposed (PR) plan complete — post result comment
+		// Proposed (PR) plan complete — post result comment, then check drift auto-remediation.
 		go w.notifier.PlanComplete(context.Background(), args.RunID)
+		go w.maybeRemediateDrift(context.Background(), args)
 	case finalStatus == "finished" && args.RunType == "apply":
 		// Apply succeeded
 		go w.notifier.RunFinished(context.Background(), args.RunID, true)
@@ -225,6 +255,47 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 
 	log.Info("run job complete", "status", finalStatus)
 	return nil
+}
+
+// maybeRemediateDrift checks whether a just-finished proposed drift run should
+// trigger an auto-apply tracked run to bring infrastructure back into sync.
+func (w *RunWorker) maybeRemediateDrift(ctx context.Context, args queue.RunJobArgs) {
+	var isDrift bool
+	var planAdd, planChange, planDestroy int
+	var autoRemediate bool
+
+	err := w.pool.QueryRow(ctx, `
+		SELECT r.is_drift,
+		       COALESCE(r.plan_add, 0), COALESCE(r.plan_change, 0), COALESCE(r.plan_destroy, 0),
+		       s.auto_remediate_drift
+		FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1
+	`, args.RunID).Scan(&isDrift, &planAdd, &planChange, &planDestroy, &autoRemediate)
+	if err != nil || !isDrift || !autoRemediate || planAdd+planChange+planDestroy == 0 {
+		return
+	}
+
+	var runID string
+	if err := w.pool.QueryRow(ctx, `
+		INSERT INTO runs (stack_id, type, trigger, is_drift)
+		VALUES ($1, 'tracked', 'auto_remediate', true)
+		RETURNING id
+	`, args.StackID).Scan(&runID); err != nil {
+		slog.Error("auto-remediate drift: failed to insert run", "stack_id", args.StackID, "err", err)
+		return
+	}
+
+	if _, err := w.queue.EnqueueRun(ctx, queue.RunJobArgs{
+		RunID: runID, StackID: args.StackID,
+		Tool: args.Tool, RunnerImage: args.RunnerImage,
+		RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
+		RunType: "tracked", AutoApply: true, APIURL: args.APIURL,
+	}); err != nil {
+		slog.Error("auto-remediate drift: failed to enqueue run", "stack_id", args.StackID, "err", err)
+	} else {
+		slog.Info("auto-remediate drift: queued tracked run", "stack_id", args.StackID, "run_id", runID)
+	}
 }
 
 func (w *RunWorker) setStatus(ctx context.Context, orgID, runID, status string, finishedAt *time.Time) error {
@@ -266,6 +337,43 @@ func (w *RunWorker) failRun(ctx context.Context, orgID, runID string, cause erro
 		OrgID:        orgID,
 	})
 	return cause // returning causes River to record the error and retry/discard
+}
+
+// loadRemoteStateEnv queries the remote-state sources for stackID and returns
+// env var pairs (KEY=value) that the runner can use to access each source stack's
+// HTTP state backend. Var names follow CRUCIBLE_REMOTE_STATE_<SLUG>_{ADDRESS,USERNAME,PASSWORD}.
+func loadRemoteStateEnv(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, stackID, apiURL string) ([]string, error) {
+	rows, err := pool.Query(ctx, `
+		SELECT r.source_stack_id, s.slug, r.token_id, r.token_secret_enc
+		FROM stack_remote_state_sources r
+		JOIN stacks s ON s.id = r.source_stack_id
+		WHERE r.stack_id = $1
+	`, stackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var env []string
+	for rows.Next() {
+		var srcID, slug, tokenID string
+		var encSecret []byte
+		if err := rows.Scan(&srcID, &slug, &tokenID, &encSecret); err != nil {
+			continue
+		}
+		rawSecret, err := v.Decrypt(srcID, encSecret)
+		if err != nil {
+			slog.Warn("remote state: failed to decrypt token secret", "source_stack_id", srcID, "err", err)
+			continue
+		}
+		prefix := "CRUCIBLE_REMOTE_STATE_" + strings.ToUpper(strings.ReplaceAll(slug, "-", "_"))
+		env = append(env,
+			prefix+"_ADDRESS="+apiURL+"/api/v1/state/"+srcID,
+			prefix+"_USERNAME="+tokenID,
+			prefix+"_PASSWORD="+string(rawSecret),
+		)
+	}
+	return env, nil
 }
 
 func (w *RunWorker) issueJobToken(runID, stackID string) (string, error) {

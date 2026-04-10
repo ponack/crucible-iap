@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type SecretStoreProvider, type AWSSecretStoreConfig, type HCVaultSecretStoreConfig, type BitwardenSecretStoreConfig, type VaultwardenSecretStoreConfig, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig } from '$lib/api/client';
+	import { stacks, runs, policies, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type SecretStoreProvider, type AWSSecretStoreConfig, type HCVaultSecretStoreConfig, type BitwardenSecretStoreConfig, type VaultwardenSecretStoreConfig, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const stackID = $derived(page.params.id as string);
@@ -21,7 +21,7 @@
 	let editError = $state<string | null>(null);
 	let form = $state({
 		name: '', description: '', repo_branch: '', project_root: '',
-		auto_apply: false, drift_detection: false, drift_schedule: ''
+		auto_apply: false, drift_detection: false, drift_schedule: '', auto_remediate_drift: false
 	});
 
 	// Token creation
@@ -82,6 +82,12 @@
 	// Disable/enable
 	let togglingDisabled = $state(false);
 
+	// Remote state sources
+	let remoteSources = $state<RemoteStateSource[]>([]);
+	let addingRemoteSource = $state('');
+	let addingRemoteSourceError = $state<string | null>(null);
+	let allStacksList = $state<{ id: string; name: string }[]>([]);
+
 	// State backend
 	let stateBackendProvider = $state<StateBackendProvider | ''>('');
 	let savingStateBackend = $state(false);
@@ -108,13 +114,15 @@
 
 	onMount(async () => {
 		try {
-			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes] = await Promise.all([
+			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes, remoteSourcesRes, allStacksRes] = await Promise.all([
 				stacks.get(stackID),
 				runs.list(stackID),
 				stacks.tokens.list(stackID),
 				policies.forStack(stackID),
 				policies.list(),
-				stacks.env.list(stackID)
+				stacks.env.list(stackID),
+				stacks.remoteState.list(stackID),
+				stacks.list(0, 200)
 			]);
 			stack = stackRes;
 			recentRuns = runsRes.data;
@@ -122,6 +130,8 @@
 			stackPolicies = stackPoliciesRes;
 			allPolicies = allPoliciesRes;
 			envVars = envVarsRes;
+			remoteSources = remoteSourcesRes;
+			allStacksList = allStacksRes.data.filter(s => s.id !== stackID).map(s => ({ id: s.id, name: s.name }));
 			if (stackRes.secret_store_provider) {
 				secretStoreProvider = stackRes.secret_store_provider as SecretStoreProvider;
 			}
@@ -147,7 +157,8 @@
 			project_root: stack.project_root,
 			auto_apply: stack.auto_apply,
 			drift_detection: stack.drift_detection,
-			drift_schedule: stack.drift_schedule ?? ''
+			drift_schedule: stack.drift_schedule ?? '',
+			auto_remediate_drift: stack.auto_remediate_drift
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 	}
@@ -375,6 +386,28 @@
 		}
 	}
 
+	async function addRemoteSource() {
+		if (!addingRemoteSource) return;
+		addingRemoteSourceError = null;
+		try {
+			await stacks.remoteState.add(stackID, addingRemoteSource);
+			remoteSources = await stacks.remoteState.list(stackID);
+			addingRemoteSource = '';
+		} catch (e) {
+			addingRemoteSourceError = (e as Error).message;
+		}
+	}
+
+	async function removeRemoteSource(sourceID: string) {
+		if (!confirm('Remove this remote state source? Runs that reference it will fail.')) return;
+		try {
+			await stacks.remoteState.remove(stackID, sourceID);
+			remoteSources = remoteSources.filter((r) => r.id !== sourceID);
+		} catch (e) {
+			alert((e as Error).message);
+		}
+	}
+
 	async function rotateWebhookSecret() {
 		if (!confirm('Rotate the webhook secret? The old secret will stop working immediately — update your repository webhook settings before the next push.')) return;
 		rotatingWebhook = true;
@@ -528,7 +561,7 @@
 				<label class="field-label" for="edit-root">Project root</label>
 				<input id="edit-root" class="field-input font-mono text-sm" bind:value={form.project_root} />
 			</div>
-			<div class="flex gap-6">
+			<div class="flex gap-6 flex-wrap">
 				<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
 					<input type="checkbox" bind:checked={form.auto_apply} /> Auto-apply
 				</label>
@@ -545,6 +578,10 @@
 						{/each}
 					</select>
 				</div>
+				<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
+					<input type="checkbox" bind:checked={form.auto_remediate_drift} />
+					Auto-remediate drift — automatically apply when drift is detected
+				</label>
 			{/if}
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}
@@ -565,6 +602,7 @@
 			['Auto-apply', stack.auto_apply ? 'Yes' : 'No'],
 			['Drift detection', stack.drift_detection ? 'Yes' : 'No'],
 			['Drift interval', stack.drift_detection ? driftScheduleLabel(stack.drift_schedule) : '—'],
+			['Auto-remediate drift', stack.drift_detection ? (stack.auto_remediate_drift ? 'Yes' : 'No') : '—'],
 			['Created', fmtDate(stack.created_at)]
 		] as [label, value]}
 			<div class="flex px-4 py-3">
@@ -625,6 +663,67 @@
 					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
 					Attach
 				</button>
+			</div>
+		{/if}
+	</section>
+
+	<!-- Remote state sources -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Remote state sources</h2>
+		<p class="text-xs text-zinc-500">
+			Allow this stack to read the Terraform state of other stacks using
+			<code class="text-zinc-300">terraform_remote_state</code>. Each source stack is accessible via
+			env vars <code class="text-zinc-300">CRUCIBLE_REMOTE_STATE_&lt;SLUG&gt;_{ADDRESS,USERNAME,PASSWORD}</code>
+			injected into runner containers.
+		</p>
+
+		{#if remoteSources.length > 0}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Source stack</th>
+							<th class="text-left px-4 py-2">Env var prefix</th>
+							<th class="text-left px-4 py-2">Added</th>
+							<th class="px-4 py-2"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each remoteSources as rs (rs.id)}
+							<tr>
+								<td class="px-4 py-2.5 text-zinc-200">
+									<a href="/stacks/{rs.source_stack_id}" class="hover:text-white">{rs.source_stack_name}</a>
+								</td>
+								<td class="px-4 py-2.5 font-mono text-xs text-zinc-400">{rs.env_var_prefix}</td>
+								<td class="px-4 py-2.5 text-zinc-500 text-xs">{fmtDate(rs.created_at)}</td>
+								<td class="px-4 py-2.5 text-right">
+									<button onclick={() => removeRemoteSource(rs.id)}
+										class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-zinc-600 text-sm">No remote state sources configured.</p>
+		{/if}
+
+		{#if allStacksList.length > 0}
+			<div class="flex items-center gap-2 flex-wrap">
+				<select class="field-input w-64" bind:value={addingRemoteSource}>
+					<option value="">— add a source stack —</option>
+					{#each allStacksList.filter(s => !remoteSources.some(r => r.source_stack_id === s.id)) as s (s.id)}
+						<option value={s.id}>{s.name}</option>
+					{/each}
+				</select>
+				<button onclick={addRemoteSource} disabled={!addingRemoteSource}
+					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Add
+				</button>
+				{#if addingRemoteSourceError}
+					<span class="text-xs text-red-400">{addingRemoteSourceError}</span>
+				{/if}
 			</div>
 		{/if}
 	</section>

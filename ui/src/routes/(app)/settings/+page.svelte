@@ -16,6 +16,18 @@
 	let runnerSaved = $state(false);
 	let runnerError = $state<string | null>(null);
 
+	// Notification defaults
+	let notifDefaultsForm = $state({ default_slack_webhook: '', default_vcs_provider: 'github', default_vcs_base_url: '' });
+	let savingNotifDefaults = $state(false);
+	let notifDefaultsSaved = $state(false);
+	let notifDefaultsError = $state<string | null>(null);
+
+	// Retention settings
+	let retentionForm = $state({ artifact_retention_days: 0 });
+	let savingRetention = $state(false);
+	let retentionSaved = $state(false);
+	let retentionError = $state<string | null>(null);
+
 	// Invite form
 	let inviteEmail = $state('');
 	let inviteRole = $state('member');
@@ -47,6 +59,12 @@
 				runner_memory_limit: s.runner_memory_limit,
 				runner_cpu_limit: s.runner_cpu_limit
 			};
+			notifDefaultsForm = {
+				default_slack_webhook: s.default_slack_webhook ?? '',
+				default_vcs_provider: s.default_vcs_provider || 'github',
+				default_vcs_base_url: s.default_vcs_base_url ?? ''
+			};
+			retentionForm = { artifact_retention_days: s.artifact_retention_days ?? 0 };
 		}).catch(() => {});
 	});
 
@@ -80,6 +98,38 @@
 	async function changeRole(userID: string, role: string) {
 		await org.members.update(userID, role);
 		members = members.map((m) => m.user_id === userID ? { ...m, role: role as OrgMember['role'] } : m);
+	}
+
+	async function saveNotifDefaults(e: SubmitEvent) {
+		e.preventDefault();
+		savingNotifDefaults = true;
+		notifDefaultsSaved = false;
+		notifDefaultsError = null;
+		try {
+			await system.settings.update(notifDefaultsForm);
+			notifDefaultsSaved = true;
+			setTimeout(() => (notifDefaultsSaved = false), 3000);
+		} catch (err) {
+			notifDefaultsError = (err as Error).message;
+		} finally {
+			savingNotifDefaults = false;
+		}
+	}
+
+	async function saveRetention(e: SubmitEvent) {
+		e.preventDefault();
+		savingRetention = true;
+		retentionSaved = false;
+		retentionError = null;
+		try {
+			await system.settings.update(retentionForm);
+			retentionSaved = true;
+			setTimeout(() => (retentionSaved = false), 3000);
+		} catch (err) {
+			retentionError = (err as Error).message;
+		} finally {
+			savingRetention = false;
+		}
 	}
 
 	async function saveRunnerSettings(e: SubmitEvent) {
@@ -299,6 +349,96 @@
 						{savingRunner ? 'Saving…' : 'Save runner settings'}
 					</button>
 					{#if runnerSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			</form>
+		</div>
+	{/if}
+
+	<!-- Notification defaults -->
+	{#if isAdmin && runnerSettings}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
+			<div class="px-6 py-4 border-b border-zinc-800">
+				<p class="text-xs text-zinc-500 uppercase tracking-widest">Notification defaults</p>
+				<p class="text-xs text-zinc-600 mt-1">Pre-fill new stacks' notification settings. Stacks can override these values individually.</p>
+			</div>
+			<form onsubmit={saveNotifDefaults} class="px-6 py-5 space-y-4">
+				{#if notifDefaultsError}
+					<div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">{notifDefaultsError}</div>
+				{/if}
+				<div class="space-y-1.5">
+					<label class="field-label" for="default-slack">Default Slack webhook URL</label>
+					<input id="default-slack" class="field-input font-mono text-sm" type="password"
+						bind:value={notifDefaultsForm.default_slack_webhook}
+						placeholder="https://hooks.slack.com/services/…"
+						autocomplete="new-password" />
+					<p class="text-xs text-zinc-600">New stacks will inherit this webhook. Leave blank to require per-stack configuration.</p>
+				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="default-vcs-provider">Default VCS provider</label>
+						<select id="default-vcs-provider" class="field-input" bind:value={notifDefaultsForm.default_vcs_provider}>
+							<option value="github">GitHub</option>
+							<option value="gitlab">GitLab</option>
+							<option value="gitea">Gitea / Gogs</option>
+						</select>
+					</div>
+					{#if notifDefaultsForm.default_vcs_provider !== 'github'}
+						<div class="space-y-1.5">
+							<label class="field-label" for="default-vcs-base-url">
+								Default instance base URL
+								{#if notifDefaultsForm.default_vcs_provider === 'gitlab'}
+									<span class="text-zinc-600"> (blank = gitlab.com)</span>
+								{/if}
+							</label>
+							<input id="default-vcs-base-url" class="field-input font-mono text-sm"
+								bind:value={notifDefaultsForm.default_vcs_base_url}
+								placeholder="https://gitlab.example.com" />
+						</div>
+					{/if}
+				</div>
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingNotifDefaults}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingNotifDefaults ? 'Saving…' : 'Save notification defaults'}
+					</button>
+					{#if notifDefaultsSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			</form>
+		</div>
+	{/if}
+
+	<!-- Retention -->
+	{#if isAdmin && runnerSettings}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
+			<div class="px-6 py-4 border-b border-zinc-800">
+				<p class="text-xs text-zinc-500 uppercase tracking-widest">Retention</p>
+				<p class="text-xs text-zinc-600 mt-1">Plan artifacts and run logs are automatically deleted after the configured period. Set to 0 to retain indefinitely.</p>
+			</div>
+			<form onsubmit={saveRetention} class="px-6 py-5 space-y-4">
+				{#if retentionError}
+					<div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">{retentionError}</div>
+				{/if}
+				<div class="space-y-1.5">
+					<label class="field-label" for="retention-days">Artifact retention (days)</label>
+					<div class="flex items-center gap-3">
+						<input id="retention-days" type="number" min="0" max="3650" class="field-input w-32"
+							bind:value={retentionForm.artifact_retention_days} />
+						<span class="text-xs text-zinc-500">
+							{retentionForm.artifact_retention_days === 0 ? 'Retain indefinitely' : `Delete after ${retentionForm.artifact_retention_days} day${retentionForm.artifact_retention_days === 1 ? '' : 's'}`}
+						</span>
+					</div>
+					<p class="text-xs text-zinc-600">Applies to plan binary files and terminal logs. Terraform state is never automatically deleted.</p>
+				</div>
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingRetention}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingRetention ? 'Saving…' : 'Save retention policy'}
+					</button>
+					{#if retentionSaved}
 						<span class="text-xs text-green-400">Saved.</span>
 					{/if}
 				</div>

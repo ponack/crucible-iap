@@ -91,7 +91,7 @@ func runServe() {
 
 	n := notify.New(pool, v, cfg.BaseURL)
 
-	d, err := worker.New(pool, cfg, r, store, v, n)
+	d, err := worker.New(pool, cfg, r, store, v, n, q)
 	if err != nil {
 		slog.Error("failed to create worker dispatcher", "err", err)
 		os.Exit(1)

@@ -298,6 +298,10 @@ cd api && go test -race ./...
 - [x] Multi-cloud state backend options — S3 / S3-compatible (Sig v4), GCS (JWT + OAuth2), Azure Blob Storage (SharedKeyLite)
 - [x] Gitea and Gogs webhook support — modern X-Hub-Signature-256 compat + legacy X-Gitea-Signature fallback
 - [x] Per-stack VCS provider config (github/gitlab/gitea) with custom instance base URL for self-hosted deployments
+- [x] Remote state sharing — cross-stack `terraform_remote_state` with per-relationship tokens minted on the source stack and injected as env vars at run time
+- [x] Auto-remediate drift — automatically queue a tracked apply run after a drift detection run reports changes
+- [x] Artifact retention policy — configurable retention period for plan files and run logs; deleted on a daily background sweep
+- [x] Org-level notification defaults — pre-fill Slack webhook and VCS provider config for new stacks
 - [ ] External worker agents — additional runner nodes that connect to the primary instance, allowing job execution capacity to be scaled out independently
 - [ ] Stack dependency graph — first-class upstream/downstream relationships with automatic downstream triggers after a successful apply
 - [ ] Variable sets — define a shared group of env vars once and attach to multiple stacks; eliminates repetition across similar stacks
@@ -307,6 +311,11 @@ cd api && go test -race ./...
 - [ ] Email notifications — alongside Slack for teams that need non-Slack alerting
 - [ ] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
+- [ ] Terraform module registry — private module registry backed by MinIO for internal module distribution without an external registry dependency
+- [ ] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
+- [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
+- [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
+- [ ] Fine-grained RBAC — resource-level permissions (per-stack viewer/approver roles) rather than a single org-wide role
 
 ## License
 

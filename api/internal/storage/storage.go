@@ -117,6 +117,15 @@ func (c *Client) DeleteLog(ctx context.Context, runID string) error {
 	return c.mc.RemoveObject(ctx, c.bucketArtifacts, logKey(runID), minio.RemoveObjectOptions{})
 }
 
+// DeleteArtifacts removes both the plan artifact and the log for a run.
+// Errors from individual deletes are ignored so a missing object doesn't
+// block cleanup of the other.
+func (c *Client) DeleteArtifacts(ctx context.Context, runID string) error {
+	_ = c.DeletePlan(ctx, runID)
+	_ = c.DeleteLog(ctx, runID)
+	return nil
+}
+
 // ── Object key helpers ────────────────────────────────────────────────────────
 
 func stateKey(stackID string) string { return stackID + "/terraform.tfstate" }

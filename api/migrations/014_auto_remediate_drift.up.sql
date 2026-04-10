@@ -1,0 +1,1 @@
+ALTER TABLE stacks ADD COLUMN auto_remediate_drift BOOLEAN NOT NULL DEFAULT FALSE;

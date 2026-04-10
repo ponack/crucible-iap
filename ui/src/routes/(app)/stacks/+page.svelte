@@ -107,7 +107,13 @@
 	{#if loading}
 		<p class="text-zinc-500 text-sm">Loading…</p>
 	{:else if error}
-		<p class="text-red-400 text-sm">{error}</p>
+		<div class="border border-zinc-800 rounded-xl p-12 text-center">
+			<p class="text-zinc-400 text-sm">Could not load stacks.</p>
+			<p class="text-zinc-600 text-xs mt-1">{error}</p>
+			<button onclick={load} class="mt-3 inline-block text-indigo-400 text-sm hover:underline">
+				Try again →
+			</button>
+		</div>
 	{:else if items.length === 0}
 		<div class="border border-zinc-800 rounded-xl p-12 text-center">
 			<p class="text-zinc-400 text-sm">No stacks yet.</p>

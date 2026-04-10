@@ -16,7 +16,8 @@
 		runner_image: '',
 		auto_apply: false,
 		drift_detection: false,
-		drift_schedule: '0 */6 * * *'
+		drift_schedule: '0 */6 * * *',
+		auto_remediate_drift: false
 	});
 
 	async function submit(e: SubmitEvent) {
@@ -28,7 +29,7 @@
 			// Strip optional string fields that are empty so the backend uses its defaults
 			if (!payload.tool_version) delete payload.tool_version;
 			if (!payload.runner_image) delete payload.runner_image;
-			if (!payload.drift_detection) delete payload.drift_schedule;
+			if (!payload.drift_detection) { delete payload.drift_schedule; delete payload.auto_remediate_drift; }
 			const stack = await stacks.create(payload);
 			goto(`/stacks/${stack.id}`);
 		} catch (e) {
@@ -145,6 +146,13 @@
 						<option value="0 0 * * 1">Weekly (Monday midnight UTC)</option>
 					</select>
 				</div>
+				<label class="flex items-center gap-3 cursor-pointer pl-7">
+					<input type="checkbox" class="rounded border-zinc-700 bg-zinc-900 text-indigo-500"
+						bind:checked={form.auto_remediate_drift} />
+					<span class="text-sm text-zinc-300">
+						Auto-remediate drift — automatically apply when drift is detected
+					</span>
+				</label>
 			{/if}
 		</fieldset>
 

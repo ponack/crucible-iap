@@ -86,6 +86,7 @@ export interface Stack {
 	auto_apply: boolean;
 	drift_detection: boolean;
 	drift_schedule?: string;
+	auto_remediate_drift: boolean;
 	vcs_provider: 'github' | 'gitlab' | 'gitea';
 	vcs_base_url?: string;
 	has_vcs_token: boolean;
@@ -276,6 +277,18 @@ export const stacks = {
 	webhook: {
 		rotateSecret: (stackID: string) =>
 			request<{ webhook_secret: string }>(`/stacks/${stackID}/webhook/rotate`, { method: 'POST' })
+	},
+
+	remoteState: {
+		list: (stackID: string) =>
+			request<RemoteStateSource[]>(`/stacks/${stackID}/remote-state-sources`),
+		add: (stackID: string, sourceStackID: string) =>
+			request<RemoteStateSource>(`/stacks/${stackID}/remote-state-sources`, {
+				method: 'POST',
+				body: JSON.stringify({ source_stack_id: sourceStackID })
+			}),
+		remove: (stackID: string, sourceID: string) =>
+			request<null>(`/stacks/${stackID}/remote-state-sources/${sourceID}`, { method: 'DELETE' })
 	}
 };
 
@@ -412,12 +425,27 @@ export const audit = {
 	}
 };
 
+// ── Remote state sources ──────────────────────────────────────────────────────
+
+export interface RemoteStateSource {
+	id: string;
+	source_stack_id: string;
+	source_stack_name: string;
+	source_stack_slug: string;
+	env_var_prefix: string;
+	created_at: string;
+}
+
 export interface SystemSettings {
 	runner_default_image: string;
 	runner_max_concurrent: number;
 	runner_job_timeout_mins: number;
 	runner_memory_limit: string;
 	runner_cpu_limit: string;
+	default_slack_webhook: string;
+	default_vcs_provider: string;
+	default_vcs_base_url: string;
+	artifact_retention_days: number;
 	updated_at: string;
 }
 
@@ -532,5 +560,5 @@ export const system = {
 		get: () => request<SystemSettings>('/system/settings'),
 		update: (data: Partial<Omit<SystemSettings, 'updated_at'>>) =>
 			request<SystemSettings>('/system/settings', { method: 'PUT', body: JSON.stringify(data) })
-	}
+	},
 };

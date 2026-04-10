@@ -38,6 +38,7 @@ type Server struct {
 	echo          *echo.Echo
 	dispatcher    *worker.Dispatcher
 	queue         *queue.Client
+	storage       *storage.Client
 	policyHandler *policies.Handler
 	updater       *updater.Checker
 	startTime     time.Time
@@ -46,6 +47,22 @@ type Server struct {
 func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher, v *vault.Vault, n *notify.Notifier) *Server {
 	e := echo.New()
 	e.HideBanner = true
+
+	// Standardise all error responses to {"error": "..."} so the UI client
+	// can reliably extract the message (Echo's default uses "message").
+	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		code := http.StatusInternalServerError
+		msg := "internal server error"
+		if he, ok := err.(*echo.HTTPError); ok {
+			code = he.Code
+			if s, ok := he.Message.(string); ok {
+				msg = s
+			}
+		}
+		if !c.Response().Committed {
+			_ = c.JSON(code, map[string]string{"error": msg})
+		}
+	}
 
 	// ── Global middleware ──────────────────────────────────────────────────────
 	e.Use(middleware.Recover())
@@ -71,6 +88,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 		echo:          e,
 		dispatcher:    d,
 		queue:         q,
+		storage:       store,
 		policyHandler: policyHandler,
 		updater:       updater.New(version),
 		startTime:     time.Now(),
@@ -182,6 +200,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.PUT("/stacks/:id/state-backend", stackHandler.UpsertStateBackend, member)
 	api.DELETE("/stacks/:id/state-backend", stackHandler.DeleteStateBackend, member)
 
+	// Remote state sources (cross-stack terraform_remote_state)
+	api.GET("/stacks/:id/remote-state-sources", stackHandler.ListRemoteStateSources)
+	api.POST("/stacks/:id/remote-state-sources", stackHandler.AddRemoteStateSource, member)
+	api.DELETE("/stacks/:id/remote-state-sources/:source_id", stackHandler.RemoveRemoteStateSource, member)
+
 	// Runs
 	api.GET("/runs", runHandler.ListAll)
 	api.GET("/stacks/:stackID/runs", runHandler.List)
@@ -221,6 +244,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	metrics.PollQueueDepth(ctx, s.pool)
 	worker.StartDriftScheduler(ctx, s.pool, s.cfg, s.queue)
+	worker.StartRetentionScheduler(ctx, s.pool, s.cfg, s.storage)
 	s.updater.Start(ctx)
 
 	errCh := make(chan error, 1)

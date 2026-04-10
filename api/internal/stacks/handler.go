@@ -49,9 +49,10 @@ type Stack struct {
 	RepoBranch     string    `json:"repo_branch"`
 	ProjectRoot    string    `json:"project_root"`
 	RunnerImage    string    `json:"runner_image,omitempty"`
-	AutoApply      bool      `json:"auto_apply"`
-	DriftDetection bool      `json:"drift_detection"`
-	DriftSchedule  string    `json:"drift_schedule,omitempty"`
+	AutoApply            bool   `json:"auto_apply"`
+	DriftDetection       bool   `json:"drift_detection"`
+	DriftSchedule        string `json:"drift_schedule,omitempty"`
+	AutoRemediateDrift   bool   `json:"auto_remediate_drift"`
 	WebhookSecret   string    `json:"webhook_secret,omitempty"` // only populated on Get
 	WebhookURL      string    `json:"webhook_url,omitempty"`    // only populated on Get
 	VCSProvider         string   `json:"vcs_provider"`
@@ -107,7 +108,8 @@ func (h *Handler) List(c echo.Context) error {
 		SELECT s.id, s.org_id, s.slug, s.name, COALESCE(s.description,''), s.tool,
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
-		       COALESCE(s.drift_schedule,''), s.is_disabled, s.created_at, s.updated_at,
+		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift,
+		       s.is_disabled, s.created_at, s.updated_at,
 		       COALESCE(lr.status,''), lr.queued_at,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
@@ -131,7 +133,7 @@ func (h *Handler) List(c echo.Context) error {
 		var s Stack
 		if err := rows.Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 			&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
-			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
+			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
 			&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt,
 			&s.LastRunStatus, &s.LastRunAt,
 			&total); err != nil {
@@ -147,15 +149,16 @@ func (h *Handler) Create(c echo.Context) error {
 	userID, _ := c.Get("userID").(string)
 
 	var req struct {
-		Slug           string `json:"slug"`
-		Name           string `json:"name"`
-		Description    string `json:"description"`
-		Tool           string `json:"tool"`
-		RepoURL        string `json:"repo_url"`
-		RepoBranch     string `json:"repo_branch"`
-		ProjectRoot    string `json:"project_root"`
-		AutoApply      bool   `json:"auto_apply"`
-		DriftDetection bool   `json:"drift_detection"`
+		Slug               string `json:"slug"`
+		Name               string `json:"name"`
+		Description        string `json:"description"`
+		Tool               string `json:"tool"`
+		RepoURL            string `json:"repo_url"`
+		RepoBranch         string `json:"repo_branch"`
+		ProjectRoot        string `json:"project_root"`
+		AutoApply          bool   `json:"auto_apply"`
+		DriftDetection     bool   `json:"drift_detection"`
+		AutoRemediateDrift bool   `json:"auto_remediate_drift"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -185,16 +188,16 @@ func (h *Handler) Create(c echo.Context) error {
 	err = h.pool.QueryRow(c.Request().Context(), `
 		INSERT INTO stacks
 		  (org_id, slug, name, description, tool, repo_url, repo_branch,
-		   project_root, auto_apply, drift_detection, created_by, webhook_secret)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		   project_root, auto_apply, drift_detection, auto_remediate_drift, created_by, webhook_secret)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
 		          repo_url, repo_branch, project_root, auto_apply, drift_detection,
-		          webhook_secret, created_at, updated_at
+		          auto_remediate_drift, webhook_secret, created_at, updated_at
 	`, orgID, req.Slug, req.Name, req.Description, req.Tool, req.RepoURL,
-		req.RepoBranch, req.ProjectRoot, req.AutoApply, req.DriftDetection, userID, secret).
+		req.RepoBranch, req.ProjectRoot, req.AutoApply, req.DriftDetection, req.AutoRemediateDrift, userID, secret).
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.RepoURL, &s.RepoBranch, &s.ProjectRoot, &s.AutoApply, &s.DriftDetection,
-			&s.WebhookSecret, &s.CreatedAt, &s.UpdatedAt)
+			&s.AutoRemediateDrift, &s.WebhookSecret, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -211,7 +214,7 @@ func (h *Handler) Get(c echo.Context) error {
 		SELECT s.id, s.org_id, s.slug, s.name, COALESCE(s.description,''), s.tool,
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
-		       COALESCE(s.drift_schedule,''), s.webhook_secret,
+		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift, s.webhook_secret,
 		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
 		       s.vcs_token_enc IS NOT NULL, s.slack_webhook_enc IS NOT NULL,
 		       COALESCE(s.notify_events, '{}'),
@@ -223,7 +226,7 @@ func (h *Handler) Get(c echo.Context) error {
 		FROM stacks s WHERE s.id = $1 AND s.org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
-		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
+		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
 		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL,
 		&s.HasVCSToken, &s.HasSlackWebhook, &s.NotifyEvents,
 		&s.HasSecretStore, &s.SecretStoreProvider,
@@ -244,15 +247,16 @@ func (h *Handler) Update(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 
 	var req struct {
-		Name           *string `json:"name"`
-		Description    *string `json:"description"`
-		RepoBranch     *string `json:"repo_branch"`
-		ProjectRoot    *string `json:"project_root"`
-		RunnerImage    *string `json:"runner_image"`
-		AutoApply      *bool   `json:"auto_apply"`
-		DriftDetection *bool   `json:"drift_detection"`
-		DriftSchedule  *string `json:"drift_schedule"`
-		IsDisabled     *bool   `json:"is_disabled"`
+		Name               *string `json:"name"`
+		Description        *string `json:"description"`
+		RepoBranch         *string `json:"repo_branch"`
+		ProjectRoot        *string `json:"project_root"`
+		RunnerImage        *string `json:"runner_image"`
+		AutoApply          *bool   `json:"auto_apply"`
+		DriftDetection     *bool   `json:"drift_detection"`
+		DriftSchedule      *string `json:"drift_schedule"`
+		AutoRemediateDrift *bool   `json:"auto_remediate_drift"`
+		IsDisabled         *bool   `json:"is_disabled"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -290,6 +294,9 @@ func (h *Handler) Update(c echo.Context) error {
 	if req.DriftSchedule != nil {
 		add("drift_schedule", *req.DriftSchedule)
 	}
+	if req.AutoRemediateDrift != nil {
+		add("auto_remediate_drift", *req.AutoRemediateDrift)
+	}
 	if req.IsDisabled != nil {
 		add("is_disabled", *req.IsDisabled)
 	}
@@ -299,7 +306,7 @@ func (h *Handler) Update(c echo.Context) error {
 		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
 		          COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		          COALESCE(runner_image,''), auto_apply, drift_detection,
-		          COALESCE(drift_schedule,''), is_disabled, created_at, updated_at
+		          COALESCE(drift_schedule,''), auto_remediate_drift, is_disabled, created_at, updated_at
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -307,7 +314,7 @@ func (h *Handler) Update(c echo.Context) error {
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
+			&s.AutoRemediateDrift, &s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
