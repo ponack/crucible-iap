@@ -51,6 +51,7 @@
 				</div>
 			</div>
 			<nav class="flex-1 px-2 py-4 space-y-1 text-sm">
+				<a href="/dashboard" class={navClass('/dashboard')}>Dashboard</a>
 				<a href="/stacks" class={navClass('/stacks')}>Stacks</a>
 				<a href="/runs" class={navClass('/runs')}>Runs</a>
 				<a href="/policies" class={navClass('/policies')}>Policies</a>
