@@ -3,11 +3,11 @@
 	import { EditorView, basicSetup } from 'codemirror';
 	import { EditorState } from '@codemirror/state';
 	import { oneDark } from '@codemirror/theme-one-dark';
-	import { StreamLanguage } from '@codemirror/language';
+	import { StreamLanguage, StringStream } from '@codemirror/language';
 
 	// Minimal Rego stream tokenizer for syntax highlighting
 	const regoLanguage = StreamLanguage.define({
-		token(stream) {
+		token(stream: StringStream) {
 			if (stream.eatSpace()) return null;
 			// Comments
 			if (stream.match(/^#.*/)) return 'comment';
