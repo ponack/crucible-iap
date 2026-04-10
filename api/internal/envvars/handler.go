@@ -19,6 +19,7 @@ import (
 type EnvVarMeta struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	IsSecret  bool      `json:"is_secret"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -38,7 +39,7 @@ func (h *Handler) List(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 
 	rows, err := h.pool.Query(c.Request().Context(), `
-		SELECT id, name, created_at, updated_at
+		SELECT id, name, is_secret, created_at, updated_at
 		FROM stack_env_vars
 		WHERE stack_id = $1 AND org_id = $2
 		ORDER BY name
@@ -51,7 +52,7 @@ func (h *Handler) List(c echo.Context) error {
 	vars := []EnvVarMeta{}
 	for rows.Next() {
 		var v EnvVarMeta
-		if err := rows.Scan(&v.ID, &v.Name, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.Name, &v.IsSecret, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "scan error")
 		}
 		vars = append(vars, v)
@@ -67,11 +68,18 @@ func (h *Handler) Upsert(c echo.Context) error {
 	userID := c.Get("userID").(string)
 
 	var req struct {
-		Name  string `json:"name"`
-		Value string `json:"value"`
+		Name     string `json:"name"`
+		Value    string `json:"value"`
+		IsSecret *bool  `json:"is_secret"`
 	}
 	if err := c.Bind(&req); err != nil || req.Name == "" || req.Value == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "name and value are required")
+	}
+
+	// Default to secret=true if not specified.
+	isSecret := true
+	if req.IsSecret != nil {
+		isSecret = *req.IsSecret
 	}
 
 	enc, err := h.vault.Encrypt(stackID, []byte(req.Value))
@@ -81,13 +89,14 @@ func (h *Handler) Upsert(c echo.Context) error {
 
 	var id string
 	err = h.pool.QueryRow(c.Request().Context(), `
-		INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc, is_secret)
+		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (stack_id, name) DO UPDATE
 		  SET value_enc = EXCLUDED.value_enc,
+		      is_secret = EXCLUDED.is_secret,
 		      updated_at = now()
 		RETURNING id
-	`, stackID, orgID, req.Name, enc).Scan(&id)
+	`, stackID, orgID, req.Name, enc, isSecret).Scan(&id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to save env var")
 	}
@@ -103,7 +112,7 @@ func (h *Handler) Upsert(c echo.Context) error {
 		Context:      ctx,
 	})
 
-	return c.JSON(http.StatusOK, EnvVarMeta{ID: id, Name: req.Name})
+	return c.JSON(http.StatusOK, EnvVarMeta{ID: id, Name: req.Name, IsSecret: isSecret})
 }
 
 // Delete removes a named env var from a stack.

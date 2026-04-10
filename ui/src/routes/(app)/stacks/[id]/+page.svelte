@@ -45,6 +45,7 @@
 	let envVars = $state<StackEnvVar[]>([]);
 	let newEnvName = $state('');
 	let newEnvValue = $state('');
+	let newEnvSecret = $state(true);
 	let savingEnv = $state(false);
 
 	// Notifications
@@ -179,8 +180,12 @@
 
 	async function deleteStack() {
 		if (!confirm(`Delete stack "${stack?.name}"? This cannot be undone.`)) return;
-		await stacks.delete(stackID);
-		goto('/stacks');
+		try {
+			await stacks.delete(stackID);
+			goto('/stacks');
+		} catch (e) {
+			alert((e as Error).message);
+		}
 	}
 
 	async function triggerRun() {
@@ -235,20 +240,32 @@
 
 	async function revokeToken(tokenID: string) {
 		if (!confirm('Revoke this token? Terraform will stop being able to access state.')) return;
-		await stacks.tokens.revoke(stackID, tokenID);
-		tokens = tokens.filter((t) => t.id !== tokenID);
+		try {
+			await stacks.tokens.revoke(stackID, tokenID);
+			tokens = tokens.filter((t) => t.id !== tokenID);
+		} catch (e) {
+			alert((e as Error).message);
+		}
 	}
 
 	async function attachPolicy() {
 		if (!attachingPolicy) return;
-		await policies.attach(stackID, attachingPolicy);
-		stackPolicies = await policies.forStack(stackID);
-		attachingPolicy = '';
+		try {
+			await policies.attach(stackID, attachingPolicy);
+			stackPolicies = await policies.forStack(stackID);
+			attachingPolicy = '';
+		} catch (e) {
+			alert((e as Error).message);
+		}
 	}
 
 	async function detachPolicy(policyID: string) {
-		await policies.detach(stackID, policyID);
-		stackPolicies = stackPolicies.filter((p) => p.policy_id !== policyID);
+		try {
+			await policies.detach(stackID, policyID);
+			stackPolicies = stackPolicies.filter((p) => p.policy_id !== policyID);
+		} catch (e) {
+			alert((e as Error).message);
+		}
 	}
 
 	async function saveNotifications(e: SubmitEvent) {
@@ -293,10 +310,11 @@
 		if (!newEnvName.trim() || !newEnvValue.trim()) return;
 		savingEnv = true;
 		try {
-			await stacks.env.upsert(stackID, newEnvName.trim(), newEnvValue.trim());
+			await stacks.env.upsert(stackID, newEnvName.trim(), newEnvValue.trim(), newEnvSecret);
 			envVars = await stacks.env.list(stackID);
 			newEnvName = '';
 			newEnvValue = '';
+			newEnvSecret = true;
 		} catch (err) {
 			alert((err as Error).message);
 		} finally {
@@ -306,8 +324,12 @@
 
 	async function deleteEnvVar(name: string) {
 		if (!confirm(`Remove env var "${name}"?`)) return;
-		await stacks.env.delete(stackID, name);
-		envVars = envVars.filter((v) => v.name !== name);
+		try {
+			await stacks.env.delete(stackID, name);
+			envVars = envVars.filter((v) => v.name !== name);
+		} catch (e) {
+			alert((e as Error).message);
+		}
 	}
 
 	async function saveSecretStore(e: SubmitEvent) {
@@ -739,6 +761,7 @@
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
 							<th class="text-left px-4 py-2">Name</th>
+							<th class="text-left px-4 py-2">Type</th>
 							<th class="text-left px-4 py-2">Last updated</th>
 							<th class="px-4 py-2"></th>
 						</tr>
@@ -747,6 +770,13 @@
 						{#each envVars as ev (ev.id)}
 							<tr>
 								<td class="px-4 py-2.5 font-mono text-xs text-zinc-200">{ev.name}</td>
+								<td class="px-4 py-2.5">
+									{#if ev.is_secret}
+										<span class="text-xs text-zinc-500" title="Value is masked — cannot be read back">🔒 secret</span>
+									{:else}
+										<span class="text-xs text-zinc-400">plain</span>
+									{/if}
+								</td>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs">{fmtDate(ev.updated_at)}</td>
 								<td class="px-4 py-2.5 text-right">
 									<button onclick={() => deleteEnvVar(ev.name)}
@@ -761,13 +791,26 @@
 			<p class="text-zinc-600 text-sm">No environment variables set.</p>
 		{/if}
 
-		<form onsubmit={saveEnvVar} class="flex items-center gap-2">
-			<input id="env-name" class="field-input w-40 font-mono text-xs" bind:value={newEnvName} placeholder="NAME" autocomplete="off" />
-			<input id="env-value" class="field-input w-56" type="password" bind:value={newEnvValue} placeholder="value" autocomplete="new-password" />
-			<button type="submit" disabled={savingEnv || !newEnvName || !newEnvValue}
-				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-				{savingEnv ? 'Saving…' : 'Set'}
-			</button>
+		<form onsubmit={saveEnvVar} class="space-y-2">
+			<div class="flex items-center gap-2 flex-wrap">
+				<input id="env-name" class="field-input w-40 font-mono text-xs" bind:value={newEnvName} placeholder="NAME" autocomplete="off" />
+				<input id="env-value" class="field-input w-56" type={newEnvSecret ? 'password' : 'text'} bind:value={newEnvValue} placeholder="value" autocomplete="new-password" />
+				<label class="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-400 select-none" for="env-secret">
+					<input id="env-secret" type="checkbox" bind:checked={newEnvSecret} />
+					Secret
+				</label>
+				<button type="submit" disabled={savingEnv || !newEnvName || !newEnvValue}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+					{savingEnv ? 'Saving…' : 'Set'}
+				</button>
+			</div>
+			<p class="text-xs text-zinc-600">
+				{#if newEnvSecret}
+					Secret — value is masked, write-only, and never shown again after saving.
+				{:else}
+					Plain — value is still encrypted at rest, but the type is recorded for documentation purposes.
+				{/if}
+			</p>
 		</form>
 	</section>
 
