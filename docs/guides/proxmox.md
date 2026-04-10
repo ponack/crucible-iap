@@ -213,8 +213,9 @@ plan := result {
 
 # Block unexpected deletions
 deny_msgs[msg] {
-  input.resource_changes[_].change.actions[_] == "delete"
-  not input.resource_changes[_].type == "proxmox_vm_qemu"
+  r := input.resource_changes[_]
+  r.change.actions[_] == "delete"
+  r.type != "proxmox_vm_qemu"
   msg := "unexpected resource deletion — review before applying"
 }
 
