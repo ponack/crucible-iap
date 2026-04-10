@@ -10,7 +10,9 @@ Crucible uses [OPA (Open Policy Agent)](https://www.openpolicyagent.org/) with R
 4. [Output shape](#output-shape)
 5. [Examples](#examples)
 6. [Assigning policies to stacks](#assigning-policies-to-stacks)
-7. [Testing policies locally](#testing-policies-locally)
+7. [Org-level defaults](#org-level-defaults)
+8. [Dry-run sandbox](#dry-run-sandbox)
+9. [Testing policies locally](#testing-policies-locally)
 
 ---
 
@@ -22,24 +24,31 @@ Crucible uses [OPA (Open Policy Agent)](https://www.openpolicyagent.org/) with R
 4. When a run reaches the relevant lifecycle hook, all policies of that type assigned to the stack are evaluated
 5. If any policy produces a `deny` message, the run is blocked and the message shown to the operator
 6. `warn` messages are non-blocking — they are recorded and surfaced but do not stop the run
+7. Per-policy evaluation results (pass / deny / warn) are stored and shown as a badge row on the run detail page
 
 ---
 
 ## Policy types
 
-| Type | Hook | Typical use |
-|------|------|-------------|
-| `post_plan` | After plan, before confirmation | Block dangerous changes (most common) |
-| `pre_plan` | Before plan starts | Validate stack configuration |
-| `pre_apply` | After confirmation, before apply | Final safety check |
-| `trigger` | After a run completes | Trigger downstream stacks |
-| `login` | On user login | Restrict which users can log in |
+| Type | Hook | Rule name | Typical use |
+| --- | --- | --- | --- |
+| `post_plan` | After plan, before confirmation | `plan` | Block dangerous changes (most common) |
+| `pre_plan` | Before plan starts | `plan` | Validate stack configuration |
+| `pre_apply` | After confirmation, before apply | `plan` | Final safety check |
+| `trigger` | After a run completes | `trigger` | Trigger downstream stacks |
+| `login` | On user login | `login` | Restrict which users can log in |
+
+The **rule name** is the top-level Rego rule Crucible queries — `data.crucible.<rule-name>`. Plan-type policies (`post_plan`, `pre_plan`, `pre_apply`) all use the `plan` rule; `trigger` and `login` use their own matching rule name.
 
 ---
 
 ## Input shape
 
-All policy types receive the Terraform/OpenTofu plan JSON as input. The top-level keys are:
+The `input` document varies by policy type.
+
+### Plan policies (`post_plan`, `pre_plan`, `pre_apply`)
+
+Receive the Terraform/OpenTofu plan JSON. The top-level keys are:
 
 ```json
 {
@@ -65,25 +74,77 @@ The most useful field is `resource_changes`:
 }
 ```
 
+### Login policies
+
+Receive the authenticated user's identity:
+
+```json
+{
+  "user": {
+    "email": "alice@example.com",
+    "name": "Alice"
+  },
+  "groups": ["engineering", "platform-team"]
+}
+```
+
+`groups` is populated from the OIDC `groups` claim if your IdP provides it; otherwise it is an empty array.
+
+### Trigger policies
+
+Receive the same plan JSON as plan-type policies (the plan from the completed run), plus a top-level `"run"` key with run metadata:
+
+```json
+{
+  "run": {
+    "id": "<uuid>",
+    "type": "tracked",
+    "stack_id": "<uuid>",
+    "triggered_by": "push"
+  },
+  "resource_changes": [ ... ],
+  ...
+}
+```
+
 ---
 
 ## Output shape
 
-Your Rego policy must return an object with three keys from the `data.crucible` namespace:
+Your Rego policy must return an object with three keys from the `data.crucible` namespace. The rule name matches the policy type (see [Policy types](#policy-types)):
 
 ```rego
 package crucible
 
+# Used by post_plan, pre_plan, pre_apply
 plan := result {
   result := {
     "deny":    deny_msgs,     # set of strings — each blocks the run
     "warn":    warn_msgs,     # set of strings — non-blocking, shown to operator
-    "trigger": [],            # set of stack IDs to trigger (trigger policies only)
+    "trigger": [],            # unused for plan policies; must be present
+  }
+}
+
+# Used by trigger policies
+trigger := result {
+  result := {
+    "deny":    [],
+    "warn":    [],
+    "trigger": downstream_stack_ids,  # set of stack UUIDs to queue a run on
+  }
+}
+
+# Used by login policies
+login := result {
+  result := {
+    "deny":    deny_msgs,     # non-empty set blocks the login
+    "warn":    [],
+    "trigger": [],
   }
 }
 ```
 
-The policy is evaluated with the query matching its type (e.g. `data.crucible.plan` for `post_plan`).
+Policy results (deny/warn messages) are recorded per run and shown as a badge row on the run detail page.
 
 ---
 
@@ -237,15 +298,49 @@ A stack can have multiple policies of the same type — all are evaluated, and a
 
 ---
 
+## Org-level defaults
+
+Admins can mark a policy as an **org default**, which automatically applies it to every stack in the organisation — no manual attachment needed.
+
+To set a policy as an org default:
+
+1. Open the policy in **Policies** → select a policy → **Edit**
+2. Toggle **Set as org default** (admin-only; the toggle is hidden for non-admins)
+3. Click **Save**
+
+Policies marked as org defaults show an **Org default** badge in the policy list. They are evaluated on every run alongside any stack-specific policies. Removing the org-default flag does not delete the policy — it simply stops being applied automatically.
+
+---
+
+## Dry-run sandbox
+
+The **Test policy** panel on the policy edit page lets you evaluate your policy against any JSON input without saving or triggering a real run.
+
+1. Open the policy in **Policies** → **Edit**
+2. Expand the **Test policy** panel
+3. Paste a plan JSON (or user object for `login` policies) into the input field
+4. Click **Run test**
+5. Results appear inline — pass, deny messages, warn messages, and any triggered stack IDs
+
+This is the fastest way to iterate on policy logic. The underlying endpoint (`POST /api/v1/policies/validate`) accepts an optional `input` field and evaluates the policy source without persisting anything.
+
+The **Input schema explorer** panel (also on create and edit pages) shows the exact `input` shape and a typed field reference for the selected policy type, so you know what fields are available without leaving the editor.
+
+---
+
 ## Testing policies locally
 
+For local CI or pre-commit validation, you can evaluate policies with the OPA CLI directly — no running Crucible instance needed. For interactive iteration, the [dry-run sandbox](#dry-run-sandbox) in the UI is faster.
+
 Install OPA:
+
 ```bash
 brew install opa  # macOS
 # or download from https://www.openpolicyagent.org/docs/latest/#running-opa
 ```
 
 Get a plan JSON:
+
 ```bash
 cd your-terraform-dir
 terraform plan -out=plan.bin
@@ -253,6 +348,7 @@ terraform show -json plan.bin > plan.json
 ```
 
 Evaluate your policy:
+
 ```bash
 opa eval \
   --data your-policy.rego \
@@ -261,6 +357,7 @@ opa eval \
 ```
 
 Expected output for a passing policy:
+
 ```json
 {
   "result": [{

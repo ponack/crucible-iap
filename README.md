@@ -243,7 +243,7 @@ warn_msgs[msg] {
 }
 ```
 
-Policy types: `post_plan` (most common), `pre_apply`, `pre_plan`, `login`.
+Policy types: `post_plan` (most common), `pre_plan`, `pre_apply`, `trigger` (downstream stacks), `login`.
 
 ## Development
 

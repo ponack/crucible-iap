@@ -6,7 +6,7 @@ Crucible IAP is a self-hosted infrastructure automation platform. It orchestrate
 
 ## Component diagram
 
-```
+```text
 Browser / CI
     │
     ▼
@@ -87,7 +87,7 @@ State files are stored versioned in MinIO. Locking uses PostgreSQL `state_locks`
 Every run executes in a fresh ephemeral container:
 
 | Control | Value |
-|---------|-------|
+| --- | --- |
 | `--read-only` | Root filesystem is read-only |
 | `--no-new-privileges` | Prevents privilege escalation |
 | `--cap-drop ALL` | No Linux capabilities |
@@ -111,7 +111,7 @@ The table uses PostgreSQL rules to make it INSERT-only — UPDATE and DELETE are
 
 ## Database schema (key tables)
 
-```
+```text
 users              — authenticated user accounts
 organizations      — top-level tenants
 organization_members — user ↔ org membership + role
@@ -120,13 +120,15 @@ runs               — run lifecycle records (status machine)
 state_locks        — distributed state locking for TF backend
 policies           — OPA/Rego policy source + metadata
 stack_policies     — many-to-many stack ↔ policy attachment
+run_policy_results — per-policy evaluation outcome per run (deny/warn/pass)
+org_policy_defaults — policies automatically applied to all stacks in an org
 audit_events       — append-only partitioned audit log
 ```
 
 ## Policy evaluation hooks
 
 | Hook | When | Blocks? |
-|------|------|---------|
+| --- | --- | --- |
 | `pre_plan` | Before plan starts | Yes |
 | `post_plan` | After plan, before user confirmation | Yes (deny) |
 | `pre_apply` | Before apply, after confirmation | Yes |
@@ -159,7 +161,7 @@ Operators can also trigger a one-off drift check via the UI or `POST /api/v1/sta
 
 ## Directory structure
 
-```
+```text
 crucible-iap/
 ├── api/                    # Go backend
 │   ├── cmd/crucible-iap/   # Main entrypoint (serve + migrate subcommands)
@@ -208,7 +210,7 @@ crucible-iap/
 
 Place assets in `ui/static/`:
 
-```
+```text
 ui/static/
 ├── favicon.svg             # Browser tab icon (SVG preferred)
 ├── logo.svg                # Full logo (wordmark + icon)
