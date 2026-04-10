@@ -169,8 +169,9 @@ deny_msgs[msg] {
 }
 
 warn_msgs[msg] {
-  input.resource_changes[_].change.actions[_] == "update"
-  msg := sprintf("resource %v will be modified", [input.resource_changes[_].address])
+  r := input.resource_changes[_]
+  r.change.actions[_] == "update"
+  msg := sprintf("resource %v will be modified", [r.address])
 }
 ```
 
