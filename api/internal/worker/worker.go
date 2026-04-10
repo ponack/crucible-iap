@@ -208,12 +208,13 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		return w.failRun(ctx, orgID, args.RunID, runErr)
 	}
 
-	// For tracked runs: transition to unconfirmed unless AutoApply is set (which
-	// skips the confirmation gate and immediately queues the apply phase).
+	// For tracked and destroy runs: transition to unconfirmed so a human must
+	// review the plan before changes are applied. Destroy runs never auto-apply
+	// regardless of the AutoApply flag — explicit confirmation is always required.
 	// For proposed runs (plan-only) or the apply phase, mark finished directly.
 	finalStatus := "finished"
-	if args.RunType == "tracked" {
-		if args.AutoApply {
+	if args.RunType == "tracked" || args.RunType == "destroy" {
+		if args.AutoApply && args.RunType != "destroy" {
 			// Auto-confirm: mark confirmed and queue apply without human approval.
 			now := time.Now()
 			if _, err := w.pool.Exec(ctx,
@@ -242,14 +243,14 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	// Fire notifications after status is committed.
 	switch {
 	case finalStatus == "unconfirmed":
-		// Plan phase done — post PR comment / set commit status to awaiting approval
+		// Plan phase done (tracked or destroy) — post PR comment / commit status awaiting approval.
 		go w.notifier.PlanComplete(context.Background(), args.RunID)
 	case finalStatus == "finished" && args.RunType == "proposed":
 		// Proposed (PR) plan complete — post result comment, then check drift auto-remediation.
 		go w.notifier.PlanComplete(context.Background(), args.RunID)
 		go w.maybeRemediateDrift(context.Background(), args)
-	case finalStatus == "finished" && args.RunType == "apply":
-		// Apply succeeded
+	case finalStatus == "finished" && (args.RunType == "apply" || args.RunType == "destroy"):
+		// Apply or destroy succeeded.
 		go w.notifier.RunFinished(context.Background(), args.RunID, true)
 	}
 
