@@ -36,7 +36,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
           cache: false
@@ -73,7 +73,7 @@ jobs:
 
       - name: Commit go.sum if changed
         if: github.event_name == 'push'
-        uses: stefanzweifel/git-auto-commit-action@v6
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update go.sum"
           file_pattern: "api/go.sum api/go.mod"
@@ -87,13 +87,13 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
         with:
           version: latest
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: ""
 
       - name: Install
@@ -114,7 +114,7 @@ jobs:
 
       - name: Commit lockfile if changed
         if: github.event_name == 'push'
-        uses: stefanzweifel/git-auto-commit-action@v6
+        uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update pnpm-lock.yaml"
           file_pattern: "ui/pnpm-lock.yaml"
@@ -229,7 +229,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "Crucible IAP ${{ github.ref_name }}" \
-            --generate-notes \
-            --verify-tag
+          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists — skipping creation."
+          else
+            gh release create "${{ github.ref_name }}" \
+              --title "Crucible IAP ${{ github.ref_name }}" \
+              --generate-notes \
+              --verify-tag
+          fi
