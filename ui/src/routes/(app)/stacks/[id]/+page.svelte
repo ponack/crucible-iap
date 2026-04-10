@@ -673,7 +673,7 @@
 		<p class="text-xs text-zinc-500">
 			Allow this stack to read the Terraform state of other stacks using
 			<code class="text-zinc-300">terraform_remote_state</code>. Each source stack is accessible via
-			env vars <code class="text-zinc-300">CRUCIBLE_REMOTE_STATE_&lt;SLUG&gt;_{ADDRESS,USERNAME,PASSWORD}</code>
+			env vars <code class="text-zinc-300">CRUCIBLE_REMOTE_STATE_&lt;SLUG&gt;_&#123;ADDRESS,USERNAME,PASSWORD&#125;</code>
 			injected into runner containers.
 		</p>
 
