@@ -60,11 +60,13 @@ func (h *Handler) Init(ctx context.Context) error {
 }
 
 // Validate compiles Rego without saving and returns any compile errors.
-// POST /api/v1/policies/validate  { type, body }
+// If input is provided, also evaluates the policy and returns the result.
+// POST /api/v1/policies/validate  { type, body, input? }
 func (h *Handler) Validate(c echo.Context) error {
 	var req struct {
-		Type string `json:"type"`
-		Body string `json:"body"`
+		Type  string         `json:"type"`
+		Body  string         `json:"body"`
+		Input map[string]any `json:"input,omitempty"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -73,8 +75,20 @@ func (h *Handler) Validate(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "type and body are required")
 	}
 
+	ctx := c.Request().Context()
+
+	// If input is provided, compile + evaluate in one shot (dry-run sandbox).
+	if req.Input != nil {
+		result, err := h.engine.EvaluateSource(ctx, policy.Type(req.Type), req.Body, req.Input)
+		if err != nil {
+			return c.JSON(http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+		}
+		return c.JSON(http.StatusOK, map[string]any{"ok": true, "result": result})
+	}
+
+	// Syntax-only check.
 	const tempID = "__validate__"
-	if err := h.engine.Load(c.Request().Context(), tempID, tempID, policy.Type(req.Type), req.Body); err != nil {
+	if err := h.engine.Load(ctx, tempID, tempID, policy.Type(req.Type), req.Body); err != nil {
 		return c.JSON(http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
 	}
 	h.engine.Unload(tempID)
@@ -247,6 +261,59 @@ func (h *Handler) Delete(c echo.Context) error {
 
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
 		ActorID: userID, Action: "policy.deleted", ResourceID: id, ResourceType: "policy",
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ── Org-level policy defaults ─────────────────────────────────────────────────
+
+// IsOrgDefault returns whether a policy is an org-level default.
+// GET /api/v1/policies/:id/org-default
+func (h *Handler) IsOrgDefault(c echo.Context) error {
+	orgID, _ := c.Get("orgID").(string)
+	id := c.Param("id")
+
+	var exists bool
+	_ = h.pool.QueryRow(c.Request().Context(),
+		`SELECT EXISTS(SELECT 1 FROM org_policy_defaults WHERE org_id = $1 AND policy_id = $2)`,
+		orgID, id).Scan(&exists)
+
+	return c.JSON(http.StatusOK, map[string]bool{"is_org_default": exists})
+}
+
+// SetOrgDefault marks a policy as an org-level default (idempotent).
+// PUT /api/v1/policies/:id/org-default
+func (h *Handler) SetOrgDefault(c echo.Context) error {
+	orgID, _ := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+	id := c.Param("id")
+
+	_, err := h.pool.Exec(c.Request().Context(),
+		`INSERT INTO org_policy_defaults (org_id, policy_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		orgID, id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "policy.org_default.set", ResourceID: id, ResourceType: "policy",
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
+// UnsetOrgDefault removes a policy from org-level defaults.
+// DELETE /api/v1/policies/:id/org-default
+func (h *Handler) UnsetOrgDefault(c echo.Context) error {
+	orgID, _ := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+	id := c.Param("id")
+
+	_, _ = h.pool.Exec(c.Request().Context(),
+		`DELETE FROM org_policy_defaults WHERE org_id = $1 AND policy_id = $2`,
+		orgID, id)
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "policy.org_default.unset", ResourceID: id, ResourceType: "policy",
 	})
 	return c.NoContent(http.StatusNoContent)
 }

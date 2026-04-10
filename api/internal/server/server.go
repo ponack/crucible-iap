@@ -139,6 +139,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.GET("/policies/:id", policyHandler.Get)
 	api.PATCH("/policies/:id", policyHandler.Update, member)
 	api.DELETE("/policies/:id", policyHandler.Delete, admin)
+	api.GET("/policies/:id/org-default", policyHandler.IsOrgDefault)
+	api.PUT("/policies/:id/org-default", policyHandler.SetOrgDefault, admin)
+	api.DELETE("/policies/:id/org-default", policyHandler.UnsetOrgDefault, admin)
 
 	// Stacks
 	api.GET("/stacks", stackHandler.List)
@@ -190,6 +193,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.POST("/runs/:id/cancel", runHandler.Cancel, member)
 	api.GET("/runs/:id/logs", runHandler.Logs)
 	api.GET("/runs/:id/plan", runHandler.DownloadPlan)
+	api.GET("/runs/:id/policy-results", runHandler.PolicyResults)
 	api.DELETE("/runs/:id", runHandler.Delete, admin)
 
 	// Audit log
@@ -206,6 +210,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	internal.POST("/runs/:id/status", runHandler.ReportStatus)
 	internal.POST("/runs/:id/plan", runHandler.UploadPlan)
 	internal.POST("/runs/:id/plan-summary", runHandler.ReportPlanSummary)
+	internal.POST("/runs/:id/policy-results", runHandler.ReportPolicyResults)
 }
 
 func (s *Server) Start(ctx context.Context) error {

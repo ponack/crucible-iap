@@ -327,6 +327,20 @@ export interface Run {
 	finished_at?: string;
 }
 
+export interface RunPolicyResult {
+	id: string;
+	run_id: string;
+	policy_id?: string;
+	policy_name: string;
+	policy_type: string;
+	hook: string;
+	allow: boolean;
+	deny_msgs: string[];
+	warn_msgs: string[];
+	trigger_ids: string[];
+	evaluated_at: string;
+}
+
 export const runs = {
 	listAll: (offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
 		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
@@ -349,6 +363,7 @@ export const runs = {
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
 	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' }),
 	remove: (id: string) => request<null>(`/runs/${id}`, { method: 'DELETE' }),
+	policyResults: (id: string) => request<RunPolicyResult[]>(`/runs/${id}/policy-results`),
 	downloadPlan: async (id: string): Promise<Blob> => {
 		const headers: Record<string, string> = {};
 		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
@@ -427,11 +442,23 @@ export interface StackPolicyRef {
 	is_active: boolean;
 }
 
+export interface PolicyResult {
+	allow: boolean;
+	deny?: string[];
+	warn?: string[];
+	trigger?: string[];
+}
+
 export const policies = {
 	validate: (type: string, body: string) =>
 		request<{ ok: boolean; error?: string }>('/policies/validate', {
 			method: 'POST',
 			body: JSON.stringify({ type, body })
+		}),
+	test: (type: string, body: string, input: unknown) =>
+		request<{ ok: boolean; error?: string; result?: PolicyResult }>('/policies/validate', {
+			method: 'POST',
+			body: JSON.stringify({ type, body, input })
 		}),
 	list: () => request<Policy[]>('/policies'),
 	get: (id: string) => request<Policy>(`/policies/${id}`),
@@ -441,6 +468,9 @@ export const policies = {
 		request<Policy>(`/policies/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 	delete: (id: string) => request<null>(`/policies/${id}`, { method: 'DELETE' }),
 
+	isOrgDefault: (id: string) => request<{ is_org_default: boolean }>(`/policies/${id}/org-default`),
+	setOrgDefault: (id: string) => request<null>(`/policies/${id}/org-default`, { method: 'PUT' }),
+	unsetOrgDefault: (id: string) => request<null>(`/policies/${id}/org-default`, { method: 'DELETE' }),
 	forStack: (stackID: string) => request<StackPolicyRef[]>(`/stacks/${stackID}/policies`),
 	attach: (stackID: string, policyID: string) =>
 		request<null>(`/stacks/${stackID}/policies/${policyID}`, { method: 'PUT' }),

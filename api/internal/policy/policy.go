@@ -65,6 +65,20 @@ func (e *Engine) Load(ctx context.Context, id, name string, t Type, source strin
 	return nil
 }
 
+// EvaluateSource compiles source and evaluates it against input in one shot,
+// without persisting the policy in the engine. Used for the dry-run sandbox.
+func (e *Engine) EvaluateSource(ctx context.Context, t Type, source string, input map[string]any) (Result, error) {
+	q, err := rego.New(
+		rego.Query(queryForType(t)),
+		rego.Module("test.rego", source),
+	).PrepareForEval(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("compile: %w", err)
+	}
+	p := &Policy{query: q}
+	return p.eval(ctx, input)
+}
+
 // Unload removes a policy by ID.
 func (e *Engine) Unload(id string) {
 	e.mu.Lock()
