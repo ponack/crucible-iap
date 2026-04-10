@@ -110,7 +110,7 @@ func (h *Handler) List(c echo.Context) error {
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
 		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift,
 		       s.is_disabled, s.created_at, s.updated_at,
-		       COALESCE(lr.status,''), lr.queued_at,
+		       COALESCE(lr.status::text,''), lr.queued_at,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN LATERAL (

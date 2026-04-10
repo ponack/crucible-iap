@@ -28,7 +28,7 @@
 		try {
 			const [stacksRes, activeRes, approvalRes, recentRes, auditRes, healthRes] = await Promise.all([
 				stacks.list(0, 200),
-				runs.listAll(0, 50, { status: 'running' }), // queued+preparing+planning+confirmed+applying
+				runs.listAll(0, 50), // all statuses; we filter to active client-side
 				runs.listAll(0, 20, { status: 'unconfirmed' }),
 				runs.listAll(0, 15),
 				audit.list(0, 10),
@@ -58,7 +58,7 @@
 		pollTimer = setInterval(async () => {
 			try {
 				const [activeRes, approvalRes, recentRes] = await Promise.all([
-					runs.listAll(0, 50, { status: 'running' }),
+					runs.listAll(0, 50),
 					runs.listAll(0, 20, { status: 'unconfirmed' }),
 					runs.listAll(0, 15)
 				]);
