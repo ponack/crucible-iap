@@ -138,16 +138,28 @@ The following are managed via **Settings → Runner** and **Settings → Retenti
 
 ## Upgrading
 
-Crucible uses automatic migrations. Upgrading is:
+Crucible runs database migrations automatically on startup. Upgrading is:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-The API container runs `migrate up` on startup before accepting traffic. Zero-downtime rolling upgrades are not yet supported — expect a few seconds of downtime during restart.
+Pull the new image first — the migration files are embedded in the binary, so the new image must be running before migrations are applied. Zero-downtime rolling upgrades are not yet supported — expect a few seconds of downtime during restart.
 
 **Before upgrading:** read the release notes for breaking changes to `.env` variables.
+
+### v0.1.5 → v0.2.0
+
+No `.env` changes required. Migrations 017 and 018 run automatically on startup:
+
+- **017** — adds `is_secret` column to `stack_env_vars` (existing env vars default to `secret = true`)
+- **018** — adds the missing `river_job_state_in_bitmask` function required by the River job queue. If you upgraded to v0.1.5 and runs were failing with `SQLSTATE 42883`, this migration fixes it.
+
+New in v0.2.0:
+
+- **Destroy runs** — trigger a `tofu destroy` from the stack detail page. The full plan is shown before anything is deleted; a name-confirmation modal and explicit approval gate are required.
+- **Env var secret flag** — each stack environment variable can be marked as `Secret` (value masked in the UI, default) or `Plain` (value visible). Toggle the flag when adding or updating a variable.
 
 ---
 

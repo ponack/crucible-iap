@@ -55,10 +55,18 @@ Browser / CI
 2. `POST /api/v1/stacks/:id/runs` inserts a `runs` row (status: `queued`)
 3. A River job is enqueued in PostgreSQL (transactional with the insert)
 4. The Worker Dispatcher pulls the job and spawns an ephemeral Docker container
-5. The container clones the repo, runs `tofu plan`, streams logs back via SSE
-6. For `tracked` runs, status transitions to `unconfirmed` — user approves or discards
-7. On confirm, a second River job runs `tofu apply`; status → `finished` or `failed`
+5. The container clones the repo, runs `tofu plan` (or `tofu plan -destroy` for destroy runs), streams logs back via SSE
+6. For `tracked` and `destroy` runs, status transitions to `unconfirmed` — user approves or discards. Destroy runs always require explicit confirmation regardless of stack auto-apply settings.
+7. On confirm, a second River job runs `tofu apply` on the saved plan artifact; status → `finished` or `failed`
 8. Logs and plan artifacts are written to MinIO; audit event appended to PostgreSQL
+
+### Run types
+
+| Type | What it does | Requires confirmation |
+| --- | --- | --- |
+| `tracked` | Full plan → apply lifecycle. Triggered manually or by a push to the tracked branch. | Yes (unless auto-apply is enabled on the stack) |
+| `proposed` | Plan only — no apply. Triggered by pull/merge requests or drift checks. Posts a summary comment on the PR. | No |
+| `destroy` | Runs `tofu plan -destroy`, then applies on confirmation. Triggered manually from the stack detail page. | Always — auto-apply is never used for destroy. |
 
 ## State management
 

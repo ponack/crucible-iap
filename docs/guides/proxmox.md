@@ -235,7 +235,7 @@ Back on the stack detail page → **Policies** → attach `proxmox-safety`.
 Stack detail page → **Environment Variables**:
 
 | Key | Value | Secret |
-|---|---|---|
+| --- | --- | --- |
 | `TF_VAR_pm_api_url` | `https://192.168.1.x:8006/api2/json` | no |
 | `TF_VAR_pm_api_token_id` | `crucible@pve!crucible` | no |
 | `TF_VAR_pm_api_token_secret` | your token UUID | **yes** |
@@ -246,6 +246,8 @@ Stack detail page → **Environment Variables**:
 | `TF_HTTP_UNLOCK_ADDRESS` | same URL | no |
 | `TF_HTTP_USERNAME` | `<token-id>` from stack tokens | no |
 | `TF_HTTP_PASSWORD` | `<token-secret>` from stack tokens | **yes** |
+
+The **Secret** toggle controls whether the value is masked in the UI. Secret variables (default) are shown as `••••••` in the variable list and the value field switches to a password input. Plain variables are shown as-is — useful for non-sensitive config like URLs and node names.
 
 The `TF_HTTP_*` variables supply the state backend credentials without hardcoding them in the repository. Create a stack token first under **Stack → Tokens → New Token**.
 
@@ -315,8 +317,17 @@ If **Auto-remediate drift** is enabled on the stack, Crucible automatically queu
 
 ## 8. Destroy the test VM
 
-When you're done testing:
+When you're done testing, Crucible can destroy the infrastructure through the same policy-gated, audit-logged flow as any other change.
 
-Stack detail → **Trigger destroy run** → confirm the stack name in the modal.
+Stack detail → **Destroy infra** → type the stack name to confirm → **Queue destroy run**.
 
-The `proxmox-safety` policy allows `delete` actions on `proxmox_vm_qemu` resources, so this will pass. OpenTofu destroys the VM and the state is cleared.
+The run lifecycle is:
+
+1. Status: `planning` — OpenTofu runs `tofu plan -destroy` and uploads the plan
+2. Status: `unconfirmed` — review the full destroy plan in the UI
+3. Click **Confirm destroy** — OpenTofu applies the destroy plan
+4. Status: `finished` — VM is removed from Proxmox and state is cleared
+
+> **Note:** The `proxmox-safety` policy attached in step 4 blocks unexpected deletions of non-VM resources, but explicitly allows `delete` on `proxmox_vm_qemu`. A destroy run on this stack will pass policy evaluation.
+
+Destroy runs always require explicit confirmation — auto-apply is never used, even if the stack has auto-apply enabled.
