@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
-	import { runs, type Run } from '$lib/api/client';
+	import { runs, type Run, type RunPolicyResult } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const runID = $derived(page.params.id as string);
@@ -12,6 +12,7 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let acting = $state<string | null>(null); // 'confirm' | 'discard' | 'cancel'
+	let policyResults = $state<RunPolicyResult[]>([]);
 
 	let logEl = $state<HTMLElement | undefined>(undefined);
 	let sse: EventSource | null = null;
@@ -29,6 +30,7 @@
 		}
 		loading = false;
 		startSSE();
+		runs.policyResults(runID).then((r) => (policyResults = r)).catch(() => {});
 	});
 
 	onDestroy(() => sse?.close());
@@ -251,6 +253,36 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Policy results (shown only when at least one policy was evaluated) -->
+	{#if policyResults.length > 0}
+		<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-3 space-y-2">
+			<p class="text-xs font-medium text-zinc-500 uppercase tracking-wide">Policy evaluation</p>
+			<div class="flex flex-wrap gap-2">
+				{#each policyResults as r}
+					<div class="flex items-start gap-2 rounded-lg border px-3 py-2 text-xs
+						{r.allow
+							? 'border-green-900 bg-green-950/50'
+							: 'border-red-900 bg-red-950/50'}">
+						<div class="space-y-0.5">
+							<div class="flex items-center gap-1.5">
+								<span class="font-medium {r.allow ? 'text-green-300' : 'text-red-300'}">
+									{r.allow ? '✓' : '✗'} {r.policy_name}
+								</span>
+								<span class="text-zinc-600">{r.hook}</span>
+							</div>
+							{#each r.deny_msgs as msg}
+								<p class="text-red-400 font-mono">{msg}</p>
+							{/each}
+							{#each r.warn_msgs as msg}
+								<p class="text-amber-400 font-mono">⚠ {msg}</p>
+							{/each}
+						</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<!-- Log viewer -->
 	<div class="flex-1 flex flex-col min-h-0">

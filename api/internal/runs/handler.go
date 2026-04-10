@@ -495,6 +495,116 @@ func (h *Handler) Logs(c echo.Context) error {
 	}
 }
 
+// ── Policy results ────────────────────────────────────────────────────────────
+
+// RunPolicyResult is one policy evaluation record attached to a run.
+type RunPolicyResult struct {
+	ID          string    `json:"id"`
+	RunID       string    `json:"run_id"`
+	PolicyID    *string   `json:"policy_id,omitempty"`
+	PolicyName  string    `json:"policy_name"`
+	PolicyType  string    `json:"policy_type"`
+	Hook        string    `json:"hook"`
+	Allow       bool      `json:"allow"`
+	DenyMsgs    []string  `json:"deny_msgs"`
+	WarnMsgs    []string  `json:"warn_msgs"`
+	TriggerIDs  []string  `json:"trigger_ids"`
+	EvaluatedAt time.Time `json:"evaluated_at"`
+}
+
+// PolicyResults returns all policy evaluation records for a run.
+// GET /api/v1/runs/:id/policy-results
+func (h *Handler) PolicyResults(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	// Verify org ownership.
+	var exists bool
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM runs r JOIN stacks s ON s.id = r.stack_id
+			WHERE r.id = $1 AND s.org_id = $2
+		)
+	`, id, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT id, run_id, policy_id, policy_name, policy_type, hook,
+		       allow, deny_msgs, warn_msgs, trigger_ids, evaluated_at
+		FROM run_policy_results
+		WHERE run_id = $1
+		ORDER BY evaluated_at
+	`, id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+
+	var out []RunPolicyResult
+	for rows.Next() {
+		var r RunPolicyResult
+		if err := rows.Scan(
+			&r.ID, &r.RunID, &r.PolicyID, &r.PolicyName, &r.PolicyType, &r.Hook,
+			&r.Allow, &r.DenyMsgs, &r.WarnMsgs, &r.TriggerIDs, &r.EvaluatedAt,
+		); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		out = append(out, r)
+	}
+	if out == nil {
+		out = []RunPolicyResult{}
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// ReportPolicyResults is called by the runner container after evaluating policies.
+// POST /api/v1/internal/runs/:id/policy-results
+func (h *Handler) ReportPolicyResults(c echo.Context) error {
+	id := c.Param("id")
+
+	tokenRunID, _ := c.Get("runID").(string)
+	if tokenRunID != id {
+		return echo.NewHTTPError(http.StatusForbidden, "token not valid for this run")
+	}
+
+	var results []struct {
+		PolicyID   *string  `json:"policy_id"`
+		PolicyName string   `json:"policy_name"`
+		PolicyType string   `json:"policy_type"`
+		Hook       string   `json:"hook"`
+		Allow      bool     `json:"allow"`
+		DenyMsgs   []string `json:"deny_msgs"`
+		WarnMsgs   []string `json:"warn_msgs"`
+		TriggerIDs []string `json:"trigger_ids"`
+	}
+	if err := c.Bind(&results); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	for _, r := range results {
+		if r.DenyMsgs == nil {
+			r.DenyMsgs = []string{}
+		}
+		if r.WarnMsgs == nil {
+			r.WarnMsgs = []string{}
+		}
+		if r.TriggerIDs == nil {
+			r.TriggerIDs = []string{}
+		}
+		_, err := h.pool.Exec(c.Request().Context(), `
+			INSERT INTO run_policy_results
+				(run_id, policy_id, policy_name, policy_type, hook, allow, deny_msgs, warn_msgs, trigger_ids)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, id, r.PolicyID, r.PolicyName, r.PolicyType, r.Hook, r.Allow, r.DenyMsgs, r.WarnMsgs, r.TriggerIDs)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}
+
 // TriggerDrift creates a manual proposed+drift run for the given stack.
 func (h *Handler) TriggerDrift(c echo.Context) error {
 	stackID := c.Param("stackID")
