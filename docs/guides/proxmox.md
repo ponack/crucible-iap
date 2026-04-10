@@ -270,7 +270,7 @@ Stack detail page → copy **Webhook URL** and **Webhook Secret**.
 
 ### Manual plan (proposed)
 
-Stack detail → **New Run** → type `proposed` → submit. Watch logs stream in real time. A successful plan looks like:
+Stack detail → click **Trigger proposed run**. Watch logs stream in real time. A successful plan looks like:
 
 ```
 Initializing provider plugins...
@@ -280,14 +280,18 @@ Initializing provider plugins...
 Plan: 1 to add, 0 to change, 0 to destroy.
 ```
 
+The run stays in `unconfirmed` — proposed runs never apply; they are plan-only.
+
 ### GitOps apply (tracked)
 
 Push a commit to `main`. Crucible creates a `tracked` run automatically:
 
 1. Status: `planning` — OpenTofu runs `plan`
-2. Status: `unconfirmed` — review the plan in the UI
+2. Status: `unconfirmed` — review the plan in the UI (or approve directly from the **Dashboard**)
 3. Click **Confirm** — OpenTofu applies
 4. Status: `finished` — VM appears in Proxmox
+
+> **Tip:** The Dashboard shows all runs awaiting approval in one place with inline Approve/Discard buttons, so you don't need to navigate into each stack individually.
 
 ### Pull request preview (proposed)
 
@@ -301,8 +305,10 @@ No apply happens until the PR is merged and a tracked run completes.
 ### Drift detection
 
 1. In Proxmox, manually change the VM's CPU count to `1`
-2. Stack detail → **New Run** → type `proposed` (or wait for the scheduled drift check)
+2. Wait for the scheduled drift check (or stack detail → **Trigger drift check**)
 3. Crucible detects the diff and surfaces it in the run output
+
+If **Auto-remediate drift** is enabled on the stack, Crucible automatically queues a tracked apply run to restore the desired state — no manual intervention needed.
 
 ---
 
@@ -310,6 +316,6 @@ No apply happens until the PR is merged and a tracked run completes.
 
 When you're done testing:
 
-Stack detail → **New Run** → type `destroy` → confirm.
+Stack detail → **Trigger destroy run** → confirm the stack name in the modal.
 
 The `proxmox-safety` policy allows `delete` actions on `proxmox_vm_qemu` resources, so this will pass. OpenTofu destroys the VM and the state is cleared.

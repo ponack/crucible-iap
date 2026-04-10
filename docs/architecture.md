@@ -51,7 +51,7 @@ Browser / CI
 
 ## Request flow — triggering a run
 
-1. User clicks "New Run" in the UI or a git webhook fires
+1. User clicks a run trigger in the UI (or the Dashboard approve button), or a git webhook fires
 2. `POST /api/v1/stacks/:id/runs` inserts a `runs` row (status: `queued`)
 3. A River job is enqueued in PostgreSQL (transactional with the insert)
 4. The Worker Dispatcher pulls the job and spawns an ephemeral Docker container
@@ -158,6 +158,22 @@ Grafana is served at `/grafana` via Caddy. The bundled dashboard covers HTTP req
 A background goroutine (`worker.StartDriftScheduler`) wakes every minute and checks for stacks that are overdue for a drift check. Each stack carries a `drift_schedule` (minutes) and `drift_last_run_at`. When `drift_last_run_at + schedule_interval ≤ now()`, a `proposed` run is created with `trigger=drift_detection` and `is_drift=true`. The plan output is surfaced in the UI as a drift alert.
 
 Operators can also trigger a one-off drift check via the UI or `POST /api/v1/stacks/:id/drift`.
+
+If `auto_remediate_drift=true` on the stack, the worker automatically queues a `tracked` run with `AutoApply=true` after a drift run finishes with a non-empty plan — no human confirmation required.
+
+## Remote state sharing
+
+Cross-stack `terraform_remote_state` is supported without sharing long-lived credentials. When a remote state source is added (stack A reads from stack B):
+
+1. A dedicated stack token is minted on the source stack (B)
+2. The token secret is encrypted using B's HKDF-derived vault key and stored in `stack_remote_state_sources`
+3. At run time, the worker decrypts the secret and injects `CRUCIBLE_REMOTE_STATE_<SLUG>_{ADDRESS,USERNAME,PASSWORD}` env vars into stack A's runner container
+
+Revoking the relationship deletes the token from stack B immediately.
+
+## Artifact retention
+
+A background goroutine (`worker.StartRetentionScheduler`) runs 5 minutes after startup then every 24 hours. It queries runs whose `finished_at` is older than the `artifact_retention_days` system setting and calls `storage.DeleteArtifacts` for each. Terraform state files are never deleted by this sweep — only plan binaries and run logs. Set `artifact_retention_days = 0` (the default) to retain indefinitely.
 
 ## Directory structure
 

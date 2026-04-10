@@ -14,13 +14,13 @@
 
 ## Requirements
 
-| Component | Minimum |
-|-----------|---------|
-| Docker Engine | 24+ |
-| Docker Compose | v2.20+ |
-| RAM | 2 GB |
-| Disk | 20 GB (state + plan artifacts grow over time) |
-| CPU | 2 cores |
+| Component      | Minimum                                          |
+| -------------- | ------------------------------------------------ |
+| Docker Engine  | 24+                                              |
+| Docker Compose | v2.20+                                           |
+| RAM            | 2 GB                                             |
+| Disk           | 20 GB (state + plan artifacts grow over time)    |
+| CPU            | 2 cores                                          |
 
 Crucible runs entirely inside Docker. No other runtime dependencies are needed on the host.
 
@@ -46,6 +46,7 @@ MINIO_SECRET_KEY=<strong password>
 ```
 
 Generate a secret key:
+
 ```bash
 openssl rand -hex 32
 ```
@@ -53,6 +54,7 @@ openssl rand -hex 32
 ### 2. Choose an authentication method
 
 **Option A — Local auth** (no IdP, single operator account):
+
 ```env
 LOCAL_AUTH_ENABLED=true
 LOCAL_AUTH_EMAIL=admin@example.com
@@ -60,6 +62,7 @@ LOCAL_AUTH_PASSWORD=<strong password>
 ```
 
 **Option B — OIDC** (Authentik, Keycloak, Okta, GitHub, etc.):
+
 ```env
 OIDC_ISSUER_URL=https://authentik.example.com/application/o/crucible/
 OIDC_CLIENT_ID=crucible
@@ -118,6 +121,18 @@ See [`deploy/proxy-examples/`](../deploy/proxy-examples/) for ready-to-use confi
 | `GRAFANA_ADMIN_USER` | no | `admin` | Grafana admin username |
 | `GRAFANA_ADMIN_PASSWORD` | no | `changeme` | **Change this** |
 | `CADDY_ACME_EMAIL` | no | — | Let's Encrypt email; blank = self-signed |
+
+### Runtime settings (UI-configurable)
+
+The following are managed via **Settings → Runner** and **Settings → Retention** in the UI and stored in the database — no restart required:
+
+| Setting                 | Default        | Description                                                                                                          |
+| ----------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Runner default image    | runner default | Docker image used when a stack has no custom image set                                                               |
+| Max concurrent runs     | `5`            | Hard cap on parallel runner containers                                                                               |
+| Job timeout             | `60 min`       | Per-job hard timeout; containers are killed after this                                                               |
+| Memory / CPU limit      | `2g` / `1.0`   | Resource caps per runner container                                                                                   |
+| Artifact retention days | `0` (forever)  | Plan files and run logs older than this are deleted daily. Set a value (e.g. `90`) to prevent unbounded MinIO growth |
 
 ---
 
