@@ -171,7 +171,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 
 	// Docker multiplexes stdout/stderr with an 8-byte frame header per chunk.
 	// stdcopy.StdCopy strips those headers; plain io.Copy would emit binary garbage.
-	if _, _, err := stdcopy.StdCopy(logWriter, logWriter, logs); err != nil && err != context.Canceled {
+	if _, err := stdcopy.StdCopy(logWriter, logWriter, logs); err != nil && err != context.Canceled {
 		slog.Warn("log stream interrupted", "run_id", spec.RunID, "err", err)
 	}
 
