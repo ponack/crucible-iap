@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -134,7 +135,13 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	)
 	if err != nil {
 		logline(logWriter, "ERROR: failed to create container: %v", err)
-		logline(logWriter, "hint: ensure the Docker network %q exists (see deploy/docker-compose.yml)", r.cfg.RunnerNetwork)
+		errStr := err.Error()
+		switch {
+		case strings.Contains(errStr, "No such image") || strings.Contains(errStr, "pull access denied"):
+			logline(logWriter, "hint: runner image %q not present on Docker host — run: docker pull %s", image, image)
+		case strings.Contains(errStr, "network") && strings.Contains(errStr, "not found"):
+			logline(logWriter, "hint: Docker network %q does not exist — run: docker network create %s", r.cfg.RunnerNetwork, r.cfg.RunnerNetwork)
+		}
 		return fmt.Errorf("create container: %w", err)
 	}
 
