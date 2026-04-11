@@ -266,8 +266,13 @@ networks:
   internal:
     driver: bridge
   # Dedicated network for ephemeral runner containers.
-  # Separating runners from the internal services network lets you apply
-  # host firewall rules (iptables/nftables) to control runner egress if needed.
-  # Runners still need outbound internet access for provider API calls and git clone.
+  # Declared external so Docker Compose uses the pre-existing network (created
+  # by the operator via `docker network create crucible-runner`) rather than
+  # creating a project-prefixed copy (crucible-iap_crucible-runner). This
+  # ensures the API container and dynamically-spawned runner containers share
+  # the same network and can communicate directly.
+  # Create once on the host before first `docker compose up`:
+  #   docker network create crucible-runner
   crucible-runner:
-    driver: bridge
+    external: true
+    name: crucible-runner
