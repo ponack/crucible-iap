@@ -37,13 +37,18 @@ ALTER TABLE stacks
     ADD COLUMN vcs_integration_id    UUID REFERENCES org_integrations(id) ON DELETE SET NULL,
     ADD COLUMN secret_integration_id UUID REFERENCES org_integrations(id) ON DELETE SET NULL;
 
-UPDATE stacks s
-SET secret_integration_id = oi.id
-FROM stack_secret_stores ss
-JOIN org_integrations oi
-    ON oi.org_id = s.org_id
-   AND oi.name = ss.provider || ' (migrated from ' || s.slug || ')'
-WHERE ss.stack_id = s.id;
+WITH matched AS (
+    SELECT ss.stack_id, oi.id AS integration_id
+    FROM stack_secret_stores ss
+    JOIN stacks st ON st.id = ss.stack_id
+    JOIN org_integrations oi
+        ON oi.org_id = st.org_id
+       AND oi.name = ss.provider || ' (migrated from ' || st.slug || ')'
+)
+UPDATE stacks
+SET secret_integration_id = matched.integration_id
+FROM matched
+WHERE stacks.id = matched.stack_id;
 
 -- Drop the old per-stack secret store table.
 DROP TABLE stack_secret_stores;
