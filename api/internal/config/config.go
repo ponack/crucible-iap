@@ -48,6 +48,12 @@ type Config struct {
 	RunnerMemoryLimit       string `mapstructure:"RUNNER_MEMORY_LIMIT"`
 	RunnerCPULimit          string `mapstructure:"RUNNER_CPU_LIMIT"`
 	RunnerNetwork           string `mapstructure:"RUNNER_NETWORK"`
+	// RunnerAPIURL is the URL runner containers use to call back to the Crucible
+	// API (state backend, status callbacks). Set this to the internal Docker
+	// service URL (e.g. http://crucible-api:8080) so runners on the isolated
+	// crucible-runner network don't need to traverse the public internet.
+	// If empty, falls back to the URL derived from the incoming HTTP request.
+	RunnerAPIURL string `mapstructure:"RUNNER_API_URL"`
 }
 
 func Load() (*Config, error) {
@@ -88,6 +94,7 @@ func Load() (*Config, error) {
 	v.SetDefault("RUNNER_MEMORY_LIMIT", "2g")
 	v.SetDefault("RUNNER_CPU_LIMIT", "1.0")
 	v.SetDefault("RUNNER_NETWORK", "crucible-runner")
+	v.SetDefault("RUNNER_API_URL", "")
 
 	v.AutomaticEnv()
 
