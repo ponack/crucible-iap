@@ -30,6 +30,17 @@ func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, d *work
 	return &Handler{pool: pool, cfg: cfg, queue: q, dispatcher: d, storage: s}
 }
 
+// runnerAPIURL returns the URL runner containers should use to reach the
+// Crucible API. When RUNNER_API_URL is configured (recommended for Docker
+// deployments) it uses that internal address; otherwise it falls back to
+// deriving the URL from the incoming request.
+func (h *Handler) runnerAPIURL(c echo.Context) string {
+	if h.cfg.RunnerAPIURL != "" {
+		return h.cfg.RunnerAPIURL
+	}
+	return c.Scheme() + "://" + c.Request().Host
+}
+
 type Run struct {
 	ID               string     `json:"id"`
 	StackID          string     `json:"stack_id"`
@@ -205,7 +216,7 @@ func (h *Handler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	apiURL := c.Scheme() + "://" + c.Request().Host
+	apiURL := h.runnerAPIURL(c)
 	if _, err := h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
 		RunID:       r.ID,
 		StackID:     stackID,
@@ -321,7 +332,7 @@ func (h *Handler) Confirm(c echo.Context) error {
 		FROM stacks WHERE id = $1
 	`, r.StackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
 
-	apiURL := c.Scheme() + "://" + c.Request().Host
+	apiURL := h.runnerAPIURL(c)
 	_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
 		RunID: r.ID, StackID: r.StackID,
 		Tool: stack.Tool, RunnerImage: stack.RunnerImage,
@@ -643,7 +654,7 @@ func (h *Handler) TriggerDrift(c echo.Context) error {
 		RepoBranch:  stack.RepoBranch,
 		ProjectRoot: stack.ProjectRoot,
 		RunType:     "proposed",
-		APIURL:      h.cfg.BaseURL,
+		APIURL:      h.runnerAPIURL(c),
 	}); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue drift run: "+err.Error())
 	}

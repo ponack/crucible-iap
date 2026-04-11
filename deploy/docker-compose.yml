@@ -44,6 +44,10 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - internal
+      # Runner containers are spawned on this network. The API must also be
+      # attached so runners can reach the state backend without going via the
+      # public internet (avoids TLS loopback issues with reverse proxies).
+      - crucible-runner
 
   # ── UI ──────────────────────────────────────────────────────────────────────
   crucible-ui:
@@ -132,6 +136,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - internal
+      - crucible-runner
     profiles:
       - external-proxy
 
