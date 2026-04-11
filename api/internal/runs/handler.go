@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -31,10 +32,15 @@ func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, d *work
 }
 
 // runnerAPIURL returns the URL runner containers should use to reach the
-// Crucible API. When RUNNER_API_URL is configured (recommended for Docker
-// deployments) it uses that internal address; otherwise it falls back to
-// deriving the URL from the incoming request.
+// Crucible API (state backend + status callbacks). Checks, in order:
+//  1. RUNNER_API_URL env var directly (most reliable in Docker deployments)
+//  2. cfg.RunnerAPIURL from Viper config (same var, different read path)
+//  3. URL derived from the incoming HTTP request (fallback, may be unreachable
+//     from inside an isolated Docker network)
 func (h *Handler) runnerAPIURL(c echo.Context) string {
+	if u := os.Getenv("RUNNER_API_URL"); u != "" {
+		return u
+	}
 	if h.cfg.RunnerAPIURL != "" {
 		return h.cfg.RunnerAPIURL
 	}

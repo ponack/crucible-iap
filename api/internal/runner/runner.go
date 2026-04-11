@@ -78,6 +78,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	logline(logWriter, "image=%s tool=%s run_type=%s", image, spec.Tool, spec.RunType)
 	logline(logWriter, "repo=%s branch=%s project_root=%s", spec.RepoURL, spec.RepoBranch, spec.ProjectRoot)
 	logline(logWriter, "vcs_auth=%s extra_env_vars=%d", vcsAuth, len(spec.ExtraEnv))
+	logline(logWriter, "api_url=%s", spec.APIURL)
 	logline(logWriter, "memory=%s cpu=%s timeout=%dm network=%s",
 		coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit),
 		coalesce(spec.CPULimit, r.cfg.RunnerCPULimit),
