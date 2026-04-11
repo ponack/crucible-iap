@@ -8,10 +8,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -81,6 +84,13 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		func() int { if spec.TimeoutMinutes > 0 { return spec.TimeoutMinutes }; return r.cfg.RunnerJobTimeoutMinutes }(),
 		r.cfg.RunnerNetwork,
 	)
+	// Auto-pull image if not present locally — so operators never need to
+	// manually docker pull before first use.
+	if err := r.ensureImage(ctx, image, logWriter); err != nil {
+		logline(logWriter, "ERROR: failed to pull image %q: %v", image, err)
+		return fmt.Errorf("pull image: %w", err)
+	}
+
 	logline(logWriter, "--- spawning container %s ---", containerName)
 
 	// Scoped environment — credentials injected as env vars, never in image.
@@ -123,6 +133,9 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 					Target: "/workspace",
 					TmpfsOptions: &mount.TmpfsOptions{
 						SizeBytes: 512 * 1024 * 1024, // 512 MB
+						// Mode 0777: tmpfs overlay replaces the image's /workspace
+						// dir, so the non-root runner user must have write access.
+						Mode: os.FileMode(0o777),
 					},
 				},
 			},
@@ -195,6 +208,34 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		return fmt.Errorf("run timed out after %d minutes", timeoutMins)
 	}
 
+	return nil
+}
+
+// ensureImage pulls the image if it is not already present on the Docker host.
+// Logs progress so the user can see what's happening during a cold start.
+func (r *Runner) ensureImage(ctx context.Context, img string, logWriter io.Writer) error {
+	// Check if image already exists locally.
+	images, err := r.docker.ImageList(ctx, image.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("reference", img)),
+	})
+	if err != nil {
+		return fmt.Errorf("list images: %w", err)
+	}
+	if len(images) > 0 {
+		return nil // already present
+	}
+
+	logline(logWriter, "image not found locally — pulling %s (first run may take a moment)", img)
+	rc, err := r.docker.ImagePull(ctx, img, image.PullOptions{})
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	// Drain pull output (progress layers) — discard, we just need it to complete.
+	if _, err := io.Copy(io.Discard, rc); err != nil {
+		return fmt.Errorf("pull stream: %w", err)
+	}
+	logline(logWriter, "image pulled successfully")
 	return nil
 }
 
