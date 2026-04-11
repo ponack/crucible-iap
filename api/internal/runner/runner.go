@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/ponack/crucible-iap/internal/config"
 )
 
@@ -48,6 +49,12 @@ func New(cfg *config.Config) (*Runner, error) {
 	return &Runner{docker: docker, cfg: cfg}, nil
 }
 
+// logline writes a prefixed informational line directly to logWriter so it
+// appears in the run log regardless of container output.
+func logline(w io.Writer, format string, args ...any) {
+	fmt.Fprintf(w, "[crucible] "+format+"\n", args...)
+}
+
 // Execute spawns an ephemeral container for the given job and streams logs to w.
 // The container is automatically removed on exit (--rm equivalent).
 func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer) error {
@@ -57,6 +64,23 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	}
 
 	containerName := fmt.Sprintf("crucible-run-%s", spec.RunID[:8])
+
+	// Write a preamble so the user can see exactly what the runner is launching.
+	vcsAuth := "none (public repo)"
+	if spec.VCSToken != "" {
+		vcsAuth = "token (via org integration)"
+	}
+	logline(logWriter, "run_id=%s stack_id=%s", spec.RunID, spec.StackID)
+	logline(logWriter, "image=%s tool=%s run_type=%s", image, spec.Tool, spec.RunType)
+	logline(logWriter, "repo=%s branch=%s project_root=%s", spec.RepoURL, spec.RepoBranch, spec.ProjectRoot)
+	logline(logWriter, "vcs_auth=%s extra_env_vars=%d", vcsAuth, len(spec.ExtraEnv))
+	logline(logWriter, "memory=%s cpu=%s timeout=%dm network=%s",
+		coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit),
+		coalesce(spec.CPULimit, r.cfg.RunnerCPULimit),
+		func() int { if spec.TimeoutMinutes > 0 { return spec.TimeoutMinutes }; return r.cfg.RunnerJobTimeoutMinutes }(),
+		r.cfg.RunnerNetwork,
+	)
+	logline(logWriter, "--- spawning container %s ---", containerName)
 
 	// Scoped environment — credentials injected as env vars, never in image.
 	// ExtraEnv (decrypted stack env vars) is appended last so operators can
@@ -102,11 +126,15 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 				},
 			},
 			// Isolate on a dedicated network; configure egress rules externally
-			NetworkMode: "crucible-runner",
+			// Isolate on a dedicated network; configure egress rules externally.
+			// Override with RUNNER_NETWORK env var (network must exist before first run).
+			NetworkMode: container.NetworkMode(r.cfg.RunnerNetwork),
 		},
 		nil, nil, containerName,
 	)
 	if err != nil {
+		logline(logWriter, "ERROR: failed to create container: %v", err)
+		logline(logWriter, "hint: ensure the Docker network %q exists (see deploy/docker-compose.yml)", r.cfg.RunnerNetwork)
 		return fmt.Errorf("create container: %w", err)
 	}
 
@@ -117,6 +145,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	}()
 
 	if err := r.docker.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		logline(logWriter, "ERROR: failed to start container: %v", err)
 		return fmt.Errorf("start container: %w", err)
 	}
 
@@ -140,7 +169,9 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	}
 	defer logs.Close()
 
-	if _, err := io.Copy(logWriter, logs); err != nil && err != context.Canceled {
+	// Docker multiplexes stdout/stderr with an 8-byte frame header per chunk.
+	// stdcopy.StdCopy strips those headers; plain io.Copy would emit binary garbage.
+	if _, _, err := stdcopy.StdCopy(logWriter, logWriter, logs); err != nil && err != context.Canceled {
 		slog.Warn("log stream interrupted", "run_id", spec.RunID, "err", err)
 	}
 
