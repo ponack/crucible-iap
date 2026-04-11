@@ -141,6 +141,12 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	var logBuf bytes.Buffer
 	logWriter := io.MultiWriter(&logBuf, &brokerWriter{broker: w.broker, runID: args.RunID})
 
+	// VCS token for authenticated git clone. Empty string = public repo.
+	vcsToken, vcsErr := secretstore.LoadVCSToken(ctx, w.pool, w.vault, args.StackID)
+	if vcsErr != nil {
+		log.Warn("failed to load VCS token", "err", vcsErr)
+	}
+
 	// External secret store secrets (fetched first so built-in env vars take precedence).
 	storeEnv, storeErr := secretstore.LoadForStack(ctx, w.pool, w.vault, args.StackID)
 	if storeErr != nil {
@@ -190,6 +196,7 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		RepoBranch:     args.RepoBranch,
 		ProjectRoot:    args.ProjectRoot,
 		RunType:        args.RunType,
+		VCSToken:       vcsToken,
 		ExtraEnv:       extraEnv,
 		MemoryLimit:    memLimit,
 		CPULimit:       cpuLimit,

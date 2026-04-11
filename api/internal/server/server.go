@@ -15,6 +15,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/envvars"
+	"github.com/ponack/crucible-iap/internal/integrations"
 	"github.com/ponack/crucible-iap/internal/metrics"
 	cruciblemw "github.com/ponack/crucible-iap/internal/middleware"
 	"github.com/ponack/crucible-iap/internal/notify"
@@ -109,6 +110,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	webhookHandler := webhooks.NewHandler(s.pool, q)
 	orgHandler := orgs.NewHandler(s.pool)
 	envVarHandler := envvars.NewHandler(s.pool, v)
+	integrationHandler := integrations.NewHandler(s.pool, v)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
 	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
@@ -190,10 +192,14 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
 	api.POST("/stacks/:id/notifications/test", stackHandler.TestNotification, member)
 
-	// Stack external secret store (AWS SM, HashiCorp Vault, Bitwarden SM, Vaultwarden)
-	api.GET("/stacks/:id/secret-store", stackHandler.GetSecretStore, member)
-	api.PUT("/stacks/:id/secret-store", stackHandler.UpsertSecretStore, member)
-	api.DELETE("/stacks/:id/secret-store", stackHandler.DeleteSecretStore, member)
+	// Org-level integrations (VCS credentials, secret stores)
+	api.GET("/integrations", integrationHandler.List)
+	api.POST("/integrations", integrationHandler.Create, member)
+	api.PUT("/integrations/:id", integrationHandler.Update, member)
+	api.DELETE("/integrations/:id", integrationHandler.Delete, admin)
+
+	// Stack integration assignment
+	api.PUT("/stacks/:id/integrations", stackHandler.SetIntegrations, member)
 
 	// Stack external state backend (S3, GCS, Azure Blob)
 	api.GET("/stacks/:id/state-backend", stackHandler.GetStateBackend, member)

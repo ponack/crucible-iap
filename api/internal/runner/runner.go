@@ -28,6 +28,7 @@ type JobSpec struct {
 	RepoBranch     string
 	ProjectRoot    string
 	RunType        string   // tracked | proposed | destroy
+	VCSToken       string   // plaintext token for authenticated git clone; empty = public repo
 	ExtraEnv       []string // decrypted stack env vars as KEY=VALUE strings
 	MemoryLimit    string   // Docker memory limit, e.g. "2g" — overrides config default if non-empty
 	CPULimit       string   // Docker CPU limit, e.g. "1.0" — overrides config default if non-empty
@@ -70,6 +71,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		"CRUCIBLE_REPO_BRANCH=" + spec.RepoBranch,
 		"CRUCIBLE_PROJECT_ROOT=" + spec.ProjectRoot,
 		"CRUCIBLE_RUN_TYPE=" + spec.RunType,
+		"CRUCIBLE_VCS_TOKEN=" + spec.VCSToken, // empty string if no integration set
 	}
 	env = append(env, spec.ExtraEnv...)
 

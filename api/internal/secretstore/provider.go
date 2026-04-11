@@ -20,24 +20,32 @@ type Provider interface {
 	FetchSecrets(ctx context.Context) (map[string]string, error)
 }
 
-// Resolve reads and decrypts the secret store config for a stack and returns
-// the appropriate Provider. Returns nil, pgx.ErrNoRows if no store is configured.
+// vaultContext returns the HKDF context for an integration's config.
+func vaultContext(integrationID string) string {
+	return "crucible-integration:" + integrationID
+}
+
+// Resolve reads and decrypts the secret store integration for a stack and returns
+// the appropriate Provider. Returns nil, pgx.ErrNoRows if no integration is set.
 func Resolve(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, stackID string) (Provider, error) {
-	var provider string
+	var integrationID, itype string
 	var configEnc []byte
 	err := pool.QueryRow(ctx, `
-		SELECT provider, config_enc FROM stack_secret_stores WHERE stack_id = $1
-	`, stackID).Scan(&provider, &configEnc)
+		SELECT oi.id, oi.type, oi.config_enc
+		FROM stacks s
+		JOIN org_integrations oi ON oi.id = s.secret_integration_id
+		WHERE s.id = $1
+	`, stackID).Scan(&integrationID, &itype, &configEnc)
 	if err != nil {
 		return nil, err // callers check for pgx.ErrNoRows
 	}
 
-	plaintext, err := v.Decrypt(stackID, configEnc)
+	plaintext, err := v.DecryptFor(vaultContext(integrationID), configEnc)
 	if err != nil {
 		return nil, fmt.Errorf("decrypt secret store config: %w", err)
 	}
 
-	switch provider {
+	switch itype {
 	case "aws_sm":
 		var cfg AWSConfig
 		if err := json.Unmarshal(plaintext, &cfg); err != nil {
@@ -63,13 +71,13 @@ func Resolve(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, stackID st
 		}
 		return &VaultwardenProvider{cfg: cfg}, nil
 	default:
-		return nil, fmt.Errorf("unknown secret store provider: %s", provider)
+		return nil, fmt.Errorf("unknown secret store provider: %s", itype)
 	}
 }
 
 // LoadForStack fetches all secrets from the external store configured for the
 // given stack and returns them as KEY=VALUE strings for container injection.
-// Returns nil, nil if no secret store is configured — this is not an error.
+// Returns nil, nil if no secret store integration is configured — not an error.
 func LoadForStack(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, stackID string) ([]string, error) {
 	p, err := Resolve(ctx, pool, v, stackID)
 	if err != nil {
@@ -89,4 +97,39 @@ func LoadForStack(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, stack
 		out = append(out, k+"="+val)
 	}
 	return out, nil
+}
+
+// VCSConfig is the config stored for github/gitlab/gitea integrations.
+type VCSConfig struct {
+	Token string `json:"token"`
+}
+
+// LoadVCSToken returns the plaintext token for a stack's VCS integration,
+// or ("", nil) if no VCS integration is configured.
+func LoadVCSToken(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, stackID string) (string, error) {
+	var integrationID string
+	var configEnc []byte
+	err := pool.QueryRow(ctx, `
+		SELECT oi.id, oi.config_enc
+		FROM stacks s
+		JOIN org_integrations oi ON oi.id = s.vcs_integration_id
+		WHERE s.id = $1
+	`, stackID).Scan(&integrationID, &configEnc)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	plaintext, err := v.DecryptFor(vaultContext(integrationID), configEnc)
+	if err != nil {
+		return "", fmt.Errorf("decrypt vcs token: %w", err)
+	}
+
+	var cfg VCSConfig
+	if err := json.Unmarshal(plaintext, &cfg); err != nil {
+		return "", fmt.Errorf("unmarshal vcs config: %w", err)
+	}
+	return cfg.Token, nil
 }
