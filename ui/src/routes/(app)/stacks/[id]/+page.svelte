@@ -20,7 +20,7 @@
 	let saving = $state(false);
 	let editError = $state<string | null>(null);
 	let form = $state({
-		name: '', description: '', repo_branch: '', project_root: '',
+		name: '', description: '', repo_url: '', repo_branch: '', project_root: '',
 		auto_apply: false, drift_detection: false, drift_schedule: '', auto_remediate_drift: false
 	});
 
@@ -147,6 +147,7 @@
 		form = {
 			name: stack.name,
 			description: stack.description ?? '',
+			repo_url: stack.repo_url,
 			repo_branch: stack.repo_branch,
 			project_root: stack.project_root,
 			auto_apply: stack.auto_apply,
@@ -550,6 +551,10 @@
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-desc">Description</label>
 				<input id="edit-desc" class="field-input" bind:value={form.description} />
+			</div>
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-repo">Repository URL</label>
+				<input id="edit-repo" class="field-input font-mono text-sm" bind:value={form.repo_url} placeholder="https://github.com/org/repo.git" required />
 			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-root">Project root</label>

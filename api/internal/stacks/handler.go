@@ -249,6 +249,7 @@ func (h *Handler) Update(c echo.Context) error {
 	var req struct {
 		Name               *string `json:"name"`
 		Description        *string `json:"description"`
+		RepoURL            *string `json:"repo_url"`
 		RepoBranch         *string `json:"repo_branch"`
 		ProjectRoot        *string `json:"project_root"`
 		RunnerImage        *string `json:"runner_image"`
@@ -275,6 +276,9 @@ func (h *Handler) Update(c echo.Context) error {
 	}
 	if req.Description != nil {
 		add("description", *req.Description)
+	}
+	if req.RepoURL != nil {
+		add("repo_url", *req.RepoURL)
 	}
 	if req.RepoBranch != nil {
 		add("repo_branch", *req.RepoBranch)
