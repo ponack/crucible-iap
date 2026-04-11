@@ -50,7 +50,8 @@ upload_plan() {
 # ── OpenTofu / Terraform shared logic ────────────────────────────────────────
 run_tf_generic() {
     local bin="$1"
-    log "using ${bin} (run_type=${CRUCIBLE_RUN_TYPE})"
+    log "tool=${bin} run_type=${CRUCIBLE_RUN_TYPE}"
+    log "version: $(${bin} version -json 2>/dev/null | grep -o '"terraform_version":"[^"]*"' | cut -d'"' -f4 || ${bin} version 2>&1 | head -1)"
 
     # Point Terraform HTTP backend at Crucible's state API.
     # Runner JWT is accepted as password (aud=runner, stack_id claim validated).
@@ -62,6 +63,7 @@ run_tf_generic() {
     export TF_IN_AUTOMATION=1
     export TF_INPUT=0
 
+    log "state backend: ${TF_HTTP_ADDRESS}"
     log "initialising"
     ${bin} init -no-color
 
@@ -128,9 +130,10 @@ run_pulumi() {
 # If a VCS token is provided, write a .netrc so git picks it up automatically.
 # Supports GitHub, GitLab, Gitea and any host that accepts token-based HTTP auth.
 if [[ -n "${CRUCIBLE_VCS_TOKEN}" ]]; then
-    log "configuring VCS token authentication"
+    log "VCS auth: configuring token authentication"
     # Extract host from repo URL (handles https://host/... and git@host:...)
     REPO_HOST=$(echo "${CRUCIBLE_REPO_URL}" | sed -E 's|https?://([^/]+)/.*|\1|; s|git@([^:]+):.*|\1|')
+    log "VCS auth: writing .netrc for host ${REPO_HOST}"
     cat > /workspace/.netrc <<EOF
 machine ${REPO_HOST}
 login x-token
@@ -139,16 +142,19 @@ EOF
     chmod 600 /workspace/.netrc
     export HOME=/workspace
     export GIT_CONFIG_NOSYSTEM=1
+else
+    log "VCS auth: none (public repo or no integration assigned)"
 fi
 
 # ── Clone repository ──────────────────────────────────────────────────────────
 log "cloning ${CRUCIBLE_REPO_URL} @ ${CRUCIBLE_REPO_BRANCH}"
 git clone --depth=1 --branch "${CRUCIBLE_REPO_BRANCH}" \
-    "${CRUCIBLE_REPO_URL}" /workspace/repo \
-    || fail "git clone failed"
+    "${CRUCIBLE_REPO_URL}" /workspace/repo 2>&1 \
+    || fail "git clone failed — check repo URL, branch name, and VCS integration token"
 
 WORKDIR="/workspace/repo/${CRUCIBLE_PROJECT_ROOT}"
-[[ -d "${WORKDIR}" ]] || fail "project root '${CRUCIBLE_PROJECT_ROOT}' not found in repository"
+[[ -d "${WORKDIR}" ]] || fail "project root '${CRUCIBLE_PROJECT_ROOT}' not found in repository (check stack project root setting)"
+log "working directory: ${WORKDIR}"
 cd "${WORKDIR}"
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

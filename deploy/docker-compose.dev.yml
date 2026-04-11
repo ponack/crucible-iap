@@ -30,3 +30,7 @@ services:
 volumes:
   postgres_dev:
   minio_dev:
+
+networks:
+  crucible-runner:
+    driver: bridge

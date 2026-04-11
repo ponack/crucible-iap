@@ -260,3 +260,9 @@ volumes:
 networks:
   internal:
     driver: bridge
+  # Dedicated network for ephemeral runner containers.
+  # Separating runners from the internal services network lets you apply
+  # host firewall rules (iptables/nftables) to control runner egress if needed.
+  # Runners still need outbound internet access for provider API calls and git clone.
+  crucible-runner:
+    driver: bridge

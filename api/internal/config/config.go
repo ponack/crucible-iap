@@ -47,6 +47,7 @@ type Config struct {
 	RunnerJobTimeoutMinutes int    `mapstructure:"RUNNER_JOB_TIMEOUT_MINUTES"`
 	RunnerMemoryLimit       string `mapstructure:"RUNNER_MEMORY_LIMIT"`
 	RunnerCPULimit          string `mapstructure:"RUNNER_CPU_LIMIT"`
+	RunnerNetwork           string `mapstructure:"RUNNER_NETWORK"`
 }
 
 func Load() (*Config, error) {
@@ -86,6 +87,7 @@ func Load() (*Config, error) {
 	v.SetDefault("RUNNER_JOB_TIMEOUT_MINUTES", 60)
 	v.SetDefault("RUNNER_MEMORY_LIMIT", "2g")
 	v.SetDefault("RUNNER_CPU_LIMIT", "1.0")
+	v.SetDefault("RUNNER_NETWORK", "crucible-runner")
 
 	v.AutomaticEnv()
 

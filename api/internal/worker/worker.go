@@ -205,6 +205,12 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 
 	runErr := w.runner.Execute(ctx, spec, logWriter)
 
+	// If the runner itself failed (not the IaC tool), append the Go-level error
+	// so operators can see it in the run log rather than hunting server logs.
+	if runErr != nil {
+		fmt.Fprintf(logWriter, "\n[crucible] run failed: %v\n", runErr)
+	}
+
 	// Always persist the log, even on failure
 	if err := w.storage.PutLog(ctx, args.RunID, logBuf.Bytes()); err != nil {
 		log.Warn("failed to persist run log", "err", err)
