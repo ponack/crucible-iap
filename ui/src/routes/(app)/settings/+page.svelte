@@ -150,7 +150,13 @@
 </script>
 
 <div class="p-8 max-w-2xl space-y-8">
-	<h1 class="text-xl font-semibold text-white">Settings</h1>
+	<div class="flex items-center justify-between">
+		<h1 class="text-xl font-semibold text-white">Settings</h1>
+		<a href="/settings/integrations"
+			class="text-sm text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1">
+			Integrations →
+		</a>
+	</div>
 
 	<!-- Update banner -->
 	{#if health?.update_available}

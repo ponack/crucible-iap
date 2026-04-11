@@ -92,8 +92,8 @@ export interface Stack {
 	has_vcs_token: boolean;
 	has_slack_webhook: boolean;
 	notify_events: string[];
-	has_secret_store: boolean;
-	secret_store_provider?: string;
+	vcs_integration_id?: string;
+	secret_integration_id?: string;
 	has_state_backend: boolean;
 	state_backend_provider?: string;
 	is_disabled: boolean;
@@ -103,12 +103,22 @@ export interface Stack {
 	updated_at: string;
 }
 
-// ── External secret store ─────────────────────────────────────────────────────
+// ── Org integrations ──────────────────────────────────────────────────────────
 
-export type SecretStoreProvider = 'aws_sm' | 'hc_vault' | 'bitwarden_sm' | 'vaultwarden';
+export type IntegrationType =
+	| 'github' | 'gitlab' | 'gitea'       // VCS
+	| 'aws_sm' | 'hc_vault' | 'bitwarden_sm' | 'vaultwarden'; // Secret stores
 
-export interface SecretStoreInfo {
-	provider: SecretStoreProvider;
+export interface Integration {
+	id: string;
+	name: string;
+	type: IntegrationType;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface VCSIntegrationConfig {
+	token: string;
 }
 
 export interface AWSSecretStoreConfig {
@@ -240,23 +250,15 @@ export const stacks = {
 			request<null>(`/stacks/${stackID}/notifications/test`, { method: 'POST' })
 	},
 
-	secretStore: {
-		get: (stackID: string) => request<SecretStoreInfo>(`/stacks/${stackID}/secret-store`),
-		upsert: (
-			stackID: string,
-			provider: SecretStoreProvider,
-			config:
-				| AWSSecretStoreConfig
-				| HCVaultSecretStoreConfig
-				| BitwardenSecretStoreConfig
-				| VaultwardenSecretStoreConfig
-		) =>
-			request<SecretStoreInfo>(`/stacks/${stackID}/secret-store`, {
+	integrations: {
+		set: (stackID: string, vcsIntegrationID: string | null, secretIntegrationID: string | null) =>
+			request<null>(`/stacks/${stackID}/integrations`, {
 				method: 'PUT',
-				body: JSON.stringify({ provider, config })
-			}),
-		delete: (stackID: string) =>
-			request<null>(`/stacks/${stackID}/secret-store`, { method: 'DELETE' })
+				body: JSON.stringify({
+					vcs_integration_id: vcsIntegrationID,
+					secret_integration_id: secretIntegrationID
+				})
+			})
 	},
 
 	stateBackend: {
@@ -290,6 +292,30 @@ export const stacks = {
 		remove: (stackID: string, sourceID: string) =>
 			request<null>(`/stacks/${stackID}/remote-state-sources/${sourceID}`, { method: 'DELETE' })
 	}
+};
+
+// ── Integrations (org-level) ──────────────────────────────────────────────────
+
+type IntegrationConfig =
+	| VCSIntegrationConfig
+	| AWSSecretStoreConfig
+	| HCVaultSecretStoreConfig
+	| BitwardenSecretStoreConfig
+	| VaultwardenSecretStoreConfig;
+
+export const integrations = {
+	list: () => request<Integration[]>('/integrations'),
+	create: (name: string, type: IntegrationType, config: IntegrationConfig) =>
+		request<Integration>('/integrations', {
+			method: 'POST',
+			body: JSON.stringify({ name, type, config })
+		}),
+	update: (id: string, data: { name?: string; config?: IntegrationConfig }) =>
+		request<Integration>(`/integrations/${id}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		}),
+	delete: (id: string) => request<null>(`/integrations/${id}`, { method: 'DELETE' })
 };
 
 // ── Stack env vars ────────────────────────────────────────────────────────────

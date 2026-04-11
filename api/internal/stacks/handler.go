@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	vaultpkg "github.com/ponack/crucible-iap/internal/vault"
@@ -57,13 +58,13 @@ type Stack struct {
 	WebhookURL      string    `json:"webhook_url,omitempty"`    // only populated on Get
 	VCSProvider         string   `json:"vcs_provider"`
 	VCSBaseURL          string   `json:"vcs_base_url,omitempty"`
-	HasVCSToken         bool     `json:"has_vcs_token"`
-	HasSlackWebhook     bool     `json:"has_slack_webhook"`
-	NotifyEvents        []string `json:"notify_events"`
-	HasSecretStore      bool     `json:"has_secret_store"`
-	SecretStoreProvider string   `json:"secret_store_provider,omitempty"`
-	HasStateBackend     bool     `json:"has_state_backend"`
-	StateBackendProvider string  `json:"state_backend_provider,omitempty"`
+	HasVCSToken          bool     `json:"has_vcs_token"`
+	HasSlackWebhook      bool     `json:"has_slack_webhook"`
+	NotifyEvents         []string `json:"notify_events"`
+	VCSIntegrationID     *string  `json:"vcs_integration_id,omitempty"`
+	SecretIntegrationID  *string  `json:"secret_integration_id,omitempty"`
+	HasStateBackend      bool     `json:"has_state_backend"`
+	StateBackendProvider string   `json:"state_backend_provider,omitempty"`
 	IsDisabled    bool       `json:"is_disabled"`
 	LastRunStatus string     `json:"last_run_status,omitempty"`
 	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
@@ -218,8 +219,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
 		       s.vcs_token_enc IS NOT NULL, s.slack_webhook_enc IS NOT NULL,
 		       COALESCE(s.notify_events, '{}'),
-		       EXISTS(SELECT 1 FROM stack_secret_stores WHERE stack_id = s.id),
-		       COALESCE((SELECT ss.provider FROM stack_secret_stores ss WHERE ss.stack_id = s.id), ''),
+		       s.vcs_integration_id, s.secret_integration_id,
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
 		       s.is_disabled, s.created_at, s.updated_at
@@ -229,7 +229,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
 		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL,
 		&s.HasVCSToken, &s.HasSlackWebhook, &s.NotifyEvents,
-		&s.HasSecretStore, &s.SecretStoreProvider,
+		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
 		&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
@@ -442,6 +442,61 @@ func generateToken() (raw, hash string, err error) {
 	h := sha256.Sum256([]byte(raw))
 	hash = hex.EncodeToString(h[:])
 	return
+}
+
+// SetIntegrations assigns or clears the VCS and secret store integrations for a stack.
+// Both fields are optional — send null to clear.
+func (h *Handler) SetIntegrations(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID := c.Get("userID").(string)
+
+	var req struct {
+		VCSIntegrationID    *string `json:"vcs_integration_id"`
+		SecretIntegrationID *string `json:"secret_integration_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	// Verify stack belongs to this org
+	var exists bool
+	if err := h.pool.QueryRow(c.Request().Context(),
+		`SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)`, id, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	// If integration IDs are provided, verify they belong to this org
+	if req.VCSIntegrationID != nil {
+		var ok bool
+		if err := h.pool.QueryRow(c.Request().Context(),
+			`SELECT EXISTS(SELECT 1 FROM org_integrations WHERE id = $1 AND org_id = $2)`,
+			*req.VCSIntegrationID, orgID).Scan(&ok); err != nil || !ok {
+			return echo.NewHTTPError(http.StatusBadRequest, "vcs_integration_id not found in this org")
+		}
+	}
+	if req.SecretIntegrationID != nil {
+		var ok bool
+		if err := h.pool.QueryRow(c.Request().Context(),
+			`SELECT EXISTS(SELECT 1 FROM org_integrations WHERE id = $1 AND org_id = $2)`,
+			*req.SecretIntegrationID, orgID).Scan(&ok); err != nil || !ok {
+			return echo.NewHTTPError(http.StatusBadRequest, "secret_integration_id not found in this org")
+		}
+	}
+
+	_, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE stacks SET vcs_integration_id = $1, secret_integration_id = $2, updated_at = now()
+		WHERE id = $3
+	`, req.VCSIntegrationID, req.SecretIntegrationID, id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update integrations")
+	}
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "stack.integrations.updated",
+		ResourceID: id, ResourceType: "stack", OrgID: orgID, IPAddress: c.RealIP(),
+	})
+	return c.NoContent(http.StatusNoContent)
 }
 
 func slugify(s string) string {

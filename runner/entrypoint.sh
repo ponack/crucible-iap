@@ -17,6 +17,7 @@ fail() { log "ERROR: $*"; exit 1; }
 CRUCIBLE_REPO_BRANCH="${CRUCIBLE_REPO_BRANCH:-main}"
 CRUCIBLE_PROJECT_ROOT="${CRUCIBLE_PROJECT_ROOT:-.}"
 CRUCIBLE_RUN_TYPE="${CRUCIBLE_RUN_TYPE:-tracked}"
+CRUCIBLE_VCS_TOKEN="${CRUCIBLE_VCS_TOKEN:-}"
 
 API_HEADERS=(
     -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}"
@@ -122,6 +123,23 @@ run_ansible() {
 run_pulumi() {
     fail "pulumi runner not yet implemented"
 }
+
+# ── VCS authentication ────────────────────────────────────────────────────────
+# If a VCS token is provided, write a .netrc so git picks it up automatically.
+# Supports GitHub, GitLab, Gitea and any host that accepts token-based HTTP auth.
+if [[ -n "${CRUCIBLE_VCS_TOKEN}" ]]; then
+    log "configuring VCS token authentication"
+    # Extract host from repo URL (handles https://host/... and git@host:...)
+    REPO_HOST=$(echo "${CRUCIBLE_REPO_URL}" | sed -E 's|https?://([^/]+)/.*|\1|; s|git@([^:]+):.*|\1|')
+    cat > /workspace/.netrc <<EOF
+machine ${REPO_HOST}
+login x-token
+password ${CRUCIBLE_VCS_TOKEN}
+EOF
+    chmod 600 /workspace/.netrc
+    export HOME=/workspace
+    export GIT_CONFIG_NOSYSTEM=1
+fi
 
 # ── Clone repository ──────────────────────────────────────────────────────────
 log "cloning ${CRUCIBLE_REPO_URL} @ ${CRUCIBLE_REPO_BRANCH}"
