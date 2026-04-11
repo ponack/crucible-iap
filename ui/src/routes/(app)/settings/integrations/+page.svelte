@@ -145,10 +145,10 @@
 	}
 </script>
 
-<div class="max-w-3xl mx-auto">
+<div class="max-w-2xl">
 	<div class="flex items-center justify-between mb-6">
 		<div>
-			<h1 class="text-lg font-semibold text-white">Integrations</h1>
+			<h1 class="text-xl font-semibold text-white">Integrations</h1>
 			<p class="text-sm text-zinc-400 mt-0.5">Org-level credentials for VCS and external secret stores. Stacks select which integration to use.</p>
 		</div>
 		<button onclick={openCreate}
