@@ -54,29 +54,10 @@ func (p *BitwardenProvider) FetchSecrets(ctx context.Context) (map[string]string
 		return nil, fmt.Errorf("bitwarden_sm: project_id or org_id is required")
 	}
 
-	// Parse the structured access token: "0.<serviceAccountId>.<clientSecret>.<encKey>"
-	parts := strings.SplitN(p.cfg.AccessToken, ".", 4)
-	if len(parts) != 4 || parts[0] != "0" {
-		return nil, fmt.Errorf("bitwarden_sm: invalid access token format (expected 0.<id>.<secret>.<key>)")
-	}
-	serviceAccountID := parts[1]
-	clientSecret := parts[2]
-	encKeyB64 := parts[3]
-
-	// Decode symmetric encryption key (64 bytes: 32 AES + 32 HMAC)
-	encKeyBytes, err := base64.StdEncoding.DecodeString(encKeyB64)
+	serviceAccountID, clientSecret, aesKey, macKey, err := parseAccessToken(p.cfg.AccessToken)
 	if err != nil {
-		// Try RawURLEncoding (some tokens omit padding)
-		encKeyBytes, err = base64.RawURLEncoding.DecodeString(encKeyB64)
-		if err != nil {
-			return nil, fmt.Errorf("bitwarden_sm: decode encryption key: %w", err)
-		}
+		return nil, fmt.Errorf("bitwarden_sm: %w", err)
 	}
-	if len(encKeyBytes) != 64 {
-		return nil, fmt.Errorf("bitwarden_sm: encryption key must be 64 bytes, got %d", len(encKeyBytes))
-	}
-	aesKey := encKeyBytes[:32]
-	macKey := encKeyBytes[32:]
 
 	apiURL := "https://api.bitwarden.com"
 	if p.cfg.APIURL != "" {
@@ -122,6 +103,28 @@ func (p *BitwardenProvider) FetchSecrets(ctx context.Context) (map[string]string
 		result[normalize(string(name))] = string(value)
 	}
 	return result, nil
+}
+
+// parseAccessToken splits the structured Bitwarden SM access token
+// "0.<serviceAccountId>.<clientSecret>.<encKey>" and returns the derived AES and
+// HMAC keys. Accepts both standard and raw-URL base64 on the key segment.
+func parseAccessToken(token string) (serviceAccountID, clientSecret string, aesKey, macKey []byte, err error) {
+	parts := strings.SplitN(token, ".", 4)
+	if len(parts) != 4 || parts[0] != "0" {
+		return "", "", nil, nil, fmt.Errorf("invalid access token format (expected 0.<id>.<secret>.<key>)")
+	}
+	serviceAccountID, clientSecret = parts[1], parts[2]
+	encKeyBytes, decErr := base64.StdEncoding.DecodeString(parts[3])
+	if decErr != nil {
+		encKeyBytes, decErr = base64.RawURLEncoding.DecodeString(parts[3])
+		if decErr != nil {
+			return "", "", nil, nil, fmt.Errorf("decode encryption key: %w", decErr)
+		}
+	}
+	if len(encKeyBytes) != 64 {
+		return "", "", nil, nil, fmt.Errorf("encryption key must be 64 bytes, got %d", len(encKeyBytes))
+	}
+	return serviceAccountID, clientSecret, encKeyBytes[:32], encKeyBytes[32:], nil
 }
 
 func (p *BitwardenProvider) authenticate(ctx context.Context, identityURL, serviceAccountID, clientSecret string) (string, error) {

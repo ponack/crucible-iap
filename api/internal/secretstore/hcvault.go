@@ -94,18 +94,22 @@ func (p *HCVaultProvider) FetchSecrets(ctx context.Context) (map[string]string, 
 		return nil, fmt.Errorf("hc_vault: decode response: %w", err)
 	}
 
-	result := make(map[string]string, len(kvResp.Data.Data))
-	for k, v := range kvResp.Data.Data {
-		switch val := v.(type) {
-		case string:
-			result[normalize(k)] = val
-		default:
-			// Non-string values: JSON-encode them as the env var value.
-			encoded, _ := json.Marshal(val)
+	return parseKVData(kvResp.Data.Data), nil
+}
+
+// parseKVData converts the KV v2 data map to a normalized string map.
+// Non-string values are JSON-encoded so every secret becomes a valid env var.
+func parseKVData(data map[string]any) map[string]string {
+	result := make(map[string]string, len(data))
+	for k, v := range data {
+		if s, ok := v.(string); ok {
+			result[normalize(k)] = s
+		} else {
+			encoded, _ := json.Marshal(v)
 			result[normalize(k)] = string(encoded)
 		}
 	}
-	return result, nil
+	return result
 }
 
 func (p *HCVaultProvider) approleLogin(ctx context.Context) (string, error) {

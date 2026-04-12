@@ -88,7 +88,14 @@ func (p *VaultwardenProvider) FetchSecrets(ctx context.Context) (map[string]stri
 	}
 
 	// ── Step 5: Decrypt matching SecureNote items ─────────────────────────────
+	return p.decryptCiphers(ciphers, symKey, folderID), nil
+}
+
+// decryptCiphers filters ciphers to SecureNote items in the given folder (if set),
+// decrypts their name and notes fields, and returns them as a normalized env var map.
+func (p *VaultwardenProvider) decryptCiphers(ciphers []vwCipher, symKey []byte, folderID string) map[string]string {
 	result := make(map[string]string)
+	aesKey, macKey := symKey[:32], symKey[32:]
 	for _, c := range ciphers {
 		if c.Type != 2 { // 2 = SecureNote
 			continue
@@ -96,18 +103,17 @@ func (p *VaultwardenProvider) FetchSecrets(ctx context.Context) (map[string]stri
 		if folderID != "" && c.FolderID != folderID {
 			continue
 		}
-
-		name, err := vwDecrypt(c.Name, symKey[:32], symKey[32:])
+		name, err := vwDecrypt(c.Name, aesKey, macKey)
 		if err != nil {
 			continue // skip un-decryptable items
 		}
-		notes, err := vwDecrypt(c.Notes, symKey[:32], symKey[32:])
+		notes, err := vwDecrypt(c.Notes, aesKey, macKey)
 		if err != nil {
 			continue
 		}
 		result[normalize(string(name))] = string(notes)
 	}
-	return result, nil
+	return result
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
