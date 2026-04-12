@@ -25,6 +25,10 @@ services:
     env_file: ../.env
     environment:
       CRUCIBLE_ENV: production
+      # Runners on the crucible-runner network cannot reach the public HTTPS URL.
+      # Use the internal Docker service name so state backend calls stay on-network.
+      # Override via RUNNER_API_URL in .env if your setup differs.
+      RUNNER_API_URL: ${RUNNER_API_URL:-http://crucible-api:8080}
     expose:
       - "8080"
     depends_on:
@@ -125,6 +129,7 @@ services:
     env_file: ../.env
     environment:
       CRUCIBLE_ENV: production
+      RUNNER_API_URL: ${RUNNER_API_URL:-http://crucible-api-proxy:8080}
     ports:
       - "${CRUCIBLE_API_EXPOSE:-127.0.0.1}:${CRUCIBLE_API_PORT:-8080}:8080"
     depends_on:
