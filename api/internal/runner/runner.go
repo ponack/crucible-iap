@@ -23,10 +23,10 @@ import (
 type JobSpec struct {
 	RunID          string
 	StackID        string
-	Tool           string   // opentofu | terraform | ansible | pulumi
+	Tool           string // opentofu | terraform | ansible | pulumi
 	RunnerImage    string
-	JobToken       string   // short-lived JWT scoped to this run
-	APIURL         string   // Crucible API base URL for callbacks
+	JobToken       string // short-lived JWT scoped to this run
+	APIURL         string // Crucible API base URL for callbacks
 	RepoURL        string
 	RepoBranch     string
 	ProjectRoot    string
@@ -80,7 +80,12 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	logline(logWriter, "memory=%s cpu=%s timeout=%dm network=%s",
 		coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit),
 		coalesce(spec.CPULimit, r.cfg.RunnerCPULimit),
-		func() int { if spec.TimeoutMinutes > 0 { return spec.TimeoutMinutes }; return r.cfg.RunnerJobTimeoutMinutes }(),
+		func() int {
+			if spec.TimeoutMinutes > 0 {
+				return spec.TimeoutMinutes
+			}
+			return r.cfg.RunnerJobTimeoutMinutes
+		}(),
 		r.cfg.RunnerNetwork,
 	)
 	// Auto-pull image if not present locally — so operators never need to
@@ -109,18 +114,44 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	}
 	env = append(env, spec.ExtraEnv...)
 
+	containerID, err := r.createContainer(ctx, spec, image, containerName, env, logWriter)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = r.docker.ContainerRemove(context.Background(), containerID,
+			container.RemoveOptions{Force: true})
+	}()
+
+	if err := r.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		logline(logWriter, "ERROR: failed to start container: %v", err)
+		return fmt.Errorf("start container: %w", err)
+	}
+
+	slog.Info("runner started", "container", containerName, "run_id", spec.RunID)
+
+	timeoutMins := spec.TimeoutMinutes
+	if timeoutMins <= 0 {
+		timeoutMins = r.cfg.RunnerJobTimeoutMinutes
+	}
+	return r.streamAndWait(ctx, containerID, spec.RunID, timeoutMins, logWriter)
+}
+
+// createContainer creates (but does not start) the ephemeral job container,
+// logging actionable hints when common errors are detected.
+func (r *Runner) createContainer(ctx context.Context, spec JobSpec, img, containerName string, env []string, logWriter io.Writer) (string, error) {
 	resp, err := r.docker.ContainerCreate(ctx,
 		&container.Config{
-			Image:           image,
+			Image:           img,
 			Env:             env,
 			NetworkDisabled: false, // egress needed for cloud provider APIs
 			StopTimeout:     timeoutPtr(30),
 		},
 		&container.HostConfig{
-			AutoRemove:  true,
+			AutoRemove:     true,
 			ReadonlyRootfs: true,
-			SecurityOpt: []string{"no-new-privileges"},
-			CapDrop:     []string{"ALL"},
+			SecurityOpt:    []string{"no-new-privileges"},
+			CapDrop:        []string{"ALL"},
 			Resources: container.Resources{
 				Memory:   parseMemory(coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit)),
 				NanoCPUs: parseCPU(coalesce(spec.CPULimit, r.cfg.RunnerCPULimit)),
@@ -136,8 +167,6 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 				// OpenTofu writes here before moving binaries into /workspace.
 				"/tmp": "size=268435456,mode=0777,exec",
 			},
-			// Isolate on a dedicated network; configure egress rules externally
-			// Isolate on a dedicated network; configure egress rules externally.
 			// Override with RUNNER_NETWORK env var (network must exist before first run).
 			NetworkMode: container.NetworkMode(r.cfg.RunnerNetwork),
 		},
@@ -148,35 +177,23 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		errStr := err.Error()
 		switch {
 		case strings.Contains(errStr, "No such image") || strings.Contains(errStr, "pull access denied"):
-			logline(logWriter, "hint: runner image %q not present on Docker host — run: docker pull %s", image, image)
+			logline(logWriter, "hint: runner image %q not present on Docker host — run: docker pull %s", img, img)
 		case strings.Contains(errStr, "network") && strings.Contains(errStr, "not found"):
 			logline(logWriter, "hint: Docker network %q does not exist — run: docker network create %s", r.cfg.RunnerNetwork, r.cfg.RunnerNetwork)
 		}
-		return fmt.Errorf("create container: %w", err)
+		return "", fmt.Errorf("create container: %w", err)
 	}
+	return resp.ID, nil
+}
 
-	defer func() {
-		// Force-remove on unexpected exit (AutoRemove handles normal exit)
-		_ = r.docker.ContainerRemove(context.Background(), resp.ID,
-			container.RemoveOptions{Force: true})
-	}()
-
-	if err := r.docker.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		logline(logWriter, "ERROR: failed to start container: %v", err)
-		return fmt.Errorf("start container: %w", err)
-	}
-
-	slog.Info("runner started", "container", containerName, "run_id", spec.RunID)
-
-	// Stream logs back to caller
-	timeoutMins := spec.TimeoutMinutes
-	if timeoutMins <= 0 {
-		timeoutMins = r.cfg.RunnerJobTimeoutMinutes
-	}
+// streamAndWait attaches to container logs, streams them to logWriter, then
+// waits for the container to exit. Returns an error if the container exits
+// non-zero or the timeout is exceeded.
+func (r *Runner) streamAndWait(ctx context.Context, containerID, runID string, timeoutMins int, logWriter io.Writer) error {
 	logCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMins)*time.Minute)
 	defer cancel()
 
-	logs, err := r.docker.ContainerLogs(logCtx, resp.ID, container.LogsOptions{
+	logs, err := r.docker.ContainerLogs(logCtx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
@@ -189,11 +206,10 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	// Docker multiplexes stdout/stderr with an 8-byte frame header per chunk.
 	// stdcopy.StdCopy strips those headers; plain io.Copy would emit binary garbage.
 	if _, err := stdcopy.StdCopy(logWriter, logWriter, logs); err != nil && err != context.Canceled {
-		slog.Warn("log stream interrupted", "run_id", spec.RunID, "err", err)
+		slog.Warn("log stream interrupted", "run_id", runID, "err", err)
 	}
 
-	// Wait for completion
-	statusCh, errCh := r.docker.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	statusCh, errCh := r.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
 	select {
 	case status := <-statusCh:
 		if status.StatusCode != 0 {
@@ -204,7 +220,6 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	case <-logCtx.Done():
 		return fmt.Errorf("run timed out after %d minutes", timeoutMins)
 	}
-
 	return nil
 }
 

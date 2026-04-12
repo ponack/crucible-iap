@@ -21,12 +21,12 @@ import (
 type RunJobArgs struct {
 	RunID       string `json:"run_id"`
 	StackID     string `json:"stack_id"`
-	Tool        string `json:"tool"`        // opentofu | terraform | ansible | pulumi
+	Tool        string `json:"tool"` // opentofu | terraform | ansible | pulumi
 	RunnerImage string `json:"runner_image"`
 	RepoURL     string `json:"repo_url"`
 	RepoBranch  string `json:"repo_branch"`
 	ProjectRoot string `json:"project_root"`
-	RunType     string `json:"run_type"`    // tracked | proposed | destroy | apply
+	RunType     string `json:"run_type"` // tracked | proposed | destroy | apply
 	APIURL      string `json:"api_url"`
 	// AutoApply skips the unconfirmed gate on tracked runs and queues the apply
 	// phase immediately. Used by auto-apply stacks and drift auto-remediation.

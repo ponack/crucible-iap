@@ -119,10 +119,56 @@ jobs:
           commit_message: "chore: update pnpm-lock.yaml"
           file_pattern: "ui/pnpm-lock.yaml"
 
+  lint:
+    name: Lint (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          cache: false
+
+      - name: Install linters
+        run: |
+          go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+          go install github.com/client9/misspell/cmd/misspell@latest
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          go install github.com/gordonklaus/ineffassign@latest
+
+      - name: gofmt
+        run: gofmt -w api/
+
+      - name: Commit gofmt changes
+        if: github.event_name == 'push'
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "chore: gofmt"
+          file_pattern: "api/**/*.go"
+
+      - name: go vet
+        working-directory: api
+        run: go vet ./...
+
+      - name: staticcheck
+        working-directory: api
+        run: staticcheck ./...
+
+      - name: gocyclo
+        run: gocyclo -over 15 api/
+
+      - name: ineffassign
+        working-directory: api
+        run: ineffassign ./...
+
+      - name: misspell
+        run: misspell -error api/ runner/ docs/ README.md
+
   docker:
     name: Docker
     runs-on: ubuntu-latest
-    needs: [api, ui]
+    needs: [api, ui, lint]
     if: github.event_name == 'push'
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

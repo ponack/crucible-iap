@@ -26,9 +26,9 @@ type Integration struct {
 // validTypes is the full set of accepted integration type identifiers.
 var validTypes = map[string]bool{
 	// VCS — used for authenticated git clone
-	"github":  true,
-	"gitlab":  true,
-	"gitea":   true,
+	"github": true,
+	"gitlab": true,
+	"gitea":  true,
 	// Secret stores — used for secret injection at run time
 	"aws_sm":       true,
 	"hc_vault":     true,
@@ -169,6 +169,9 @@ func (h *Handler) Update(c echo.Context) error {
 				UPDATE org_integrations SET config_enc = $1, updated_at = now()
 				WHERE id = $2 RETURNING id, name, type, created_at, updated_at
 			`, enc, id).Scan(&integration.ID, &integration.Name, &integration.Type, &integration.CreatedAt, &integration.UpdatedAt)
+		}
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update integration")
 		}
 	} else if req.Name != "" {
 		err := h.pool.QueryRow(c.Request().Context(), `

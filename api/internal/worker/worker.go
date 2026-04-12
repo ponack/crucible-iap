@@ -16,8 +16,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/riverqueue/river"
-	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/envvars"
@@ -28,6 +26,8 @@ import (
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/vault"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 )
 
 // Dispatcher manages the River worker pool.
@@ -142,49 +142,8 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	var logBuf bytes.Buffer
 	logWriter := io.MultiWriter(&logBuf, &pgNotifyWriter{pool: w.pool, runID: args.RunID})
 
-	// VCS token for authenticated git clone. Empty string = public repo.
-	vcsToken, vcsErr := secretstore.LoadVCSToken(ctx, w.pool, w.vault, args.StackID)
-	if vcsErr != nil {
-		log.Warn("failed to load VCS token", "err", vcsErr)
-	}
-
-	// External secret store secrets (fetched first so built-in env vars take precedence).
-	storeEnv, storeErr := secretstore.LoadForStack(ctx, w.pool, w.vault, args.StackID)
-	if storeErr != nil {
-		log.Warn("failed to load external secret store", "err", storeErr)
-		storeEnv = nil
-	}
-
-	// Built-in stack env vars (encrypted at rest in the DB).
-	builtinEnv, evErr := envvars.LoadForStack(ctx, w.pool, w.vault, args.StackID)
-	if evErr != nil {
-		log.Warn("failed to load stack env vars", "err", evErr)
-		builtinEnv = nil
-	}
-
-	// Remote state source credentials: injected before built-in env vars so
-	// built-in vars still take precedence on any collision.
-	remoteStateEnv, rsErr := loadRemoteStateEnv(ctx, w.pool, w.vault, args.StackID, args.APIURL)
-	if rsErr != nil {
-		log.Warn("failed to load remote state sources", "err", rsErr)
-		remoteStateEnv = nil
-	}
-
-	// Merge order: external secrets → remote state → built-in (last wins).
-	extraEnv := append(append(storeEnv, remoteStateEnv...), builtinEnv...)
-
-	// Load DB-level system settings (falls back to env-config defaults if table absent).
-	sysSettings, settingsErr := settings.Load(ctx, w.pool, w.cfg)
-	if settingsErr != nil {
-		slog.Warn("failed to load system settings, using env defaults", "err", settingsErr)
-	}
-
-	memLimit, cpuLimit, timeoutMins := w.cfg.RunnerMemoryLimit, w.cfg.RunnerCPULimit, w.cfg.RunnerJobTimeoutMinutes
-	if sysSettings != nil {
-		memLimit = sysSettings.RunnerMemoryLimit
-		cpuLimit = sysSettings.RunnerCPULimit
-		timeoutMins = sysSettings.RunnerJobTimeoutMins
-	}
+	vcsToken, extraEnv := w.loadRunEnv(ctx, log, args.StackID, args.APIURL)
+	memLimit, cpuLimit, timeoutMins := w.resolveRunnerLimits(ctx)
 
 	spec := runner.JobSpec{
 		RunID:          args.RunID,
@@ -222,30 +181,70 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		return w.failRun(ctx, orgID, args.RunID, runErr)
 	}
 
-	// For tracked and destroy runs: transition to unconfirmed so a human must
-	// review the plan before changes are applied. Destroy runs never auto-apply
-	// regardless of the AutoApply flag — explicit confirmation is always required.
-	// For proposed runs (plan-only) or the apply phase, mark finished directly.
+	return w.completeRun(ctx, log, orgID, args)
+}
+
+// loadRunEnv gathers all env vars for a run job, logging warnings for non-fatal
+// failures so the job continues even when an optional source is unavailable.
+// Merge order: external secrets → remote state → built-in (last wins).
+func (w *RunWorker) loadRunEnv(ctx context.Context, log *slog.Logger, stackID, apiURL string) (vcsToken string, extraEnv []string) {
+	vcsToken, err := secretstore.LoadVCSToken(ctx, w.pool, w.vault, stackID)
+	if err != nil {
+		log.Warn("failed to load VCS token", "err", err)
+	}
+	storeEnv, err := secretstore.LoadForStack(ctx, w.pool, w.vault, stackID)
+	if err != nil {
+		log.Warn("failed to load external secret store", "err", err)
+	}
+	builtinEnv, err := envvars.LoadForStack(ctx, w.pool, w.vault, stackID)
+	if err != nil {
+		log.Warn("failed to load stack env vars", "err", err)
+	}
+	remoteStateEnv, err := loadRemoteStateEnv(ctx, w.pool, w.vault, stackID, apiURL)
+	if err != nil {
+		log.Warn("failed to load remote state sources", "err", err)
+	}
+	return vcsToken, append(append(storeEnv, remoteStateEnv...), builtinEnv...)
+}
+
+// resolveRunnerLimits returns effective resource limits, preferring DB settings
+// over the env-config defaults so operators can tune without restarting.
+func (w *RunWorker) resolveRunnerLimits(ctx context.Context) (memLimit, cpuLimit string, timeoutMins int) {
+	memLimit, cpuLimit, timeoutMins = w.cfg.RunnerMemoryLimit, w.cfg.RunnerCPULimit, w.cfg.RunnerJobTimeoutMinutes
+	sysSettings, err := settings.Load(ctx, w.pool, w.cfg)
+	if err != nil {
+		slog.Warn("failed to load system settings, using env defaults", "err", err)
+		return
+	}
+	return sysSettings.RunnerMemoryLimit, sysSettings.RunnerCPULimit, sysSettings.RunnerJobTimeoutMins
+}
+
+// completeRun handles the post-execution state transition and notifications.
+// For tracked/destroy runs it waits for human approval (or auto-applies if enabled).
+// For proposed and apply runs it marks finished and fires the appropriate notification.
+func (w *RunWorker) completeRun(ctx context.Context, log *slog.Logger, orgID string, args queue.RunJobArgs) error {
+	// Tracked and destroy runs require human confirmation unless auto-apply is on.
+	// Destroy runs never auto-apply regardless of the flag.
+	if (args.RunType == "tracked" || args.RunType == "destroy") && args.AutoApply && args.RunType != "destroy" {
+		now := time.Now()
+		if _, err := w.pool.Exec(ctx,
+			`UPDATE runs SET status = 'confirmed', approved_by = NULL, approved_at = $1 WHERE id = $2`,
+			now, args.RunID,
+		); err != nil {
+			return w.failRun(ctx, orgID, args.RunID, err)
+		}
+		_, _ = w.queue.EnqueueRun(ctx, queue.RunJobArgs{
+			RunID: args.RunID, StackID: args.StackID,
+			Tool: args.Tool, RunnerImage: args.RunnerImage,
+			RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
+			RunType: "apply", APIURL: args.APIURL,
+		})
+		log.Info("run job complete (auto-apply queued)")
+		return nil
+	}
+
 	finalStatus := "finished"
 	if args.RunType == "tracked" || args.RunType == "destroy" {
-		if args.AutoApply && args.RunType != "destroy" {
-			// Auto-confirm: mark confirmed and queue apply without human approval.
-			now := time.Now()
-			if _, err := w.pool.Exec(ctx,
-				`UPDATE runs SET status = 'confirmed', approved_by = NULL, approved_at = $1 WHERE id = $2`,
-				now, args.RunID,
-			); err != nil {
-				return w.failRun(ctx, orgID, args.RunID, err)
-			}
-			_, _ = w.queue.EnqueueRun(ctx, queue.RunJobArgs{
-				RunID: args.RunID, StackID: args.StackID,
-				Tool: args.Tool, RunnerImage: args.RunnerImage,
-				RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
-				RunType: "apply", APIURL: args.APIURL,
-			})
-			log.Info("run job complete (auto-apply queued)")
-			return nil
-		}
 		finalStatus = "unconfirmed"
 	}
 
@@ -254,18 +253,15 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		return err
 	}
 
-	// Fire notifications after status is committed.
+	bg := context.Background()
 	switch {
 	case finalStatus == "unconfirmed":
-		// Plan phase done (tracked or destroy) — post PR comment / commit status awaiting approval.
-		go w.notifier.PlanComplete(context.Background(), args.RunID)
-	case finalStatus == "finished" && args.RunType == "proposed":
-		// Proposed (PR) plan complete — post result comment, then check drift auto-remediation.
-		go w.notifier.PlanComplete(context.Background(), args.RunID)
-		go w.maybeRemediateDrift(context.Background(), args)
-	case finalStatus == "finished" && (args.RunType == "apply" || args.RunType == "destroy"):
-		// Apply or destroy succeeded.
-		go w.notifier.RunFinished(context.Background(), args.RunID, true)
+		go w.notifier.PlanComplete(bg, args.RunID)
+	case args.RunType == "proposed":
+		go w.notifier.PlanComplete(bg, args.RunID)
+		go w.maybeRemediateDrift(bg, args)
+	case args.RunType == "apply" || args.RunType == "destroy":
+		go w.notifier.RunFinished(bg, args.RunID, true)
 	}
 
 	log.Info("run job complete", "status", finalStatus)

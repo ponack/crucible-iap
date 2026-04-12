@@ -156,9 +156,9 @@ func (b *AzureBackend) signRequest(req *http.Request, body []byte) error {
 	// VERB\nContent-MD5\nContent-Type\nDate\nCanonicalizedHeaders\nCanonicalizedResource
 	stringToSign := strings.Join([]string{
 		req.Method,
-		"",              // Content-MD5
+		"", // Content-MD5
 		contentType,
-		"",              // Date (use x-ms-date instead)
+		"", // Date (use x-ms-date instead)
 		canonicalizedHeaders,
 		canonicalizedResource,
 	}, "\n")

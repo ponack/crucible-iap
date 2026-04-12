@@ -196,11 +196,11 @@ func (n *Notifier) TestSlack(ctx context.Context, stackID string) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := n.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Slack request failed: %w", err)
+		return fmt.Errorf("slack request failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("Slack returned HTTP %d — check webhook URL", resp.StatusCode)
+		return fmt.Errorf("slack returned HTTP %d — check webhook URL", resp.StatusCode)
 	}
 	return nil
 }
@@ -368,7 +368,7 @@ func (n *Notifier) planCommentBody(d *runData) string {
 		emoji = "⚠️"
 	}
 	body := fmt.Sprintf("## %s Crucible Plan\n\n", emoji)
-	body += fmt.Sprintf("| | Count |\n|--|--|\n")
+	body += "| | Count |\n|--|--|\n"
 	body += fmt.Sprintf("| ➕ to add | **%d** |\n", add)
 	body += fmt.Sprintf("| 🔄 to change | **%d** |\n", change)
 	body += fmt.Sprintf("| 🗑️ to destroy | **%d** |\n", destroy)

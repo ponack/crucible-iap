@@ -117,7 +117,7 @@ Your Rego policy must return an object with three keys from the `data.crucible` 
 package crucible
 
 # Used by post_plan, pre_plan, pre_apply
-plan := result {
+plan := result if {
   result := {
     "deny":    deny_msgs,     # set of strings — each blocks the run
     "warn":    warn_msgs,     # set of strings — non-blocking, shown to operator
@@ -126,7 +126,7 @@ plan := result {
 }
 
 # Used by trigger policies
-trigger := result {
+trigger := result if {
   result := {
     "deny":    [],
     "warn":    [],
@@ -135,7 +135,7 @@ trigger := result {
 }
 
 # Used by login policies
-login := result {
+login := result if {
   result := {
     "deny":    deny_msgs,     # non-empty set blocks the login
     "warn":    [],
@@ -155,7 +155,7 @@ Policy results (deny/warn messages) are recorded per run and shown as a badge ro
 ```rego
 package crucible
 
-plan := result {
+plan := result if {
   result := {
     "deny":    deny_msgs,
     "warn":    warn_msgs,
@@ -163,12 +163,12 @@ plan := result {
   }
 }
 
-deny_msgs[msg] {
+deny_msgs contains msg if {
   input.resource_changes[_].change.actions[_] == "delete"
   msg := "destroy operations are not permitted via automated runs — use an explicit destroy run"
 }
 
-warn_msgs[msg] {
+warn_msgs contains msg if {
   r := input.resource_changes[_]
   r.change.actions[_] == "update"
   msg := sprintf("resource %v will be modified", [r.address])
@@ -184,7 +184,7 @@ package crucible
 
 allowed_instance_types := {"t3.micro", "t3.small", "t3.medium", "t3.large"}
 
-plan := result {
+plan := result if {
   result := {
     "deny":    deny_msgs,
     "warn":    [],
@@ -192,7 +192,7 @@ plan := result {
   }
 }
 
-deny_msgs[msg] {
+deny_msgs contains msg if {
   r := input.resource_changes[_]
   r.type == "aws_instance"
   r.change.actions[_] != "delete"
@@ -211,7 +211,7 @@ package crucible
 
 required_tags := {"owner", "environment", "cost-centre"}
 
-plan := result {
+plan := result if {
   result := {
     "deny":    deny_msgs,
     "warn":    [],
@@ -219,7 +219,7 @@ plan := result {
   }
 }
 
-deny_msgs[msg] {
+deny_msgs contains msg if {
   r := input.resource_changes[_]
   r.change.actions[_] != "delete"
   r.change.actions[_] != "no-op"
@@ -239,7 +239,7 @@ package crucible
 
 max_changes := 10
 
-plan := result {
+plan := result if {
   result := {
     "deny":    deny_msgs,
     "warn":    warn_msgs,
@@ -249,12 +249,12 @@ plan := result {
 
 changing := [r | r := input.resource_changes[_]; r.change.actions[_] != "no-op"]
 
-deny_msgs[msg] {
+deny_msgs contains msg if {
   count(changing) > max_changes
   msg := sprintf("this plan modifies %v resources — limit is %v; split into smaller changes", [count(changing), max_changes])
 }
 
-warn_msgs[msg] {
+warn_msgs contains msg if {
   count(changing) > (max_changes / 2)
   count(changing) <= max_changes
   msg := sprintf("this plan modifies %v resources — approaching the limit of %v", [count(changing), max_changes])
@@ -268,7 +268,7 @@ warn_msgs[msg] {
 ```rego
 package crucible
 
-trigger := result {
+trigger := result if {
   result := {
     "deny":    [],
     "warn":    [],
@@ -277,13 +277,13 @@ trigger := result {
 }
 
 # After this stack's run completes successfully, trigger the downstream stack.
-downstream_stacks := ["<downstream-stack-uuid>"] {
+downstream_stacks := ["<downstream-stack-uuid>"] if {
   # Only trigger if something actually changed (not a no-op plan)
   changed := [r | r := input.resource_changes[_]; r.change.actions[_] != "no-op"]
   count(changed) > 0
 }
 
-downstream_stacks := [] { true }
+else := []
 ```
 
 ---

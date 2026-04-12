@@ -17,7 +17,7 @@ plan := {"deny": [], "warn": [], "trigger": []}
 const denyDestroyPolicy = `
 package crucible
 
-plan := result {
+plan := result if {
 	result := {
 		"deny":    deny_msgs,
 		"warn":    warn_msgs,
@@ -25,12 +25,12 @@ plan := result {
 	}
 }
 
-deny_msgs[msg] {
+deny_msgs contains msg if {
 	input.resource_changes[_].change.actions[_] == "delete"
 	msg := "destroy operations are not permitted by policy"
 }
 
-warn_msgs[msg] {
+warn_msgs contains msg if {
 	input.resource_changes[_].change.actions[_] == "update"
 	msg := "resource update detected"
 }
@@ -39,14 +39,14 @@ warn_msgs[msg] {
 const loginPolicy = `
 package crucible
 
-login := result {
+login := result if {
 	result := {
 		"deny": deny_msgs,
 		"warn": [],
 	}
 }
 
-deny_msgs[msg] {
+deny_msgs contains msg if {
 	count(input.groups) == 0
 	msg := "users must belong to at least one group"
 }

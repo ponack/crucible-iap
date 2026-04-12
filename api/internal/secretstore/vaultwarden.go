@@ -2,7 +2,6 @@
 package secretstore
 
 import (
-	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -89,7 +88,14 @@ func (p *VaultwardenProvider) FetchSecrets(ctx context.Context) (map[string]stri
 	}
 
 	// ── Step 5: Decrypt matching SecureNote items ─────────────────────────────
+	return p.decryptCiphers(ciphers, symKey, folderID), nil
+}
+
+// decryptCiphers filters ciphers to SecureNote items in the given folder (if set),
+// decrypts their name and notes fields, and returns them as a normalized env var map.
+func (p *VaultwardenProvider) decryptCiphers(ciphers []vwCipher, symKey []byte, folderID string) map[string]string {
 	result := make(map[string]string)
+	aesKey, macKey := symKey[:32], symKey[32:]
 	for _, c := range ciphers {
 		if c.Type != 2 { // 2 = SecureNote
 			continue
@@ -97,18 +103,17 @@ func (p *VaultwardenProvider) FetchSecrets(ctx context.Context) (map[string]stri
 		if folderID != "" && c.FolderID != folderID {
 			continue
 		}
-
-		name, err := vwDecrypt(c.Name, symKey[:32], symKey[32:])
+		name, err := vwDecrypt(c.Name, aesKey, macKey)
 		if err != nil {
 			continue // skip un-decryptable items
 		}
-		notes, err := vwDecrypt(c.Notes, symKey[:32], symKey[32:])
+		notes, err := vwDecrypt(c.Notes, aesKey, macKey)
 		if err != nil {
 			continue
 		}
 		result[normalize(string(name))] = string(notes)
 	}
-	return result, nil
+	return result
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -117,22 +122,22 @@ type vwLoginResp struct {
 	AccessToken string `json:"access_token"`
 	Key         string `json:"key"` // protected symmetric key
 	// KDF params
-	Kdf           int    `json:"Kdf"`            // 0=PBKDF2, 1=Argon2id
-	KdfIterations int    `json:"KdfIterations"`
-	KdfMemory     int    `json:"KdfMemory"`      // Argon2id only, in MB
-	KdfParallelism int   `json:"KdfParallelism"` // Argon2id only
+	Kdf            int `json:"Kdf"` // 0=PBKDF2, 1=Argon2id
+	KdfIterations  int `json:"KdfIterations"`
+	KdfMemory      int `json:"KdfMemory"`      // Argon2id only, in MB
+	KdfParallelism int `json:"KdfParallelism"` // Argon2id only
 	// Profile contains the email (used for KDF)
 	PrivateKey string `json:"PrivateKey"`
 }
 
 func (p *VaultwardenProvider) login(ctx context.Context, base string) (*vwLoginResp, error) {
 	form := url.Values{
-		"grant_type":    {"client_credentials"},
-		"scope":         {"api"},
-		"client_id":     {p.cfg.ClientID},
-		"client_secret": {p.cfg.ClientSecret},
-		"deviceType":    {"21"}, // SDK
-		"deviceName":    {"crucible-iap"},
+		"grant_type":       {"client_credentials"},
+		"scope":            {"api"},
+		"client_id":        {p.cfg.ClientID},
+		"client_secret":    {p.cfg.ClientSecret},
+		"deviceType":       {"21"}, // SDK
+		"deviceName":       {"crucible-iap"},
 		"deviceIdentifier": {"crucible-iap-runner"},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -150,7 +155,9 @@ func (p *VaultwardenProvider) login(ctx context.Context, base string) (*vwLoginR
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		var e struct{ ErrorDescription string `json:"error_description"` }
+		var e struct {
+			ErrorDescription string `json:"error_description"`
+		}
 		_ = json.Unmarshal(body, &e)
 		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, e.ErrorDescription)
 	}
@@ -341,30 +348,4 @@ func vwDecrypt(enc string, aesKey, macKey []byte) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported encryption type %s", encType)
 	}
-}
-
-// ── HTTP helper ───────────────────────────────────────────────────────────────
-
-func (p *VaultwardenProvider) doJSON(ctx context.Context, method, url, bearer string, body interface{}) ([]byte, error) {
-	var bodyReader io.Reader
-	if body != nil {
-		b, _ := json.Marshal(body)
-		bodyReader = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
-	if err != nil {
-		return nil, err
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	resp, err := p.httpClient().Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
 }

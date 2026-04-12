@@ -30,7 +30,7 @@ func New(secretKey string) *Vault {
 // Encrypt encrypts plaintext for the given stackID using AES-256-GCM.
 // The nonce (12 bytes) is prepended to the ciphertext in the returned slice.
 func (v *Vault) Encrypt(stackID string, plaintext []byte) ([]byte, error) {
-	return v.encryptWithContext("crucible-stack-envvar:" + stackID, plaintext)
+	return v.encryptWithContext("crucible-stack-envvar:"+stackID, plaintext)
 }
 
 // Decrypt decrypts a value produced by Encrypt.
@@ -92,13 +92,6 @@ func (v *Vault) decryptWithContext(ctx string, data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("decrypt: %w", err)
 	}
 	return plaintext, nil
-}
-
-// deriveKey produces a 32-byte AES key scoped to a specific stack using
-// HKDF-SHA256. Using the stack ID as "info" ensures each stack gets a
-// unique key even if the master key is shared.
-func (v *Vault) deriveKey(stackID string) ([]byte, error) {
-	return v.deriveKeyFor("crucible-stack-envvar:" + stackID)
 }
 
 func (v *Vault) deriveKeyFor(info string) ([]byte, error) {
