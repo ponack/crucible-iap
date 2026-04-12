@@ -16,6 +16,7 @@ ui/node_modules/
 ui/.svelte-kit/
 ui/build/
 ui/.env
+ui/package-lock.json
 
 # Docker volumes (local dev)
 deploy/volumes/
