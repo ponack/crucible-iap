@@ -139,7 +139,7 @@ jobs:
 
       - name: gofmt
         run: |
-          files=$(gofmt -l ./api/...)
+          files=$(gofmt -l api/)
           [ -z "$files" ] || (echo "Unformatted files:"; echo "$files"; exit 1)
 
       - name: go vet
