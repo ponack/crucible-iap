@@ -45,7 +45,7 @@
 		sse.onmessage = (e) => {
 			if (e.data === '[DONE]') {
 				sse?.close();
-				// Refresh run to get final status
+				sse = null;
 				runs.get(runID).then((r) => (run = r)).catch(() => {});
 				return;
 			}
@@ -59,6 +59,9 @@
 		sse.onerror = () => {
 			sse?.close();
 			sse = null;
+			// Refresh run status — the connection may have dropped at end of run
+			// before [DONE] was delivered (e.g. network blip or proxy timeout).
+			runs.get(runID).then((r) => (run = r)).catch(() => {});
 		};
 	}
 

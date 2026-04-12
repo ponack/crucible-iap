@@ -119,6 +119,11 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 
 	log.Info("starting run job")
 
+	// Close all live SSE subscribers when the job exits so the browser receives
+	// [DONE] and can refresh the final run status — regardless of whether the
+	// run succeeded, failed, or transitioned to unconfirmed.
+	defer w.broker.closeRun(args.RunID)
+
 	// Load orgID once — needed for audit events throughout the job lifecycle.
 	var orgID string
 	_ = w.pool.QueryRow(ctx, `SELECT org_id FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID)
@@ -408,6 +413,7 @@ func (w *RunWorker) issueJobToken(runID, stackID string) (string, error) {
 type LogBroker struct {
 	subscribe_  func(runID string) (<-chan string, func())
 	publish_    func(runID, line string)
+	closeRun_   func(runID string)
 }
 
 type subscription struct {
@@ -421,6 +427,7 @@ func newLogBroker() *LogBroker {
 	subCh := make(chan subscription, 64)
 	unsubCh := make(chan subscription, 64)
 	pubCh := make(chan [2]string, 1024)
+	closeRunCh := make(chan string, 64)
 
 	go func() {
 		for {
@@ -446,6 +453,13 @@ func newLogBroker() *LogBroker {
 					default: // drop if subscriber is slow
 					}
 				}
+			case runID := <-closeRunCh:
+				// Run finished — close all subscriber channels so SSE handlers
+				// send [DONE] and clients can refresh the final run status.
+				for _, ch := range subs[runID] {
+					close(ch)
+				}
+				delete(subs, runID)
 			}
 		}
 	}()
@@ -463,6 +477,12 @@ func newLogBroker() *LogBroker {
 		default:
 		}
 	}
+	b.closeRun_ = func(runID string) {
+		select {
+		case closeRunCh <- runID:
+		default:
+		}
+	}
 	return b
 }
 
@@ -472,6 +492,12 @@ func (b *LogBroker) subscribe(runID string) (<-chan string, func()) {
 
 func (b *LogBroker) publish(runID, line string) {
 	b.publish_(runID, line)
+}
+
+// closeRun closes all subscriber channels for runID, causing SSE handlers to
+// emit [DONE] and clients to refresh the final run status.
+func (b *LogBroker) closeRun(runID string) {
+	b.closeRun_(runID)
 }
 
 // brokerWriter bridges io.Writer to the log broker, line-buffering output.
