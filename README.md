@@ -5,6 +5,7 @@
 **Crucible IAP - Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
 
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ponack/crucible-iap)](https://goreportcard.com/report/github.com/ponack/crucible-iap)
 ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)
 ![Status: Beta](https://img.shields.io/badge/status-beta-blue)
 
@@ -317,7 +318,7 @@ cd api && go test -race ./...
 - [ ] Stack templates / blueprints — create new stacks pre-filled from a saved template (repo, tool, policies, env var schema)
 - [ ] Manual run with variable overrides — trigger a one-off run with temporary env var overrides without changing stack config
 - [ ] Service account API tokens — machine-readable tokens not tied to a user session, for CI pipelines and automation
-- [ ] Go Report Card integration — goreportcard-based linting (gofmt, go vet, gocyclo, ineffassign, misspell, staticcheck) in CI on every PR; `make lint` target for local use; badge in README once passing
+- [x] Go Report Card integration — goreportcard-based linting (gofmt, go vet, gocyclo, ineffassign, misspell, staticcheck) in CI on every PR; `make lint` target for local use; badge in README once passing
 - [ ] Email notifications — alongside Slack for teams that need non-Slack alerting
 - [ ] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads

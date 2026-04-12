@@ -39,8 +39,13 @@ test: test-api test-ui ## Run all tests
 
 # ── Lint ──────────────────────────────────────────────────────────────────────
 
-lint-api: ## Lint Go code
-	cd api && golangci-lint run ./...
+lint-api: ## Lint Go code (gofmt, vet, staticcheck, gocyclo, ineffassign, misspell)
+	@files=$$(gofmt -l ./api/...); [ -z "$$files" ] || (echo "Unformatted files:"; echo "$$files"; exit 1)
+	cd api && go vet ./...
+	cd api && staticcheck ./...
+	gocyclo -over 15 api/
+	ineffassign api/...
+	misspell -error api/ runner/ docs/ README.md
 
 lint-ui: ## Lint UI code
 	cd ui && pnpm lint
