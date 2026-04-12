@@ -6,18 +6,18 @@ package crucible.plan
 default deny = []
 default warn = []
 
-deny[msg] {
+deny contains msg if {
 	input.changes.destroy > 5
 	msg := sprintf("destroying %d resources requires manual approval", [input.changes.destroy])
 }
 
-warn[msg] {
+warn contains msg if {
 	input.changes.destroy > 0
 	input.changes.destroy <= 5
 	msg := sprintf("%d resources will be destroyed", [input.changes.destroy])
 }
 
-deny[msg] {
+deny contains msg if {
 	input.run.type == "tracked"
 	input.stack.auto_apply == true
 	input.changes.destroy > 0

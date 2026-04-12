@@ -233,7 +233,7 @@ Attach OPA/Rego policies to stacks to enforce guardrails before runs are allowed
 package crucible
 
 # Deny any plan that would destroy a resource
-plan := result {
+plan := result if {
   result := {
     "deny":    deny_msgs,
     "warn":    warn_msgs,
@@ -241,12 +241,12 @@ plan := result {
   }
 }
 
-deny_msgs[msg] {
+deny_msgs contains msg if {
   input.resource_changes[_].change.actions[_] == "delete"
   msg := "destroy operations require an explicit destroy run"
 }
 
-warn_msgs[msg] {
+warn_msgs contains msg if {
   input.resource_changes[_].change.actions[_] == "update"
   msg := sprintf("resource %s will be updated", [input.resource_changes[_].address])
 }
