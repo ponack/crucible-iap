@@ -11,7 +11,7 @@ Crucible IAP is a self-hosted infrastructure automation platform (Spacelift alte
 
 ## Architecture
 
-- `api/cmd/crucible-iap/` — main entrypoint; supports subcommands (`serve`, `migrate`)
+- `api/cmd/crucible-iap/` — main entrypoint; supports subcommands (`serve`, `worker`, `migrate`, `health`, `version`)
 - `api/internal/server/` — Echo HTTP server, route registration
 - `api/internal/auth/` — OIDC/OAuth2 PKCE authentication
 - `api/internal/stacks/` — stack CRUD and git integration

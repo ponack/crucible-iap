@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -37,9 +38,11 @@ func main() {
 		runMigrate()
 	case "version":
 		fmt.Printf("crucible-iap %s\n", version)
+	case "health":
+		runHealth()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		fmt.Fprintf(os.Stderr, "usage: crucible-iap [serve|worker|migrate|version]\n")
+		fmt.Fprintf(os.Stderr, "usage: crucible-iap [serve|worker|migrate|version|health]\n")
 		os.Exit(1)
 	}
 }
@@ -182,6 +185,22 @@ func runMigrate() {
 	}
 
 	slog.Info("migration complete")
+}
+
+// runHealth performs a single HTTP GET against the local health endpoint and
+// exits 0 on success, 1 on failure. Used as the Docker HEALTHCHECK command so
+// that no external tools (wget, curl) are required in the scratch image.
+func runHealth() {
+	resp, err := http.Get("http://localhost:8080/health")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
+		os.Exit(1)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "health check returned %d\n", resp.StatusCode)
+		os.Exit(1)
+	}
 }
 
 func setupLogger(env string) {

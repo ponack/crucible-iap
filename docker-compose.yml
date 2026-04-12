@@ -63,7 +63,7 @@ services:
       LOCAL_AUTH_EMAIL: "${LOCAL_AUTH_EMAIL:-}"
       LOCAL_AUTH_PASSWORD: "${LOCAL_AUTH_PASSWORD:-}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      test: ["CMD", "/crucible-iap", "health"]
       interval: 30s
       timeout: 5s
       retries: 3
