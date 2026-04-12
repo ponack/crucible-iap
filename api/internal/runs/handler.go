@@ -19,16 +19,16 @@ import (
 	"github.com/ponack/crucible-iap/internal/worker"
 )
 
+
 type Handler struct {
-	pool       *pgxpool.Pool
-	cfg        *config.Config
-	queue      *queue.Client
-	dispatcher *worker.Dispatcher
-	storage    *storage.Client
+	pool    *pgxpool.Pool
+	cfg     *config.Config
+	queue   *queue.Client
+	storage *storage.Client
 }
 
-func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, d *worker.Dispatcher, s *storage.Client) *Handler {
-	return &Handler{pool: pool, cfg: cfg, queue: q, dispatcher: d, storage: s}
+func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, s *storage.Client) *Handler {
+	return &Handler{pool: pool, cfg: cfg, queue: q, storage: s}
 }
 
 // runnerAPIURL returns the URL runner containers should use to reach the
@@ -492,23 +492,33 @@ func (h *Handler) Logs(c echo.Context) error {
 		return nil
 	}
 
-	// Live path: tail the in-memory log broker.
-	lines, cancel := h.dispatcher.Subscribe(id)
-	defer cancel()
+	// Live path: LISTEN for log lines published by the worker via pg_notify.
+	// Each run has a dedicated channel; the worker publishes each log line and
+	// a final "[DONE]" payload when the job exits.
+	conn, err := h.pool.Acquire(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to acquire connection for log streaming")
+	}
+	defer conn.Release()
+
+	channel := worker.RunLogChannel(id)
+	if _, err := conn.Exec(c.Request().Context(), fmt.Sprintf(`LISTEN "%s"`, channel)); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to subscribe to run log")
+	}
 
 	for {
-		select {
-		case line, open := <-lines:
-			if !open {
-				fmt.Fprintf(w, "data: [DONE]\n\n")
-				flusher.Flush()
-				return nil
-			}
-			fmt.Fprintf(w, "data: %s\n\n", line)
-			flusher.Flush()
-		case <-c.Request().Context().Done():
+		notification, err := conn.Conn().WaitForNotification(c.Request().Context())
+		if err != nil {
+			// Client disconnected or context cancelled — not an error we surface.
 			return nil
 		}
+		if notification.Payload == "[DONE]" {
+			fmt.Fprintf(w, "data: [DONE]\n\n")
+			flusher.Flush()
+			return nil
+		}
+		fmt.Fprintf(w, "data: %s\n\n", notification.Payload)
+		flusher.Flush()
 	}
 }
 

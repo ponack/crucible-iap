@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Package worker runs River workers that process infrastructure run jobs.
 // Each job spawns an ephemeral Docker container, streams its logs to MinIO
-// and any live WebSocket/SSE subscribers, then updates the run status.
+// and any live SSE subscribers (via PostgreSQL NOTIFY), then updates the run status.
 package worker
 
 import (
@@ -30,7 +30,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/vault"
 )
 
-// Dispatcher manages the River worker pool and log fan-out.
+// Dispatcher manages the River worker pool.
 type Dispatcher struct {
 	pool     *pgxpool.Pool
 	cfg      *config.Config
@@ -38,14 +38,11 @@ type Dispatcher struct {
 	storage  *storage.Client
 	vault    *vault.Vault
 	notifier *notify.Notifier
-	broker   *LogBroker
 	queue    *queue.Client
 	river    *river.Client[pgx.Tx]
 }
 
 func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault, n *notify.Notifier, q *queue.Client) (*Dispatcher, error) {
-	broker := newLogBroker()
-
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &RunWorker{
 		pool:     pool,
@@ -54,7 +51,6 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		storage:  s,
 		vault:    v,
 		notifier: n,
-		broker:   broker,
 		queue:    q,
 	})
 
@@ -75,7 +71,6 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		storage:  s,
 		vault:    v,
 		notifier: n,
-		broker:   broker,
 		queue:    q,
 		river:    rc,
 	}, nil
@@ -92,10 +87,10 @@ func (d *Dispatcher) Start(ctx context.Context) error {
 	return d.river.Stop(stopCtx)
 }
 
-// Subscribe returns a channel that receives log lines for the given run.
-// The caller must call the returned cancel function when done.
-func (d *Dispatcher) Subscribe(runID string) (<-chan string, func()) {
-	return d.broker.subscribe(runID)
+// RunLogChannel returns the PostgreSQL NOTIFY channel name for a run's log stream.
+// The worker publishes each log line here; the API Logs handler LISTENs on it.
+func RunLogChannel(runID string) string {
+	return "run_log_" + strings.ReplaceAll(runID, "-", "")
 }
 
 // ── Run worker ────────────────────────────────────────────────────────────────
@@ -109,7 +104,6 @@ type RunWorker struct {
 	storage  *storage.Client
 	vault    *vault.Vault
 	notifier *notify.Notifier
-	broker   *LogBroker
 	queue    *queue.Client
 }
 
@@ -119,10 +113,12 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 
 	log.Info("starting run job")
 
-	// Close all live SSE subscribers when the job exits so the browser receives
-	// [DONE] and can refresh the final run status — regardless of whether the
-	// run succeeded, failed, or transitioned to unconfirmed.
-	defer w.broker.closeRun(args.RunID)
+	// Signal live SSE subscribers when the job exits so the browser receives
+	// [DONE] and can refresh the final run status — regardless of outcome.
+	channel := RunLogChannel(args.RunID)
+	defer func() {
+		_, _ = w.pool.Exec(context.Background(), "SELECT pg_notify($1, $2)", channel, "[DONE]")
+	}()
 
 	// Load orgID once — needed for audit events throughout the job lifecycle.
 	var orgID string
@@ -142,9 +138,9 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		return err
 	}
 
-	// Collect all log output in memory while also broadcasting live
+	// Collect all log output in memory while also broadcasting live via PG NOTIFY.
 	var logBuf bytes.Buffer
-	logWriter := io.MultiWriter(&logBuf, &brokerWriter{broker: w.broker, runID: args.RunID})
+	logWriter := io.MultiWriter(&logBuf, &pgNotifyWriter{pool: w.pool, runID: args.RunID})
 
 	// VCS token for authenticated git clone. Empty string = public repo.
 	vcsToken, vcsErr := secretstore.LoadVCSToken(ctx, w.pool, w.vault, args.StackID)
@@ -407,112 +403,29 @@ func (w *RunWorker) issueJobToken(runID, stackID string) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(w.cfg.SecretKey))
 }
 
-// ── Log broker (pub/sub for live log streaming) ───────────────────────────────
+// ── PG NOTIFY log writer ──────────────────────────────────────────────────────
 
-// LogBroker distributes log lines to SSE/WebSocket subscribers per run ID.
-type LogBroker struct {
-	subscribe_  func(runID string) (<-chan string, func())
-	publish_    func(runID, line string)
-	closeRun_   func(runID string)
+// pgNotifyWriter broadcasts log lines to live SSE subscribers via PostgreSQL NOTIFY.
+// Each complete line is published as a notification on channel RunLogChannel(runID).
+// Subscribers (API Logs SSE handlers) LISTEN on the same channel.
+// The pg_notify payload limit is 8000 bytes; longer lines are truncated.
+type pgNotifyWriter struct {
+	pool  *pgxpool.Pool
+	runID string
+	buf   bytes.Buffer
 }
 
-type subscription struct {
-	ch     chan string
-	runID  string
-	cancel func()
-}
-
-func newLogBroker() *LogBroker {
-	subs := make(map[string][]chan string)
-	subCh := make(chan subscription, 64)
-	unsubCh := make(chan subscription, 64)
-	pubCh := make(chan [2]string, 1024)
-	closeRunCh := make(chan string, 64)
-
-	go func() {
-		for {
-			select {
-			case s := <-subCh:
-				subs[s.runID] = append(subs[s.runID], s.ch)
-			case s := <-unsubCh:
-				chans := subs[s.runID]
-				for i, ch := range chans {
-					if ch == s.ch {
-						subs[s.runID] = append(chans[:i], chans[i+1:]...)
-						close(ch)
-						break
-					}
-				}
-				if len(subs[s.runID]) == 0 {
-					delete(subs, s.runID)
-				}
-			case kv := <-pubCh:
-				for _, ch := range subs[kv[0]] {
-					select {
-					case ch <- kv[1]:
-					default: // drop if subscriber is slow
-					}
-				}
-			case runID := <-closeRunCh:
-				// Run finished — close all subscriber channels so SSE handlers
-				// send [DONE] and clients can refresh the final run status.
-				for _, ch := range subs[runID] {
-					close(ch)
-				}
-				delete(subs, runID)
-			}
-		}
-	}()
-
-	b := &LogBroker{}
-	b.subscribe_ = func(runID string) (<-chan string, func()) {
-		ch := make(chan string, 256)
-		subCh <- subscription{ch: ch, runID: runID}
-		cancel := func() { unsubCh <- subscription{ch: ch, runID: runID} }
-		return ch, cancel
-	}
-	b.publish_ = func(runID, line string) {
-		select {
-		case pubCh <- [2]string{runID, line}:
-		default:
-		}
-	}
-	b.closeRun_ = func(runID string) {
-		select {
-		case closeRunCh <- runID:
-		default:
-		}
-	}
-	return b
-}
-
-func (b *LogBroker) subscribe(runID string) (<-chan string, func()) {
-	return b.subscribe_(runID)
-}
-
-func (b *LogBroker) publish(runID, line string) {
-	b.publish_(runID, line)
-}
-
-// closeRun closes all subscriber channels for runID, causing SSE handlers to
-// emit [DONE] and clients to refresh the final run status.
-func (b *LogBroker) closeRun(runID string) {
-	b.closeRun_(runID)
-}
-
-// brokerWriter bridges io.Writer to the log broker, line-buffering output.
-type brokerWriter struct {
-	broker *LogBroker
-	runID  string
-	buf    bytes.Buffer
-}
-
-func (w *brokerWriter) Write(p []byte) (int, error) {
+func (w *pgNotifyWriter) Write(p []byte) (int, error) {
 	w.buf.Write(p)
+	channel := RunLogChannel(w.runID)
 	for {
 		line, err := w.buf.ReadString('\n')
 		if line != "" {
-			w.broker.publish(w.runID, line)
+			payload := strings.TrimRight(line, "\n")
+			if len(payload) > 7900 {
+				payload = payload[:7900] + "...[truncated]"
+			}
+			_, _ = w.pool.Exec(context.Background(), "SELECT pg_notify($1, $2)", channel, payload)
 		}
 		if err != nil {
 			if line != "" {
