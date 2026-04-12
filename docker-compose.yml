@@ -280,9 +280,13 @@ networks:
   backend:
     driver: bridge
     internal: true
+  # Declared external so Docker Compose uses the pre-existing network rather
+  # than creating a project-prefixed copy. Create once on the host before
+  # first `docker compose up`:
+  #   docker network create crucible-runner
   runner:
+    external: true
     name: crucible-runner
-    driver: bridge
 
 # ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
