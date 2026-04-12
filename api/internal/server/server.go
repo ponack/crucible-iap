@@ -238,7 +238,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	internal.Use(auth.RunnerAuthMiddleware(s.cfg.SecretKey))
 	internal.POST("/runs/:id/status", runHandler.ReportStatus)
 	internal.POST("/runs/:id/plan", runHandler.UploadPlan)
-	internal.GET("/runs/:id/plan", runHandler.DownloadPlan) // apply phase: runner fetches its own plan
+	internal.GET("/runs/:id/plan", runHandler.DownloadPlanInternal) // apply phase: runner fetches its own plan
 	internal.POST("/runs/:id/plan-summary", runHandler.ReportPlanSummary)
 	internal.POST("/runs/:id/policy-results", runHandler.ReportPolicyResults)
 }
