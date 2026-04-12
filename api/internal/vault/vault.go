@@ -94,7 +94,6 @@ func (v *Vault) decryptWithContext(ctx string, data []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-
 func (v *Vault) deriveKeyFor(info string) ([]byte, error) {
 	r := hkdf.New(sha256.New, v.masterKey, nil, []byte(info))
 	key := make([]byte, 32)
