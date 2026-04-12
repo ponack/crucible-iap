@@ -62,7 +62,12 @@ services:
       LOCAL_AUTH_ENABLED: "${LOCAL_AUTH_ENABLED:-false}"
       LOCAL_AUTH_EMAIL: "${LOCAL_AUTH_EMAIL:-}"
       LOCAL_AUTH_PASSWORD: "${LOCAL_AUTH_PASSWORD:-}"
-      RUNNER_API_URL: "${RUNNER_API_URL:-http://crucible-api:8080}"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     # When using an external proxy, expose the API port directly.
     # Set CRUCIBLE_API_PORT in .env (default 8080) or leave unset for internal-only.
     ports:
@@ -75,9 +80,51 @@ services:
     networks:
       - frontend
       - backend
+      # API must be on the runner network so ephemeral containers can reach
+      # the state backend and callback endpoints without going via the public URL.
       - runner
+
+  # ── Worker (River job runner) ─────────────────────────────────────────────────
+  crucible-worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: ghcr.io/ponack/crucible-iap-api:latest
+    command: ["worker"]
+    restart: unless-stopped
+    environment:
+      CRUCIBLE_ENV: production
+      CRUCIBLE_SECRET_KEY: "${CRUCIBLE_SECRET_KEY}"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "${POSTGRES_DB:-crucible}"
+      POSTGRES_USER: "${POSTGRES_USER:-crucible}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      MINIO_ENDPOINT: "${MINIO_ENDPOINT:-minio:9000}"
+      MINIO_ACCESS_KEY: "${MINIO_ACCESS_KEY:-minioadmin}"
+      MINIO_SECRET_KEY: "${MINIO_SECRET_KEY}"
+      MINIO_BUCKET_STATE: "${MINIO_BUCKET_STATE:-crucible-state}"
+      MINIO_BUCKET_ARTIFACTS: "${MINIO_BUCKET_ARTIFACTS:-crucible-artifacts}"
+      MINIO_USE_SSL: "${MINIO_USE_SSL:-false}"
+      # URL runner containers use to reach the API for state backend callbacks.
+      # Must be the internal Docker service name, not the public URL.
+      RUNNER_API_URL: "${RUNNER_API_URL:-http://crucible-api:8080}"
     volumes:
+      # Docker socket for spawning ephemeral runner containers.
+      # Use DOCKER_HOST in .env instead if targeting a remote Docker daemon.
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      crucible-api:
+        condition: service_healthy
+    networks:
+      - backend
+      # Must share the runner network with the API so that spawned containers
+      # can reach both the worker (for log streaming) and the API (callbacks).
+      - runner
 
   # ── UI (SvelteKit SSR) ────────────────────────────────────────────────────────
   crucible-ui:
