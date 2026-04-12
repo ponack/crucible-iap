@@ -94,12 +94,6 @@ func (v *Vault) decryptWithContext(ctx string, data []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// deriveKey produces a 32-byte AES key scoped to a specific stack using
-// HKDF-SHA256. Using the stack ID as "info" ensures each stack gets a
-// unique key even if the master key is shared.
-func (v *Vault) deriveKey(stackID string) ([]byte, error) {
-	return v.deriveKeyFor("crucible-stack-envvar:" + stackID)
-}
 
 func (v *Vault) deriveKeyFor(info string) ([]byte, error) {
 	r := hkdf.New(sha256.New, v.masterKey, nil, []byte(info))

@@ -170,6 +170,9 @@ func (h *Handler) Update(c echo.Context) error {
 				WHERE id = $2 RETURNING id, name, type, created_at, updated_at
 			`, enc, id).Scan(&integration.ID, &integration.Name, &integration.Type, &integration.CreatedAt, &integration.UpdatedAt)
 		}
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to update integration")
+		}
 	} else if req.Name != "" {
 		err := h.pool.QueryRow(c.Request().Context(), `
 			UPDATE org_integrations SET name = $1, updated_at = now()

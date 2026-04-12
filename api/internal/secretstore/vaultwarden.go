@@ -2,7 +2,6 @@
 package secretstore
 
 import (
-	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -343,30 +342,4 @@ func vwDecrypt(enc string, aesKey, macKey []byte) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported encryption type %s", encType)
 	}
-}
-
-// ── HTTP helper ───────────────────────────────────────────────────────────────
-
-func (p *VaultwardenProvider) doJSON(ctx context.Context, method, url, bearer string, body interface{}) ([]byte, error) {
-	var bodyReader io.Reader
-	if body != nil {
-		b, _ := json.Marshal(body)
-		bodyReader = bytes.NewReader(b)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, url, bodyReader)
-	if err != nil {
-		return nil, err
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	resp, err := p.httpClient().Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
 }

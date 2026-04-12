@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 // Type identifies which hook a policy applies to.
