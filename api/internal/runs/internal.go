@@ -84,6 +84,29 @@ func (h *Handler) ReportPlanSummary(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// DownloadPlanInternal is the runner-facing plan download endpoint used by the
+// apply phase. Authentication is via the runner JWT (aud=runner, runID claim).
+// Unlike the user-facing DownloadPlan, this does not require an org check —
+// the run token is already scoped to the exact run being fetched.
+func (h *Handler) DownloadPlanInternal(c echo.Context) error {
+	id := c.Param("id")
+
+	tokenRunID, _ := c.Get("runID").(string)
+	if tokenRunID != id {
+		return echo.NewHTTPError(http.StatusForbidden, "token not valid for this run")
+	}
+
+	obj, err := h.storage.GetPlan(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "plan artifact not found in storage")
+	}
+	defer obj.Close()
+
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+id[:8]+`.tfplan"`)
+	c.Response().Header().Set("Content-Type", "application/octet-stream")
+	return c.Stream(http.StatusOK, "application/octet-stream", obj)
+}
+
 // UploadPlan receives the binary plan artifact from the runner and stores it in MinIO.
 // The plan is stored keyed by run ID and the URL is recorded on the run row.
 func (h *Handler) UploadPlan(c echo.Context) error {
