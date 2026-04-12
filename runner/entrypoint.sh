@@ -129,11 +129,108 @@ run_opentofu()  { run_tf_generic "tofu"; }
 run_terraform() { run_tf_generic "terraform"; }
 
 # ── Ansible ───────────────────────────────────────────────────────────────────
+
+# Parse the PLAY RECAP block to extract aggregate change/failure counts.
+# Ansible recap format per host:
+#   hostname : ok=N  changed=N  unreachable=N  failed=N  skipped=N  ...
+# We sum changed across all hosts and report it as the "change" count.
+# Unreachable hosts are mapped to "destroy" (closest semantic for "lost").
+report_ansible_summary() {
+    local output_file="$1"
+    local changed=0 failed=0 unreachable=0
+
+    while IFS= read -r line; do
+        if [[ "${line}" =~ changed=([0-9]+) ]];     then changed=$(( changed + BASH_REMATCH[1] )); fi
+        if [[ "${line}" =~ failed=([0-9]+) ]];      then failed=$(( failed + BASH_REMATCH[1] )); fi
+        if [[ "${line}" =~ unreachable=([0-9]+) ]]; then unreachable=$(( unreachable + BASH_REMATCH[1] )); fi
+    done < "${output_file}"
+
+    log "ansible summary: changed=${changed} failed=${failed} unreachable=${unreachable}"
+    curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan-summary" \
+        "${API_HEADERS[@]}" \
+        -d "{\"add\":0,\"change\":${changed},\"destroy\":${unreachable}}" \
+        || log "warn: failed to report plan summary"
+}
+
 run_ansible() {
     local playbook="${CRUCIBLE_ANSIBLE_PLAYBOOK:-site.yml}"
-    log "running ansible-playbook ${playbook}"
-    report_status "planning"
-    ansible-playbook "${playbook}" --diff
+    log "tool=ansible run_type=${CRUCIBLE_RUN_TYPE}"
+    log "version: $(ansible --version 2>&1 | head -1)"
+
+    # Ephemeral containers have no persistent known_hosts — disable host key
+    # checking so SSH-based playbooks don't stall waiting for user input.
+    export ANSIBLE_HOST_KEY_CHECKING=False
+    export ANSIBLE_FORCE_COLOR=True
+
+    # Resolve inventory: explicit env var > auto-detect common repo paths > ansible defaults.
+    local inv_args=()
+    if [[ -n "${CRUCIBLE_ANSIBLE_INVENTORY:-}" ]]; then
+        inv_args=(-i "${CRUCIBLE_ANSIBLE_INVENTORY}")
+        log "inventory: ${CRUCIBLE_ANSIBLE_INVENTORY} (from CRUCIBLE_ANSIBLE_INVENTORY)"
+    else
+        for candidate in inventory.ini inventory.yml inventory.yaml inventory hosts hosts.ini; do
+            if [[ -e "${candidate}" ]]; then
+                inv_args=(-i "${candidate}")
+                log "inventory: ${candidate} (auto-detected)"
+                break
+            fi
+        done
+        [[ ${#inv_args[@]} -gt 0 ]] || log "inventory: none found — using ansible defaults (implicit localhost)"
+    fi
+
+    case "${CRUCIBLE_RUN_TYPE}" in
+        apply)
+            # Second phase: download the check output for audit, then run the playbook for real.
+            log "applying playbook: ${playbook}"
+            report_status "applying"
+            # Download the saved check output (best-effort — non-fatal if unavailable).
+            curl -sf "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan" \
+                -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+                -o /workspace/ansible_check.txt \
+                || log "warn: could not retrieve check artifact (non-fatal)"
+            ansible-playbook "${playbook}" "${inv_args[@]}"
+            ;;
+
+        destroy)
+            # Ansible has no built-in destroy semantics. A separate teardown
+            # playbook must be provided via CRUCIBLE_ANSIBLE_DESTROY_PLAYBOOK.
+            local teardown="${CRUCIBLE_ANSIBLE_DESTROY_PLAYBOOK:-}"
+            [[ -n "${teardown}" ]] \
+                || fail "destroy runs require CRUCIBLE_ANSIBLE_DESTROY_PLAYBOOK — Ansible has no built-in destroy operation"
+            log "running destroy check: ${teardown}"
+            report_status "planning"
+            ansible-playbook "${teardown}" --check --diff "${inv_args[@]}" \
+                2>&1 | tee /workspace/ansible_check.txt || {
+                upload_plan /workspace/ansible_check.txt
+                report_ansible_summary /workspace/ansible_check.txt
+                fail "ansible destroy check failed"
+            }
+            upload_plan /workspace/ansible_check.txt
+            report_ansible_summary /workspace/ansible_check.txt
+            log "destroy check complete — awaiting confirmation"
+            ;;
+
+        proposed|tracked|*)
+            # Check mode: preview changes without applying.
+            # Output is captured and uploaded as the plan artifact so the UI
+            # can display the diff and the operator can confirm before applying.
+            log "running check: ${playbook}"
+            report_status "planning"
+            ansible-playbook "${playbook}" --check --diff "${inv_args[@]}" \
+                2>&1 | tee /workspace/ansible_check.txt || {
+                upload_plan /workspace/ansible_check.txt
+                report_ansible_summary /workspace/ansible_check.txt
+                fail "ansible-playbook --check failed"
+            }
+            upload_plan /workspace/ansible_check.txt
+            report_ansible_summary /workspace/ansible_check.txt
+            if [[ "${CRUCIBLE_RUN_TYPE}" == "proposed" ]]; then
+                log "check complete (proposed — no apply)"
+            else
+                log "check complete — awaiting confirmation"
+            fi
+            ;;
+    esac
 }
 
 # ── Pulumi ────────────────────────────────────────────────────────────────────

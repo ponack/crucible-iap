@@ -69,13 +69,15 @@ lint:
 
 ---
 
-### Ansible Support
+### Ansible Support ✓
 
-`run_ansible` in `entrypoint.sh` currently stubs out. Full implementation needs:
+Implemented. Ansible runs follow the same check → confirm → apply lifecycle as OpenTofu:
 
-- Structured plan artifact (Ansible `--check --diff` output parsed into a diff summary)
-- Inventory sourcing strategy (static file, dynamic script, SSM Parameter Store)
-- Confirmation gate: surface the diff in the UI before applying
+- `--check --diff` output is captured and uploaded as the plan artifact
+- PLAY RECAP is parsed to extract `changed`/`unreachable` counts for PR comments
+- Inventory auto-detected from common repo paths; override with `CRUCIBLE_ANSIBLE_INVENTORY`
+- Destroy runs require `CRUCIBLE_ANSIBLE_DESTROY_PLAYBOOK` (Ansible has no built-in destroy)
+- `ANSIBLE_HOST_KEY_CHECKING=False` set automatically in ephemeral containers
 
 ---
 
