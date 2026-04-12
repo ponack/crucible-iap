@@ -81,9 +81,20 @@ func (h *Handler) Get(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer obj.Close()
-	c.Response().Header().Set(echo.HeaderContentType, "application/json")
-	_, err = io.Copy(c.Response(), obj)
-	return err
+
+	// MinIO GetObject is lazy — the actual HTTP request happens on the first
+	// Read, not on GetObject. Buffer the content so we can detect "NoSuchKey"
+	// (empty state on first run) before committing the response status code.
+	// State files are small (KB–MB), so in-memory buffering is fine.
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		resp := minio.ToErrorResponse(err)
+		if resp.Code == "NoSuchKey" {
+			return c.NoContent(http.StatusNoContent)
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.Blob(http.StatusOK, "application/json", data)
 }
 
 // POST /api/v1/state/:stackID — update state (caller must hold the lock)

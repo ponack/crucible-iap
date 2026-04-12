@@ -145,6 +145,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, backup, monitoring, troubleshooting |
 | [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting |
 | [docs/policies.md](docs/policies.md) | Rego policy authoring guide with examples |
+| [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 
 ## Connecting a Git repository
@@ -309,6 +310,7 @@ cd api && go test -race ./...
 - [ ] Stack templates / blueprints — create new stacks pre-filled from a saved template (repo, tool, policies, env var schema)
 - [ ] Manual run with variable overrides — trigger a one-off run with temporary env var overrides without changing stack config
 - [ ] Service account API tokens — machine-readable tokens not tied to a user session, for CI pipelines and automation
+- [ ] Go Report Card integration — goreportcard-based linting (gofmt, go vet, gocyclo, ineffassign, misspell, staticcheck) in CI on every PR; `make lint` target for local use; badge in README once passing
 - [ ] Email notifications — alongside Slack for teams that need non-Slack alerting
 - [ ] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
