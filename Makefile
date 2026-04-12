@@ -58,16 +58,16 @@ migrate-down: ## Roll back last migration
 # ── Docker ────────────────────────────────────────────────────────────────────
 
 docker-up: ## Start full stack with Docker Compose
-	docker compose -f deploy/docker-compose.yml up -d
+	docker compose up -d
 
 docker-down: ## Stop full stack
-	docker compose -f deploy/docker-compose.yml down
+	docker compose down
 
 docker-build: ## Build Docker images (version injected from git tag)
-	docker compose -f deploy/docker-compose.yml build --build-arg VERSION=$(VERSION)
+	docker compose build --build-arg VERSION=$(VERSION)
 
 docker-logs: ## Follow logs
-	docker compose -f deploy/docker-compose.yml logs -f
+	docker compose logs -f
 
 # ── Release ───────────────────────────────────────────────────────────────────
 
