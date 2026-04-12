@@ -201,6 +201,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worke
 	// Stack integration assignment
 	api.PUT("/stacks/:id/integrations", stackHandler.SetIntegrations, member)
 
+	// Stack state lock management
+	api.DELETE("/stacks/:id/lock", stateHandler.ForceUnlock, admin)
+
 	// Stack external state backend (S3, GCS, Azure Blob)
 	api.GET("/stacks/:id/state-backend", stackHandler.GetStateBackend, member)
 	api.PUT("/stacks/:id/state-backend", stackHandler.UpsertStateBackend, member)

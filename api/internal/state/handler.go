@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/minio/minio-go/v7"
+	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/statebackend"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/vault"
@@ -178,17 +179,74 @@ func (h *Handler) Unlock(c echo.Context) error {
 	stackID := c.Param("stackID")
 
 	var info LockInfo
-	if err := json.NewDecoder(c.Request().Body).Decode(&info); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
+	// Body decode is best-effort. Some OpenTofu builds or network conditions
+	// can result in an empty or malformed body; failing hard here leaves the
+	// lock permanently stuck since OpenTofu treats a non-200 unlock response
+	// as a warning and exits 0 anyway. Authentication is already verified by
+	// BasicAuthMiddleware, so falling back to an unconditional stack-scoped
+	// delete is safe.
+	_ = json.NewDecoder(c.Request().Body).Decode(&info)
 
-	tag, err := h.pool.Exec(c.Request().Context(), `
-		DELETE FROM state_locks WHERE stack_id = $1 AND lock_id = $2
-	`, stackID, info.ID)
-	if err != nil || tag.RowsAffected() == 0 {
+	var rowsAffected int64
+	if info.ID != "" {
+		tag, err := h.pool.Exec(c.Request().Context(), `
+			DELETE FROM state_locks WHERE stack_id = $1 AND lock_id = $2
+		`, stackID, info.ID)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		rowsAffected = tag.RowsAffected()
+	} else {
+		// No lock ID decoded — release whatever lock exists for this stack.
+		tag, err := h.pool.Exec(c.Request().Context(), `
+			DELETE FROM state_locks WHERE stack_id = $1
+		`, stackID)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		rowsAffected = tag.RowsAffected()
+	}
+	if rowsAffected == 0 {
 		return echo.NewHTTPError(http.StatusConflict, "lock not found or ID mismatch")
 	}
 	return c.NoContent(http.StatusOK)
+}
+
+// ForceUnlock clears a stuck state lock for a stack.
+// For emergency use when a runner container exited without releasing the lock
+// (e.g. container killed mid-apply, network interruption during UNLOCK).
+// DELETE /api/v1/stacks/:id/lock — admin role required.
+func (h *Handler) ForceUnlock(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	// Verify the stack belongs to this org.
+	var exists bool
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)
+	`, stackID, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	var lockID string
+	err := h.pool.QueryRow(c.Request().Context(), `
+		DELETE FROM state_locks WHERE stack_id = $1 RETURNING lock_id
+	`, stackID).Scan(&lockID)
+	if err == pgx.ErrNoRows {
+		return echo.NewHTTPError(http.StatusNotFound, "no lock held on this stack")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID:      userID,
+		Action:       "stack.lock.force-unlocked",
+		ResourceID:   stackID,
+		ResourceType: "stack",
+	})
+	return c.JSON(http.StatusOK, map[string]string{"cleared_lock_id": lockID})
 }
 
 func (h *Handler) assertLockHolder(ctx context.Context, stackID, lockID string) error {
