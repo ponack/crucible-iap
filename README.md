@@ -53,7 +53,8 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 ### Deployment
 
-- **Single `docker compose up`** — Caddy, API, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
+- **Single `docker compose up`** — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
+- **Separated API and Worker** — the HTTP API server and the Docker job runner run as distinct containers; the API has no Docker socket, the worker has no public ports
 - **Zero-config TLS** — Let's Encrypt via Caddy; bring your own cert or reverse proxy with the `external-proxy` profile
 - **Bundled Authentik** — optional `--profile authentik` for a fully self-hosted IdP
 
@@ -62,6 +63,10 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 ```bash
 cp .env.example .env
 # Edit .env — set CRUCIBLE_BASE_URL, CRUCIBLE_SECRET_KEY, POSTGRES_PASSWORD, etc.
+
+# Create the runner network once (used by ephemeral job containers)
+docker network create crucible-runner
+
 docker compose up -d
 ```
 
@@ -82,6 +87,7 @@ docker compose up -d
 Use your existing nginx, Traefik, or Caddy instance instead.
 
 ```bash
+docker network create crucible-runner   # if not already created
 docker compose --profile external-proxy up -d
 ```
 
@@ -125,9 +131,10 @@ Reverse proxy (Caddy bundled, or nginx / Traefik / your own)
     │                + audit log)   plans,      Rego)
     │                               logs)
     │                     │
-    │              River job queue
+    │              River job queue (PostgreSQL)
     │                     │
-    │           Worker dispatcher (Go)
+    │           Crucible Worker (separate container)
+    │           (no public ports, has Docker socket)
     │                     │
     │           Docker SDK → ephemeral runner container
     │                        (tofu / terraform / ansible / pulumi)

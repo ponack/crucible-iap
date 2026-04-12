@@ -32,5 +32,9 @@ volumes:
   minio_dev:
 
 networks:
+  # Dev creates crucible-runner inline for convenience.
+  # Production declares it external (pre-created by the operator) so that
+  # docker compose down does not destroy the network while job containers
+  # spawned by the worker are still attached to it.
   crucible-runner:
     driver: bridge

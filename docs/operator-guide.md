@@ -266,9 +266,9 @@ docker compose run --rm crucible-api migrate --down
 
 ### Runner containers not starting
 
-Verify the Docker socket is mounted:
+Verify the Docker socket is mounted on the worker (not the API):
 ```bash
-docker compose exec crucible-api ls /var/run/docker.sock
+docker compose exec crucible-worker ls /var/run/docker.sock
 ```
 
 Ensure the `crucible-runner` network exists:
