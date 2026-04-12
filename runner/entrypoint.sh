@@ -99,7 +99,7 @@ run_tf_generic() {
             # Download the saved plan and apply it.
             log "applying saved plan"
             report_status "applying"
-            curl -sf "${CRUCIBLE_API_URL}/api/v1/runs/${CRUCIBLE_RUN_ID}/plan" \
+            curl -sf "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan" \
                 -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
                 -o /workspace/plan.tfplan \
                 || fail "failed to download plan artifact"
