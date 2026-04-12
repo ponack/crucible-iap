@@ -58,6 +58,7 @@ migrate-down: ## Roll back last migration
 # ── Docker ────────────────────────────────────────────────────────────────────
 
 docker-up: ## Start full stack with Docker Compose
+	docker network create crucible-runner 2>/dev/null || true
 	docker compose up -d
 
 docker-down: ## Stop full stack
