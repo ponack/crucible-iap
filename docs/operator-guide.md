@@ -149,6 +149,15 @@ Pull the new image first — the migration files are embedded in the binary, so 
 
 **Before upgrading:** read the release notes for breaking changes to `.env` variables.
 
+### v0.2.x → v0.3.0
+
+No `.env` changes required. The following runner-layer bugs are fixed in this release — all changes are in the ephemeral job container, not the API.
+
+- **State backend empty-state handling (v0.2.7)** — fresh stacks with no prior state returned HTTP 500 instead of 204. Fixed by buffering the MinIO read before committing the response status. If you saw `giving up after 3 attempt(s)` in runner logs on a first run, upgrade resolves it.
+- **Runner /tmp read-only (v0.2.8)** — provider plugins are extracted to `/tmp` at init time; the runner container's root filesystem is read-only. Fixed by mounting a 256 MB tmpfs at `/tmp` (in addition to the existing `/workspace` mount). Symptoms: `open /tmp/terraform-provider-*: read-only file system` in runner logs.
+- **Runner tmpfs noexec (v0.2.9)** — the `/workspace` and `/tmp` tmpfs mounts were previously created with Docker's `TmpfsOptions` struct which does not expose mount flags, causing Docker to apply the default `noexec` flag. Provider binaries cannot execute under `noexec`. Fixed by switching to the `HostConfig.Tmpfs` string-option form with an explicit `exec` flag. Symptoms: `fork/exec /tmp/terraform-provider-*: permission denied` in runner logs.
+- **Plan download auth (v0.3.0)** — the apply phase downloads the saved plan from the API using the runner's job JWT. The endpoint was previously only exposed under user auth (`/api/v1/runs/`). The runner JWT (audience `runner`) is not accepted there, so the download returned 401 and the apply failed. Fixed by adding `GET /api/v1/internal/runs/:id/plan` under the runner-auth group. Symptoms: `failed to download plan artifact` in runner logs immediately after confirming a run.
+
 ### v0.1.5 → v0.2.0
 
 No `.env` changes required. Migrations 017 and 018 run automatically on startup:
@@ -273,3 +282,43 @@ Verify Prometheus is scraping:
 - Open `https://crucible.example.com/grafana`
 - Go to **Explore** → select **Prometheus** datasource → query `up`
 - If no data, check: `docker compose logs prometheus`
+
+### Runner: "giving up after N attempt(s)" on state backend
+
+The runner cannot reach the state backend before handing off to OpenTofu/Terraform. The pre-flight connectivity check in the runner reports the real HTTP status before the go-retryablehttp opaque error.
+
+Common causes:
+
+- **401/403** — `CRUCIBLE_SECRET_KEY` in the API does not match the key used when the runner JWT was minted. Redeploy API and runner from the same image/config.
+- **000 / connection refused** — The `CRUCIBLE_API_URL` env var (injected by the dispatcher) is not reachable from inside the runner container. The runner container runs on the `crucible-runner` Docker network; the API must be reachable by its Docker service name (e.g. `http://crucible-api:8080`), not `localhost`. Verify: `docker compose exec crucible-api curl http://crucible-api:8080/health`.
+- **500 on first run** — fixed in v0.2.7. A fresh stack with no prior state returned 500 instead of 204. Upgrade resolves it.
+
+### Runner: "read-only file system" during provider install
+
+Fixed in v0.2.8. OpenTofu/Terraform extracts provider binaries to `/tmp`. The runner container uses a read-only root filesystem; without an explicit `/tmp` tmpfs mount, writes fail. If you are running a pre-v0.2.8 image, upgrade.
+
+Verify the mount is present in a running runner container:
+
+```bash
+docker inspect <runner-container-id> | grep -A5 Tmpfs
+```
+
+You should see `/tmp` and `/workspace` both listed.
+
+### Runner: "permission denied" executing provider binary
+
+Fixed in v0.2.9. Docker's `TmpfsOptions` struct does not expose mount flags, so the created tmpfs received the kernel default `noexec`. Provider binaries cannot be executed under `noexec`. Upgrade to v0.2.9+ resolves it; no config change needed.
+
+Symptom: `fork/exec /tmp/terraform-provider-*: permission denied` appearing immediately after the provider is downloaded successfully.
+
+### Runner: "failed to download plan artifact" on apply
+
+Fixed in v0.3.0. The runner fetches the saved plan in the apply phase using its job JWT (audience `runner`). Before v0.3.0, the plan download endpoint was only exposed under user auth, which rejects the runner JWT. The run would succeed planning but fail immediately on confirm.
+
+Ensure you are running v0.3.0+. The endpoint `GET /api/v1/internal/runs/:id/plan` was added in this release specifically for the runner apply phase.
+
+### Run detail page buttons don't update after a run ends
+
+Fixed in v0.3.0. The SSE log stream channel was never closed when the worker goroutine finished, so the browser kept a hung connection and never saw the terminal `[DONE]` event. Buttons (Cancel → Delete, plan → confirm/discard) stayed in their mid-run state until page reload.
+
+Upgrade to v0.3.0+; no config change needed.
