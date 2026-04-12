@@ -159,7 +159,8 @@ jobs:
         run: gocyclo -over 15 api/
 
       - name: ineffassign
-        run: ineffassign api/
+        working-directory: api
+        run: ineffassign ./...
 
       - name: misspell
         run: misspell -error api/ runner/ docs/ README.md
