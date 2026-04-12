@@ -30,14 +30,12 @@ import (
 	"github.com/ponack/crucible-iap/internal/updater"
 	"github.com/ponack/crucible-iap/internal/vault"
 	"github.com/ponack/crucible-iap/internal/webhooks"
-	"github.com/ponack/crucible-iap/internal/worker"
 )
 
 type Server struct {
 	cfg           *config.Config
 	pool          *pgxpool.Pool
 	echo          *echo.Echo
-	dispatcher    *worker.Dispatcher
 	queue         *queue.Client
 	storage       *storage.Client
 	policyHandler *policies.Handler
@@ -45,7 +43,7 @@ type Server struct {
 	startTime     time.Time
 }
 
-func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, d *worker.Dispatcher, v *vault.Vault, n *notify.Notifier) *Server {
+func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, v *vault.Vault, n *notify.Notifier) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
@@ -87,23 +85,22 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 		cfg:           cfg,
 		pool:          pool,
 		echo:          e,
-		dispatcher:    d,
 		queue:         q,
 		storage:       store,
 		policyHandler: policyHandler,
 		updater:       updater.New(version),
 		startTime:     time.Now(),
 	}
-	s.registerRoutes(store, q, d, policyHandler, v, n)
+	s.registerRoutes(store, q, policyHandler, v, n)
 	return s
 }
 
-func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, d *worker.Dispatcher, policyHandler *policies.Handler, v *vault.Vault, n *notify.Notifier) {
+func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHandler *policies.Handler, v *vault.Vault, n *notify.Notifier) {
 	e := s.echo
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
 	stackHandler := stacks.NewHandler(s.pool, v, n)
-	runHandler := runs.NewHandler(s.pool, s.cfg, q, d, store)
+	runHandler := runs.NewHandler(s.pool, s.cfg, q, store)
 	stateHandler := state.NewHandler(s.pool, store, v)
 	auditHandler := audit.NewHandler(s.pool)
 	settingsHandler := settings.NewHandler(s.pool, s.cfg)
@@ -253,8 +250,6 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	metrics.PollQueueDepth(ctx, s.pool)
-	worker.StartDriftScheduler(ctx, s.pool, s.cfg, s.queue)
-	worker.StartRetentionScheduler(ctx, s.pool, s.cfg, s.storage)
 	s.updater.Start(ctx)
 
 	errCh := make(chan error, 1)

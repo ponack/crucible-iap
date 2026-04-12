@@ -31,19 +31,23 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		runServe()
+	case "worker":
+		runWorker()
 	case "migrate":
 		runMigrate()
 	case "version":
 		fmt.Printf("crucible-iap %s\n", version)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		fmt.Fprintf(os.Stderr, "usage: crucible-iap [serve|migrate|version]\n")
+		fmt.Fprintf(os.Stderr, "usage: crucible-iap [serve|worker|migrate|version]\n")
 		os.Exit(1)
 	}
 }
 
 var version = "dev"
 
+// runServe starts the HTTP API server. Job execution is handled by a separate
+// crucible-worker process; this process only enqueues jobs into River.
 func runServe() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -81,6 +85,55 @@ func runServe() {
 		os.Exit(1)
 	}
 
+	v := vault.New(cfg.SecretKey)
+	n := notify.New(pool, v, cfg.BaseURL)
+
+	srv := server.New(cfg, pool, store, q, v, n)
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	audit.StartPartitionMaintainer(ctx, pool)
+
+	slog.Info("starting crucible-iap api", "addr", cfg.ListenAddr, "env", cfg.Env)
+
+	if err := srv.Start(ctx); err != nil {
+		slog.Error("server error", "err", err)
+		os.Exit(1)
+	}
+}
+
+// runWorker starts the River job worker and Docker runner.
+// It processes queued runs and spawns ephemeral containers.
+// Run alongside crucible-api; both connect to the same PostgreSQL.
+func runWorker() {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("failed to load config", "err", err)
+		os.Exit(1)
+	}
+
+	setupLogger(cfg.Env)
+
+	pool, err := db.Connect(context.Background(), cfg.DatabaseURL())
+	if err != nil {
+		slog.Error("failed to connect to database", "err", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	store, err := storage.New(cfg)
+	if err != nil {
+		slog.Error("failed to connect to object storage", "err", err)
+		os.Exit(1)
+	}
+
+	q, err := queue.New(pool)
+	if err != nil {
+		slog.Error("failed to create job queue client", "err", err)
+		os.Exit(1)
+	}
+
 	r, err := runner.New(cfg)
 	if err != nil {
 		slog.Error("failed to create runner", "err", err)
@@ -88,7 +141,6 @@ func runServe() {
 	}
 
 	v := vault.New(cfg.SecretKey)
-
 	n := notify.New(pool, v, cfg.BaseURL)
 
 	d, err := worker.New(pool, cfg, r, store, v, n, q)
@@ -97,24 +149,20 @@ func runServe() {
 		os.Exit(1)
 	}
 
-	srv := server.New(cfg, pool, store, q, d, v, n)
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	audit.StartPartitionMaintainer(ctx, pool)
+	worker.StartDriftScheduler(ctx, pool, cfg, q)
+	worker.StartRetentionScheduler(ctx, pool, cfg, store)
 
-	// Start worker dispatcher in background
-	go func() {
-		if err := d.Start(ctx); err != nil {
-			slog.Error("worker dispatcher error", "err", err)
-		}
-	}()
+	slog.Info("starting crucible-iap worker",
+		"max_concurrent", cfg.RunnerMaxConcurrent,
+		"network", cfg.RunnerNetwork,
+	)
 
-	slog.Info("starting crucible-iap", "addr", cfg.ListenAddr, "env", cfg.Env)
-
-	if err := srv.Start(ctx); err != nil {
-		slog.Error("server error", "err", err)
+	if err := d.Start(ctx); err != nil {
+		slog.Error("worker error", "err", err)
 		os.Exit(1)
 	}
 }

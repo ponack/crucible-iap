@@ -15,6 +15,11 @@ name: crucible-iap
 # Updating:
 #   docker compose pull && docker compose up -d
 #   docker compose exec crucible-api /crucible-iap migrate
+#
+# Services:
+#   crucible-api    — HTTP API server (no Docker socket needed)
+#   crucible-worker — River job worker + Docker runner (has Docker socket)
+#   crucible-ui     — SvelteKit UI
 
 services:
 
@@ -25,10 +30,6 @@ services:
     env_file: ../.env
     environment:
       CRUCIBLE_ENV: production
-      # Runners on the crucible-runner network cannot reach the public HTTPS URL.
-      # Use the internal Docker service name so state backend calls stay on-network.
-      # Override via RUNNER_API_URL in .env if your setup differs.
-      RUNNER_API_URL: ${RUNNER_API_URL:-http://crucible-api:8080}
     expose:
       - "8080"
     depends_on:
@@ -37,20 +38,42 @@ services:
       minio:
         condition: service_started
     healthcheck:
-      test: ["CMD", "/crucible-iap", "health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 15s
+    networks:
+      - internal
+      # API must be on the runner network so ephemeral containers can reach
+      # the state backend and callback endpoints without going via the public URL.
+      - crucible-runner
+
+  # ── Worker ───────────────────────────────────────────────────────────────────
+  crucible-worker:
+    image: ghcr.io/ponack/crucible-iap-api:${CRUCIBLE_VERSION:-latest}
+    command: ["worker"]
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      # URL runner containers use to reach the API for state backend callbacks.
+      # Must be the internal Docker service name, not the public URL.
+      RUNNER_API_URL: ${RUNNER_API_URL:-http://crucible-api:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      crucible-api:
+        condition: service_healthy
     volumes:
-      # Docker socket for ephemeral runner containers.
-      # If you use a remote Docker host set DOCKER_HOST in .env instead.
+      # Docker socket for spawning ephemeral runner containers.
+      # Use DOCKER_HOST in .env instead if targeting a remote Docker daemon.
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - internal
-      # Runner containers are spawned on this network. The API must also be
-      # attached so runners can reach the state backend without going via the
-      # public internet (avoids TLS loopback issues with reverse proxies).
+      # Must share the runner network with the API so that spawned containers
+      # can reach both the worker (for log streaming) and the API (callbacks).
       - crucible-runner
 
   # ── UI ──────────────────────────────────────────────────────────────────────
@@ -129,13 +152,32 @@ services:
     env_file: ../.env
     environment:
       CRUCIBLE_ENV: production
-      RUNNER_API_URL: ${RUNNER_API_URL:-http://crucible-api-proxy:8080}
     ports:
       - "${CRUCIBLE_API_EXPOSE:-127.0.0.1}:${CRUCIBLE_API_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
       minio:
+        condition: service_started
+    networks:
+      - internal
+      - crucible-runner
+    profiles:
+      - external-proxy
+
+  crucible-worker-proxy:
+    image: ghcr.io/ponack/crucible-iap-api:${CRUCIBLE_VERSION:-latest}
+    command: ["worker"]
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      RUNNER_API_URL: ${RUNNER_API_URL:-http://crucible-api-proxy:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+      crucible-api-proxy:
         condition: service_started
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
