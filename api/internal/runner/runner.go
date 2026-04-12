@@ -139,6 +139,19 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 						Mode: os.FileMode(0o777),
 					},
 				},
+				{
+					// Writable /tmp for tool provider downloads.
+					// Root FS is read-only; OpenTofu/Terraform stage provider
+					// zip downloads in /tmp before extracting them, so this
+					// mount is required even though the final install location
+					// is inside /workspace.
+					Type:   mount.TypeTmpfs,
+					Target: "/tmp",
+					TmpfsOptions: &mount.TmpfsOptions{
+						SizeBytes: 256 * 1024 * 1024, // 256 MB
+						Mode:      os.FileMode(0o777),
+					},
+				},
 			},
 			// Isolate on a dedicated network; configure egress rules externally
 			// Isolate on a dedicated network; configure egress rules externally.
