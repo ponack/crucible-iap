@@ -62,6 +62,7 @@ services:
       LOCAL_AUTH_ENABLED: "${LOCAL_AUTH_ENABLED:-false}"
       LOCAL_AUTH_EMAIL: "${LOCAL_AUTH_EMAIL:-}"
       LOCAL_AUTH_PASSWORD: "${LOCAL_AUTH_PASSWORD:-}"
+      RUNNER_API_URL: "${RUNNER_API_URL:-http://crucible-api:8080}"
     # When using an external proxy, expose the API port directly.
     # Set CRUCIBLE_API_PORT in .env (default 8080) or leave unset for internal-only.
     ports:
