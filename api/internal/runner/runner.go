@@ -8,14 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/ponack/crucible-iap/internal/config"
@@ -127,31 +125,16 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 				Memory:   parseMemory(coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit)),
 				NanoCPUs: parseCPU(coalesce(spec.CPULimit, r.cfg.RunnerCPULimit)),
 			},
-			Mounts: []mount.Mount{
-				{
-					// Ephemeral workspace in RAM — disappears on container exit
-					Type:   mount.TypeTmpfs,
-					Target: "/workspace",
-					TmpfsOptions: &mount.TmpfsOptions{
-						SizeBytes: 512 * 1024 * 1024, // 512 MB
-						// Mode 0777: tmpfs overlay replaces the image's /workspace
-						// dir, so the non-root runner user must have write access.
-						Mode: os.FileMode(0o777),
-					},
-				},
-				{
-					// Writable /tmp for tool provider downloads.
-					// Root FS is read-only; OpenTofu/Terraform stage provider
-					// zip downloads in /tmp before extracting them, so this
-					// mount is required even though the final install location
-					// is inside /workspace.
-					Type:   mount.TypeTmpfs,
-					Target: "/tmp",
-					TmpfsOptions: &mount.TmpfsOptions{
-						SizeBytes: 256 * 1024 * 1024, // 256 MB
-						Mode:      os.FileMode(0o777),
-					},
-				},
+			// Tmpfs mounts use the string-options form so we can set the exec
+			// flag explicitly. mount.TmpfsOptions has no field for mount flags,
+			// meaning some Docker versions silently apply noexec — which
+			// prevents provider binaries from being executed after download.
+			Tmpfs: map[string]string{
+				// Ephemeral workspace: repo clone, provider cache, plan artifact.
+				"/workspace": "size=536870912,mode=0777,exec",
+				// Staging area for provider zip downloads before extraction.
+				// OpenTofu writes here before moving binaries into /workspace.
+				"/tmp": "size=268435456,mode=0777,exec",
 			},
 			// Isolate on a dedicated network; configure egress rules externally
 			// Isolate on a dedicated network; configure egress rules externally.
