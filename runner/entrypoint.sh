@@ -64,6 +64,21 @@ run_tf_generic() {
     export TF_INPUT=0
 
     log "state backend: ${TF_HTTP_ADDRESS}"
+
+    # Verify API reachability and auth before handing off to OpenTofu.
+    # This surfaces the real HTTP error instead of go-retryablehttp's
+    # opaque "giving up after N attempts" message.
+    log "checking state backend connectivity..."
+    state_check=$(curl -sf -o /dev/null -w "%{http_code}" \
+        -u "${TF_HTTP_USERNAME}:${TF_HTTP_PASSWORD}" \
+        "${TF_HTTP_ADDRESS}" 2>&1) || state_check="$?"
+    case "${state_check}" in
+        200|204) log "state backend: ok (${state_check})" ;;
+        401|403) fail "state backend auth failed (${state_check}) — check CRUCIBLE_SECRET_KEY matches between API and runner config" ;;
+        000)     fail "state backend unreachable — cannot connect to ${TF_HTTP_ADDRESS} (DNS or network issue)" ;;
+        *)       log "state backend returned ${state_check} — continuing (empty state is normal for first run)" ;;
+    esac
+
     log "initialising"
     ${bin} init -no-color
 
