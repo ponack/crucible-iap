@@ -19,7 +19,6 @@ import (
 	"github.com/ponack/crucible-iap/internal/worker"
 )
 
-
 type Handler struct {
 	pool    *pgxpool.Pool
 	cfg     *config.Config

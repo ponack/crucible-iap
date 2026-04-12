@@ -25,8 +25,8 @@ const (
 // Result is the output of evaluating a policy against an input.
 type Result struct {
 	Allow   bool     `json:"allow"`
-	Deny    []string `json:"deny,omitempty"`   // denial messages from the policy
-	Warn    []string `json:"warn,omitempty"`   // warnings (non-blocking)
+	Deny    []string `json:"deny,omitempty"`    // denial messages from the policy
+	Warn    []string `json:"warn,omitempty"`    // warnings (non-blocking)
 	Trigger []string `json:"trigger,omitempty"` // stack IDs to trigger (trigger policies)
 }
 

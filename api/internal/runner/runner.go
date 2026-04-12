@@ -23,10 +23,10 @@ import (
 type JobSpec struct {
 	RunID          string
 	StackID        string
-	Tool           string   // opentofu | terraform | ansible | pulumi
+	Tool           string // opentofu | terraform | ansible | pulumi
 	RunnerImage    string
-	JobToken       string   // short-lived JWT scoped to this run
-	APIURL         string   // Crucible API base URL for callbacks
+	JobToken       string // short-lived JWT scoped to this run
+	APIURL         string // Crucible API base URL for callbacks
 	RepoURL        string
 	RepoBranch     string
 	ProjectRoot    string
@@ -80,7 +80,12 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	logline(logWriter, "memory=%s cpu=%s timeout=%dm network=%s",
 		coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit),
 		coalesce(spec.CPULimit, r.cfg.RunnerCPULimit),
-		func() int { if spec.TimeoutMinutes > 0 { return spec.TimeoutMinutes }; return r.cfg.RunnerJobTimeoutMinutes }(),
+		func() int {
+			if spec.TimeoutMinutes > 0 {
+				return spec.TimeoutMinutes
+			}
+			return r.cfg.RunnerJobTimeoutMinutes
+		}(),
 		r.cfg.RunnerNetwork,
 	)
 	// Auto-pull image if not present locally — so operators never need to
@@ -117,10 +122,10 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 			StopTimeout:     timeoutPtr(30),
 		},
 		&container.HostConfig{
-			AutoRemove:  true,
+			AutoRemove:     true,
 			ReadonlyRootfs: true,
-			SecurityOpt: []string{"no-new-privileges"},
-			CapDrop:     []string{"ALL"},
+			SecurityOpt:    []string{"no-new-privileges"},
+			CapDrop:        []string{"ALL"},
 			Resources: container.Resources{
 				Memory:   parseMemory(coalesce(spec.MemoryLimit, r.cfg.RunnerMemoryLimit)),
 				NanoCPUs: parseCPU(coalesce(spec.CPULimit, r.cfg.RunnerCPULimit)),

@@ -30,7 +30,7 @@ func New(secretKey string) *Vault {
 // Encrypt encrypts plaintext for the given stackID using AES-256-GCM.
 // The nonce (12 bytes) is prepended to the ciphertext in the returned slice.
 func (v *Vault) Encrypt(stackID string, plaintext []byte) ([]byte, error) {
-	return v.encryptWithContext("crucible-stack-envvar:" + stackID, plaintext)
+	return v.encryptWithContext("crucible-stack-envvar:"+stackID, plaintext)
 }
 
 // Decrypt decrypts a value produced by Encrypt.

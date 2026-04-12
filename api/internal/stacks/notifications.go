@@ -16,11 +16,11 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 
 	var req struct {
-		VCSProvider  *string  `json:"vcs_provider"`   // nil = no change
-		VCSBaseURL   *string  `json:"vcs_base_url"`   // nil = no change; "" = clear
-		VCSToken     *string  `json:"vcs_token"`      // nil = no change; "" = clear
-		SlackWebhook *string  `json:"slack_webhook"`  // nil = no change; "" = clear
-		NotifyEvents []string `json:"notify_events"`  // nil = no change; [] = clear all
+		VCSProvider  *string  `json:"vcs_provider"`  // nil = no change
+		VCSBaseURL   *string  `json:"vcs_base_url"`  // nil = no change; "" = clear
+		VCSToken     *string  `json:"vcs_token"`     // nil = no change; "" = clear
+		SlackWebhook *string  `json:"slack_webhook"` // nil = no change; "" = clear
+		NotifyEvents []string `json:"notify_events"` // nil = no change; [] = clear all
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())

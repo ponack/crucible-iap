@@ -117,22 +117,22 @@ type vwLoginResp struct {
 	AccessToken string `json:"access_token"`
 	Key         string `json:"key"` // protected symmetric key
 	// KDF params
-	Kdf           int    `json:"Kdf"`            // 0=PBKDF2, 1=Argon2id
-	KdfIterations int    `json:"KdfIterations"`
-	KdfMemory     int    `json:"KdfMemory"`      // Argon2id only, in MB
-	KdfParallelism int   `json:"KdfParallelism"` // Argon2id only
+	Kdf            int `json:"Kdf"` // 0=PBKDF2, 1=Argon2id
+	KdfIterations  int `json:"KdfIterations"`
+	KdfMemory      int `json:"KdfMemory"`      // Argon2id only, in MB
+	KdfParallelism int `json:"KdfParallelism"` // Argon2id only
 	// Profile contains the email (used for KDF)
 	PrivateKey string `json:"PrivateKey"`
 }
 
 func (p *VaultwardenProvider) login(ctx context.Context, base string) (*vwLoginResp, error) {
 	form := url.Values{
-		"grant_type":    {"client_credentials"},
-		"scope":         {"api"},
-		"client_id":     {p.cfg.ClientID},
-		"client_secret": {p.cfg.ClientSecret},
-		"deviceType":    {"21"}, // SDK
-		"deviceName":    {"crucible-iap"},
+		"grant_type":       {"client_credentials"},
+		"scope":            {"api"},
+		"client_id":        {p.cfg.ClientID},
+		"client_secret":    {p.cfg.ClientSecret},
+		"deviceType":       {"21"}, // SDK
+		"deviceName":       {"crucible-iap"},
 		"deviceIdentifier": {"crucible-iap-runner"},
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -150,7 +150,9 @@ func (p *VaultwardenProvider) login(ctx context.Context, base string) (*vwLoginR
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		var e struct{ ErrorDescription string `json:"error_description"` }
+		var e struct {
+			ErrorDescription string `json:"error_description"`
+		}
 		_ = json.Unmarshal(body, &e)
 		return nil, fmt.Errorf("status %d: %s", resp.StatusCode, e.ErrorDescription)
 	}

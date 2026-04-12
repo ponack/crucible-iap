@@ -39,37 +39,37 @@ func NewHandler(pool *pgxpool.Pool, v *vaultpkg.Vault, n *notify.Notifier) *Hand
 }
 
 type Stack struct {
-	ID             string    `json:"id"`
-	OrgID          string    `json:"org_id"`
-	Slug           string    `json:"slug"`
-	Name           string    `json:"name"`
-	Description    string    `json:"description,omitempty"`
-	Tool           string    `json:"tool"`
-	ToolVersion    string    `json:"tool_version,omitempty"`
-	RepoURL        string    `json:"repo_url"`
-	RepoBranch     string    `json:"repo_branch"`
-	ProjectRoot    string    `json:"project_root"`
-	RunnerImage    string    `json:"runner_image,omitempty"`
-	AutoApply            bool   `json:"auto_apply"`
-	DriftDetection       bool   `json:"drift_detection"`
-	DriftSchedule        string `json:"drift_schedule,omitempty"`
-	AutoRemediateDrift   bool   `json:"auto_remediate_drift"`
-	WebhookSecret   string    `json:"webhook_secret,omitempty"` // only populated on Get
-	WebhookURL      string    `json:"webhook_url,omitempty"`    // only populated on Get
-	VCSProvider         string   `json:"vcs_provider"`
-	VCSBaseURL          string   `json:"vcs_base_url,omitempty"`
-	HasVCSToken          bool     `json:"has_vcs_token"`
-	HasSlackWebhook      bool     `json:"has_slack_webhook"`
-	NotifyEvents         []string `json:"notify_events"`
-	VCSIntegrationID     *string  `json:"vcs_integration_id,omitempty"`
-	SecretIntegrationID  *string  `json:"secret_integration_id,omitempty"`
-	HasStateBackend      bool     `json:"has_state_backend"`
-	StateBackendProvider string   `json:"state_backend_provider,omitempty"`
-	IsDisabled    bool       `json:"is_disabled"`
-	LastRunStatus string     `json:"last_run_status,omitempty"`
-	LastRunAt     *time.Time `json:"last_run_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	ID                   string     `json:"id"`
+	OrgID                string     `json:"org_id"`
+	Slug                 string     `json:"slug"`
+	Name                 string     `json:"name"`
+	Description          string     `json:"description,omitempty"`
+	Tool                 string     `json:"tool"`
+	ToolVersion          string     `json:"tool_version,omitempty"`
+	RepoURL              string     `json:"repo_url"`
+	RepoBranch           string     `json:"repo_branch"`
+	ProjectRoot          string     `json:"project_root"`
+	RunnerImage          string     `json:"runner_image,omitempty"`
+	AutoApply            bool       `json:"auto_apply"`
+	DriftDetection       bool       `json:"drift_detection"`
+	DriftSchedule        string     `json:"drift_schedule,omitempty"`
+	AutoRemediateDrift   bool       `json:"auto_remediate_drift"`
+	WebhookSecret        string     `json:"webhook_secret,omitempty"` // only populated on Get
+	WebhookURL           string     `json:"webhook_url,omitempty"`    // only populated on Get
+	VCSProvider          string     `json:"vcs_provider"`
+	VCSBaseURL           string     `json:"vcs_base_url,omitempty"`
+	HasVCSToken          bool       `json:"has_vcs_token"`
+	HasSlackWebhook      bool       `json:"has_slack_webhook"`
+	NotifyEvents         []string   `json:"notify_events"`
+	VCSIntegrationID     *string    `json:"vcs_integration_id,omitempty"`
+	SecretIntegrationID  *string    `json:"secret_integration_id,omitempty"`
+	HasStateBackend      bool       `json:"has_state_backend"`
+	StateBackendProvider string     `json:"state_backend_provider,omitempty"`
+	IsDisabled           bool       `json:"is_disabled"`
+	LastRunStatus        string     `json:"last_run_status,omitempty"`
+	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 type Token struct {

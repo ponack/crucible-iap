@@ -138,14 +138,9 @@ jobs:
           go install github.com/gordonklaus/ineffassign@latest
 
       - name: gofmt
-        run: gofmt -w api/
-
-      - name: Commit gofmt changes
-        if: github.event_name == 'push'
-        uses: stefanzweifel/git-auto-commit-action@v7
-        with:
-          commit_message: "chore: gofmt"
-          file_pattern: "api/**/*.go"
+        run: |
+          files=$(gofmt -l api/)
+          [ -z "$files" ] || (echo "Unformatted files:"; echo "$files"; exit 1)
 
       - name: go vet
         working-directory: api
