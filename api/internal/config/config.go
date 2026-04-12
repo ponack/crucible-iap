@@ -64,7 +64,7 @@ func Load() (*Config, error) {
 	v.SetDefault("CRUCIBLE_ENV", "production")
 	v.SetDefault("CRUCIBLE_BASE_URL", "")
 	v.SetDefault("CRUCIBLE_UI_BASE_URL", "")
-	v.SetDefault("CRUCIBLE_LISTEN_ADDR", ":8080")
+	v.SetDefault("CRUCIBLE_LISTEN_ADDR", "0.0.0.0:8080")
 	v.SetDefault("CRUCIBLE_SECRET_KEY", "")
 
 	// OIDC

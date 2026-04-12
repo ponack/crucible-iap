@@ -191,7 +191,7 @@ func runMigrate() {
 // exits 0 on success, 1 on failure. Used as the Docker HEALTHCHECK command so
 // that no external tools (wget, curl) are required in the scratch image.
 func runHealth() {
-	resp, err := http.Get("http://localhost:8080/health")
+	resp, err := http.Get("http://127.0.0.1:8080/health")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "health check failed: %v\n", err)
 		os.Exit(1)
