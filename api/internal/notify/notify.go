@@ -173,39 +173,45 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 		}
 	}
 
-	// Slack + Gotify + ntfy: fire on run_failed or run_finished depending on config
 	event := "run_finished"
 	if !success {
 		event = "run_failed"
 	}
-	if contains(d.notifyEvents, event) || contains(d.notifyEvents, "run_failed") && !success {
-		slackURL := n.decryptStr(d.stackID, d.slackWebhookEnc)
-		if slackURL != "" {
-			n.slackPost(ctx, slackURL, n.runSlackMessage(d, success))
-		}
-		if d.gotifyURL != "" {
-			gotifyToken := n.decryptStr(d.stackID, d.gotifyTokenEnc)
-			if gotifyToken != "" {
-				title := d.stackName + " — run succeeded"
-				if !success {
-					title = d.stackName + " — run failed"
-				}
-				n.gotifyPost(ctx, d.gotifyURL, gotifyToken, title, n.runGotifyMessage(d, success))
-			}
-		}
-		if d.ntfyURL != "" {
-			priority := "default"
-			if !success {
-				priority = "high"
-			}
-			title := d.stackName + " — run succeeded"
-			if !success {
-				title = d.stackName + " — run failed"
-			}
-			n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
-				title, n.runNtfyMessage(d, success), priority)
+	if contains(d.notifyEvents, event) {
+		n.sendRunPushNotifications(ctx, d, success)
+	}
+}
+
+// sendRunPushNotifications dispatches run-result notifications to all configured
+// push channels (Slack, Gotify, ntfy) for a finished run.
+func (n *Notifier) sendRunPushNotifications(ctx context.Context, d *runData, success bool) {
+	title := runTitle(d.stackName, success)
+
+	slackURL := n.decryptStr(d.stackID, d.slackWebhookEnc)
+	if slackURL != "" {
+		n.slackPost(ctx, slackURL, n.runSlackMessage(d, success))
+	}
+	if d.gotifyURL != "" {
+		if gotifyToken := n.decryptStr(d.stackID, d.gotifyTokenEnc); gotifyToken != "" {
+			n.gotifyPost(ctx, d.gotifyURL, gotifyToken, title, n.runGotifyMessage(d, success))
 		}
 	}
+	if d.ntfyURL != "" {
+		priority := "default"
+		if !success {
+			priority = "high"
+		}
+		n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
+			title, n.runNtfyMessage(d, success), priority)
+	}
+}
+
+// runTitle returns the push-notification title for a finished run.
+func runTitle(stackName string, success bool) string {
+	if success {
+		return stackName + " — run succeeded"
+	}
+	return stackName + " — run failed"
 }
 
 // TestSlack sends a test message to the Slack webhook configured on a stack.
