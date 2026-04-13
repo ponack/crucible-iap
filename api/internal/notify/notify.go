@@ -57,6 +57,8 @@ type runData struct {
 	slackWebhookEnc []byte
 	gotifyURL       string
 	gotifyTokenEnc  []byte
+	ntfyURL         string
+	ntfyTokenEnc    []byte
 	notifyEvents    []string
 }
 
@@ -70,6 +72,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
 		       s.vcs_token_enc, s.slack_webhook_enc,
 		       COALESCE(s.gotify_url,''), s.gotify_token_enc,
+		       COALESCE(s.ntfy_url,''), s.ntfy_token_enc,
 		       s.notify_events
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
@@ -82,6 +85,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.vcsProvider, &d.vcsBaseURL,
 		&d.vcsTokenEnc, &d.slackWebhookEnc,
 		&d.gotifyURL, &d.gotifyTokenEnc,
+		&d.ntfyURL, &d.ntfyTokenEnc,
 		&d.notifyEvents,
 	)
 	return &d, err
@@ -142,6 +146,10 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 				n.gotifyPost(ctx, d.gotifyURL, gotifyToken, d.stackName+" — plan ready", n.planGotifyMessage(d))
 			}
 		}
+		if d.ntfyURL != "" {
+			n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
+				d.stackName+" — plan ready", n.planNtfyMessage(d), "warning")
+		}
 	}
 }
 
@@ -165,7 +173,7 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 		}
 	}
 
-	// Slack + Gotify: fire on run_failed or run_finished depending on config
+	// Slack + Gotify + ntfy: fire on run_failed or run_finished depending on config
 	event := "run_finished"
 	if !success {
 		event = "run_failed"
@@ -184,6 +192,18 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 				}
 				n.gotifyPost(ctx, d.gotifyURL, gotifyToken, title, n.runGotifyMessage(d, success))
 			}
+		}
+		if d.ntfyURL != "" {
+			priority := "default"
+			if !success {
+				priority = "high"
+			}
+			title := d.stackName + " — run succeeded"
+			if !success {
+				title = d.stackName + " — run failed"
+			}
+			n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
+				title, n.runNtfyMessage(d, success), priority)
 		}
 	}
 }
@@ -251,6 +271,26 @@ func (n *Notifier) TestGotify(ctx context.Context, stackID string) error {
 	return n.gotifyPost(ctx, gotifyURL, token,
 		"Crucible test notification",
 		fmt.Sprintf("%s — your Gotify integration is working correctly.", stackName))
+}
+
+// TestNtfy sends a test ntfy message to verify the config is working.
+func (n *Notifier) TestNtfy(ctx context.Context, stackID string) error {
+	var stackName, ntfyURL string
+	var ntfyTokenEnc []byte
+	err := n.pool.QueryRow(ctx, `
+		SELECT name, COALESCE(ntfy_url,''), ntfy_token_enc FROM stacks WHERE id = $1
+	`, stackID).Scan(&stackName, &ntfyURL, &ntfyTokenEnc)
+	if err != nil {
+		return fmt.Errorf("stack not found")
+	}
+	if ntfyURL == "" {
+		return fmt.Errorf("no ntfy URL configured for this stack")
+	}
+	token := n.decryptStr(stackID, ntfyTokenEnc)
+	return n.ntfyPost(ctx, ntfyURL, token,
+		"Crucible test notification",
+		fmt.Sprintf("%s — your ntfy integration is working correctly.", stackName),
+		"default")
 }
 
 // PolicyDenied posts a PR comment and sets a failing commit status when a
@@ -490,6 +530,53 @@ func (n *Notifier) planGotifyMessage(d *runData) string {
 }
 
 func (n *Notifier) runGotifyMessage(d *runData, success bool) string {
+	status := "succeeded"
+	if !success {
+		status = "failed"
+	}
+	return fmt.Sprintf("Run %s\n%s", status, n.runURL(d.id))
+}
+
+// ── ntfy ──────────────────────────────────────────────────────────────────────
+
+// ntfyPost publishes a message to an ntfy topic URL.
+// The topic is embedded in the URL (e.g. https://ntfy.sh/my-topic).
+// token is optional — passed as Bearer auth for access-controlled topics.
+// priority is one of: max, high, default, low, min.
+func (n *Notifier) ntfyPost(ctx context.Context, topicURL, token, title, message, priority string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, topicURL,
+		strings.NewReader(message))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Title", title)
+	req.Header.Set("Priority", priority)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := n.client.Do(req)
+	if err != nil {
+		slog.Warn("notify: ntfy post failed", "err", err)
+		return fmt.Errorf("ntfy request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("ntfy returned HTTP %d — check URL and token", resp.StatusCode)
+	}
+	return nil
+}
+
+func (n *Notifier) planNtfyMessage(d *runData) string {
+	add, change, destroy := derefInt(d.planAdd), derefInt(d.planChange), derefInt(d.planDestroy)
+	msg := fmt.Sprintf("to add: %d, to change: %d, to destroy: %d\n%s", add, change, destroy, n.runURL(d.id))
+	if d.runType == "tracked" {
+		msg += "\nApproval required before apply."
+	}
+	return msg
+}
+
+func (n *Notifier) runNtfyMessage(d *runData, success bool) string {
 	status := "succeeded"
 	if !success {
 		status = "failed"

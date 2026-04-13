@@ -23,6 +23,8 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 		SlackWebhook *string  `json:"slack_webhook"` // nil = no change; "" = clear
 		GotifyURL    *string  `json:"gotify_url"`    // nil = no change; "" = clear
 		GotifyToken  *string  `json:"gotify_token"`  // nil = no change; "" = clear
+		NtfyURL      *string  `json:"ntfy_url"`      // nil = no change; "" = clear
+		NtfyToken    *string  `json:"ntfy_token"`    // nil = no change; "" = clear
 		NotifyEvents []string `json:"notify_events"` // nil = no change; [] = clear all
 	}
 	if err := c.Bind(&req); err != nil {
@@ -58,6 +60,30 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 
 	if err := h.setEncryptedField(ctx, stackID, "gotify_token_enc", req.GotifyToken); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
+	}
+
+	if req.NtfyURL != nil {
+		if *req.NtfyURL == "" {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET ntfy_url = NULL WHERE id = $1`, stackID)
+		} else {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET ntfy_url = $1 WHERE id = $2`, *req.NtfyURL, stackID)
+		}
+	}
+
+	if req.NtfyToken != nil {
+		if *req.NtfyToken == "" {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET ntfy_token_enc = NULL WHERE id = $1`, stackID)
+		} else {
+			enc, err := h.vault.Encrypt(stackID, []byte(*req.NtfyToken))
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
+			}
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET ntfy_token_enc = $1 WHERE id = $2`, enc, stackID)
+		}
 	}
 
 	if req.NotifyEvents != nil {
@@ -130,5 +156,12 @@ func (h *Handler) TestNotification(c echo.Context) error {
 func (h *Handler) TestGotifyNotification(c echo.Context) error {
 	return h.testNotifier(c, func() error {
 		return h.notifier.TestGotify(c.Request().Context(), c.Param("id"))
+	})
+}
+
+// TestNtfyNotification sends a test ntfy message to verify the config is working.
+func (h *Handler) TestNtfyNotification(c echo.Context) error {
+	return h.testNotifier(c, func() error {
+		return h.notifier.TestNtfy(c.Request().Context(), c.Param("id"))
 	})
 }
