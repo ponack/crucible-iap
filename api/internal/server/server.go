@@ -28,6 +28,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/updater"
+	"github.com/ponack/crucible-iap/internal/varsets"
 	"github.com/ponack/crucible-iap/internal/vault"
 	"github.com/ponack/crucible-iap/internal/webhooks"
 )
@@ -107,6 +108,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	webhookHandler := webhooks.NewHandler(s.pool, q)
 	orgHandler := orgs.NewHandler(s.pool)
 	envVarHandler := envvars.NewHandler(s.pool, v)
+	varSetHandler := varsets.NewHandler(s.pool, v)
 	integrationHandler := integrations.NewHandler(s.pool, v)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -189,6 +191,20 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
 	api.POST("/stacks/:id/notifications/test", stackHandler.TestNotification, member)
+
+	// Variable sets
+	api.GET("/variable-sets", varSetHandler.List)
+	api.POST("/variable-sets", varSetHandler.Create, member)
+	api.GET("/variable-sets/:id", varSetHandler.Get)
+	api.PATCH("/variable-sets/:id", varSetHandler.Update, member)
+	api.DELETE("/variable-sets/:id", varSetHandler.Delete, admin)
+	api.PUT("/variable-sets/:id/vars/:name", varSetHandler.UpsertVar, member)
+	api.DELETE("/variable-sets/:id/vars/:name", varSetHandler.DeleteVar, member)
+
+	// Stack variable set attachment
+	api.GET("/stacks/:id/variable-sets", varSetHandler.ListForStack)
+	api.PUT("/stacks/:id/variable-sets/:vsID", varSetHandler.AttachToStack, member)
+	api.DELETE("/stacks/:id/variable-sets/:vsID", varSetHandler.DetachFromStack, member)
 
 	// Org-level integrations (VCS credentials, secret stores)
 	api.GET("/integrations", integrationHandler.List)

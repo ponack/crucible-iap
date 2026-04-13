@@ -467,6 +467,59 @@ export interface WebhookDelivery {
 	received_at: string;
 }
 
+// ── Variable sets ─────────────────────────────────────────────────────────────
+
+export interface VarSet {
+	id: string;
+	name: string;
+	description: string;
+	var_count: number;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface VarMeta {
+	id: string;
+	name: string;
+	is_secret: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface VarSetDetail extends VarSet {
+	vars: VarMeta[];
+}
+
+export interface StackVarSetRef {
+	id: string;
+	name: string;
+	description: string;
+	var_count: number;
+	attached_at: string;
+}
+
+export const varSets = {
+	list: () => request<VarSet[]>('/variable-sets'),
+	get: (id: string) => request<VarSetDetail>(`/variable-sets/${id}`),
+	create: (data: { name: string; description?: string }) =>
+		request<VarSet>('/variable-sets', { method: 'POST', body: JSON.stringify(data) }),
+	update: (id: string, data: { name?: string; description?: string }) =>
+		request<VarSet>(`/variable-sets/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+	delete: (id: string) => request<null>(`/variable-sets/${id}`, { method: 'DELETE' }),
+	upsertVar: (id: string, name: string, value: string, isSecret = true) =>
+		request<VarMeta>(`/variable-sets/${id}/vars/${encodeURIComponent(name)}`, {
+			method: 'PUT',
+			body: JSON.stringify({ value, is_secret: isSecret })
+		}),
+	deleteVar: (id: string, name: string) =>
+		request<null>(`/variable-sets/${id}/vars/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+	forStack: (stackID: string) => request<StackVarSetRef[]>(`/stacks/${stackID}/variable-sets`),
+	attachToStack: (stackID: string, vsID: string) =>
+		request<null>(`/stacks/${stackID}/variable-sets/${vsID}`, { method: 'PUT' }),
+	detachFromStack: (stackID: string, vsID: string) =>
+		request<null>(`/stacks/${stackID}/variable-sets/${vsID}`, { method: 'DELETE' })
+};
+
 // ── Remote state sources ──────────────────────────────────────────────────────
 
 export interface RemoteStateSource {

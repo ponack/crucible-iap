@@ -19,6 +19,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/envvars"
+	"github.com/ponack/crucible-iap/internal/varsets"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
@@ -196,6 +197,10 @@ func (w *RunWorker) loadRunEnv(ctx context.Context, log *slog.Logger, stackID, a
 	if err != nil {
 		log.Warn("failed to load external secret store", "err", err)
 	}
+	varSetEnv, err := varsets.LoadForStack(ctx, w.pool, w.vault, stackID)
+	if err != nil {
+		log.Warn("failed to load variable sets", "err", err)
+	}
 	builtinEnv, err := envvars.LoadForStack(ctx, w.pool, w.vault, stackID)
 	if err != nil {
 		log.Warn("failed to load stack env vars", "err", err)
@@ -204,7 +209,8 @@ func (w *RunWorker) loadRunEnv(ctx context.Context, log *slog.Logger, stackID, a
 	if err != nil {
 		log.Warn("failed to load remote state sources", "err", err)
 	}
-	return vcsToken, append(append(storeEnv, remoteStateEnv...), builtinEnv...)
+	// Merge order: external secrets → variable sets → remote state → stack env vars (last wins).
+	return vcsToken, append(append(append(storeEnv, varSetEnv...), remoteStateEnv...), builtinEnv...)
 }
 
 // resolveRunnerLimits returns effective resource limits, preferring DB settings
