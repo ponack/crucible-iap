@@ -2,6 +2,7 @@
 package webhooks
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
 )
 
@@ -27,11 +29,18 @@ func NewHandler(pool *pgxpool.Pool, q *queue.Client) *Handler {
 	return &Handler{pool: pool, q: q}
 }
 
-// Receive handles incoming webhook payloads from GitHub or GitLab.
+// Receive handles incoming webhook payloads from GitHub, GitLab, Gitea, or Gogs.
 // The endpoint is public — authentication is via HMAC signature or shared token.
+// Every delivery is recorded in webhook_deliveries for audit and debugging.
 func (h *Handler) Receive(c echo.Context) error {
 	stackID := c.Param("stackID")
 	ctx := c.Request().Context()
+	r := c.Request()
+
+	// Detect forge and delivery metadata from headers before reading the body.
+	forge := detectForge(r)
+	eventType := extractEventType(r)
+	deliveryID := extractDeliveryID(r)
 
 	var (
 		orgID         string
@@ -53,29 +62,37 @@ func (h *Handler) Receive(c echo.Context) error {
 		return echo.ErrNotFound
 	}
 
+	emptyPayload := json.RawMessage("{}")
+
 	if isDisabled {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, emptyPayload, "skipped", "stack_disabled", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "stack disabled"})
 	}
 	if webhookSecret == nil || *webhookSecret == "" {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, emptyPayload, "rejected", "no_secret", nil)
 		return echo.NewHTTPError(http.StatusUnauthorized, "webhook not configured for this stack")
 	}
 
 	// Read body before verifying signature — needed for HMAC.
-	body, err := io.ReadAll(io.LimitReader(c.Request().Body, 5<<20))
+	body, err := io.ReadAll(io.LimitReader(r.Body, 5<<20))
 	if err != nil {
 		return echo.ErrBadRequest
 	}
+	payload := trimPayload(body)
 
-	event, err := parseAndVerify(c.Request(), body, *webhookSecret)
+	event, err := parseAndVerify(r, body, *webhookSecret)
 	if err != nil {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "rejected", "bad_signature", nil)
 		return echo.NewHTTPError(http.StatusUnauthorized, err.Error())
 	}
 	if event == nil {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "unknown_event", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ignored"})
 	}
 
 	// Tracked runs only fire on the configured branch; PR runs always proceed.
 	if event.runType == "tracked" && event.branch != repoBranch {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "branch_mismatch", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "branch not tracked"})
 	}
 
@@ -109,8 +126,11 @@ func (h *Handler) Receive(c echo.Context) error {
 		RunType:     event.runType,
 		APIURL:      apiURL,
 	}); err != nil {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "enqueue_failed", nil)
 		return fmt.Errorf("enqueue run: %w", err)
 	}
+
+	h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "triggered", "", &runID)
 
 	ctxJSON, _ := json.Marshal(map[string]any{
 		"trigger": event.trigger,
@@ -127,6 +147,67 @@ func (h *Handler) Receive(c echo.Context) error {
 	})
 
 	return c.JSON(http.StatusCreated, map[string]string{"run_id": runID})
+}
+
+// ListDeliveries returns recent webhook deliveries for a stack, newest first.
+func (h *Handler) ListDeliveries(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+	p := pagination.Parse(c)
+
+	// Verify stack belongs to caller's org.
+	var exists bool
+	if err := h.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)`,
+		stackID, orgID,
+	).Scan(&exists); err != nil || !exists {
+		return echo.ErrNotFound
+	}
+
+	type Delivery struct {
+		ID         string  `json:"id"`
+		Forge      string  `json:"forge"`
+		EventType  string  `json:"event_type"`
+		DeliveryID *string `json:"delivery_id"`
+		Outcome    string  `json:"outcome"`
+		SkipReason *string `json:"skip_reason"`
+		RunID      *string `json:"run_id"`
+		ReceivedAt string  `json:"received_at"`
+	}
+
+	var total int
+	if err := h.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM webhook_deliveries WHERE stack_id = $1`, stackID,
+	).Scan(&total); err != nil {
+		return fmt.Errorf("count deliveries: %w", err)
+	}
+
+	rows, err := h.pool.Query(ctx, `
+		SELECT id, forge, event_type,
+		       NULLIF(delivery_id, ''), outcome, NULLIF(skip_reason, ''),
+		       run_id, to_char(received_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+		FROM webhook_deliveries
+		WHERE stack_id = $1
+		ORDER BY received_at DESC
+		LIMIT $2 OFFSET $3
+	`, stackID, p.Limit, p.Offset)
+	if err != nil {
+		return fmt.Errorf("query deliveries: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Delivery, 0)
+	for rows.Next() {
+		var d Delivery
+		if err := rows.Scan(&d.ID, &d.Forge, &d.EventType, &d.DeliveryID,
+			&d.Outcome, &d.SkipReason, &d.RunID, &d.ReceivedAt); err != nil {
+			return fmt.Errorf("scan delivery: %w", err)
+		}
+		items = append(items, d)
+	}
+
+	return c.JSON(http.StatusOK, pagination.Wrap(items, p, total))
 }
 
 // RotateSecret generates a new webhook secret for a stack. JWT-protected.
@@ -147,6 +228,69 @@ func (h *Handler) RotateSecret(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{"webhook_secret": secret})
+}
+
+// ── Delivery logging ──────────────────────────────────────────────────────────
+
+// recordDelivery persists a webhook delivery record. Called synchronously so
+// the record is committed before the HTTP response is sent. Failures are
+// silently ignored — delivery logging must never affect the webhook response.
+func (h *Handler) recordDelivery(orgID, stackID, forge, eventType, deliveryID string, payload json.RawMessage, outcome, skipReason string, runID *string) {
+	_, _ = h.pool.Exec(context.Background(), `
+		INSERT INTO webhook_deliveries
+		  (stack_id, org_id, forge, event_type, delivery_id, raw_payload, outcome, skip_reason, run_id)
+		VALUES ($1, $2, $3, $4, NULLIF($5,''), $6, $7, NULLIF($8,''), $9)
+	`, stackID, orgID, forge, eventType, deliveryID, payload, outcome, skipReason, runID)
+}
+
+// trimPayload returns the raw bytes as JSONB-safe JSON. Payloads larger than
+// 64 KB are replaced with a sentinel object to keep row sizes bounded.
+func trimPayload(body []byte) json.RawMessage {
+	if len(body) > 65536 {
+		b, _ := json.Marshal(map[string]any{"truncated": true, "size": len(body)})
+		return json.RawMessage(b)
+	}
+	if json.Valid(body) {
+		return json.RawMessage(body)
+	}
+	// Non-JSON body (shouldn't happen but defend anyway).
+	b, _ := json.Marshal(map[string]string{"raw": string(body)})
+	return json.RawMessage(b)
+}
+
+// ── Forge / event detection ───────────────────────────────────────────────────
+
+func detectForge(r *http.Request) string {
+	switch {
+	case r.Header.Get("X-Gitlab-Token") != "" || r.Header.Get("X-Gitlab-Event") != "":
+		return "gitlab"
+	case r.Header.Get("X-Gitea-Event") != "" || r.Header.Get("X-Gitea-Signature") != "" || r.Header.Get("X-Gitea-Delivery") != "":
+		return "gitea"
+	case r.Header.Get("X-Gogs-Event") != "" || r.Header.Get("X-Gogs-Signature") != "":
+		return "gogs"
+	case r.Header.Get("X-GitHub-Event") != "" || r.Header.Get("X-Hub-Signature-256") != "":
+		return "github"
+	default:
+		return "unknown"
+	}
+}
+
+func extractEventType(r *http.Request) string {
+	for _, h := range []string{"X-GitHub-Event", "X-Gitea-Event", "X-Gogs-Event", "X-Gitlab-Event"} {
+		if v := r.Header.Get(h); v != "" {
+			return v
+		}
+	}
+	return "unknown"
+}
+
+func extractDeliveryID(r *http.Request) string {
+	for _, h := range []string{"X-GitHub-Delivery", "X-Gitea-Delivery"} {
+		if v := r.Header.Get(h); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ── Signature verification ────────────────────────────────────────────────────

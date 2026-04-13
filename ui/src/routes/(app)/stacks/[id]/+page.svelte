@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const stackID = $derived(page.params.id as string);
@@ -71,6 +71,8 @@
 	// Webhook
 	let rotatingWebhook = $state(false);
 	let newWebhookSecret = $state<string | null>(null);
+	let webhookDeliveries = $state<WebhookDelivery[]>([]);
+	let loadingDeliveries = $state(false);
 
 	// Disable/enable
 	let togglingDisabled = $state(false);
@@ -139,6 +141,17 @@
 			error = (e as Error).message;
 		} finally {
 			loading = false;
+		}
+
+		// Load webhook deliveries independently so a failure doesn't block the page.
+		loadingDeliveries = true;
+		try {
+			const deliveriesRes = await stacks.webhook.deliveries(stackID);
+			webhookDeliveries = deliveriesRes.data;
+		} catch {
+			// Non-fatal; deliveries section will just be empty.
+		} finally {
+			loadingDeliveries = false;
 		}
 	});
 
@@ -1087,6 +1100,60 @@
 			class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 			{rotatingWebhook ? 'Rotating…' : 'Rotate secret'}
 		</button>
+	</section>
+
+	<!-- Webhook deliveries -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Webhook deliveries</h2>
+		{#if loadingDeliveries}
+			<p class="text-zinc-600 text-sm">Loading…</p>
+		{:else if webhookDeliveries.length === 0}
+			<div class="border border-zinc-800 rounded-xl p-6 text-center">
+				<p class="text-zinc-500 text-sm">No webhook deliveries yet.</p>
+				<p class="text-zinc-600 text-xs mt-1">Every inbound webhook request will be logged here.</p>
+			</div>
+		{:else}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Time</th>
+							<th class="text-left px-4 py-2">Forge</th>
+							<th class="text-left px-4 py-2">Event</th>
+							<th class="text-left px-4 py-2">Outcome</th>
+							<th class="text-left px-4 py-2">Detail</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each webhookDeliveries as d (d.id)}
+							<tr class="hover:bg-zinc-900/50 transition-colors">
+								<td class="px-4 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(d.received_at)}</td>
+								<td class="px-4 py-2.5 text-zinc-400 text-xs capitalize">{d.forge}</td>
+								<td class="px-4 py-2.5 text-zinc-400 text-xs">{d.event_type}</td>
+								<td class="px-4 py-2.5">
+									{#if d.outcome === 'triggered'}
+										<span class="text-xs font-medium text-green-400">triggered</span>
+									{:else if d.outcome === 'skipped'}
+										<span class="text-xs font-medium text-zinc-500">skipped</span>
+									{:else}
+										<span class="text-xs font-medium text-red-400">rejected</span>
+									{/if}
+								</td>
+								<td class="px-4 py-2.5 text-xs">
+									{#if d.run_id}
+										<a href="/runs/{d.run_id}" class="text-indigo-400 hover:text-indigo-300">run →</a>
+									{:else if d.skip_reason}
+										<span class="text-zinc-600">{d.skip_reason.replace(/_/g, ' ')}</span>
+									{:else}
+										<span class="text-zinc-700">—</span>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
 	</section>
 
 	<!-- Recent runs -->
