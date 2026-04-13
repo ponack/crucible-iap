@@ -520,6 +520,28 @@ export const varSets = {
 		request<null>(`/stacks/${stackID}/variable-sets/${vsID}`, { method: 'DELETE' })
 };
 
+// ── Service account tokens ────────────────────────────────────────────────────
+
+export interface ServiceAccountToken {
+	id: string;
+	name: string;
+	role: 'admin' | 'member' | 'viewer';
+	created_at: string;
+	last_used_at?: string;
+	token?: string; // only present on creation
+}
+
+export const serviceAccountTokens = {
+	list: () => request<ServiceAccountToken[]>('/org/service-account-tokens'),
+	create: (name: string, role: string) =>
+		request<ServiceAccountToken>('/org/service-account-tokens', {
+			method: 'POST',
+			body: JSON.stringify({ name, role })
+		}),
+	revoke: (id: string) =>
+		request<null>(`/org/service-account-tokens/${id}`, { method: 'DELETE' })
+};
+
 // ── Remote state sources ──────────────────────────────────────────────────────
 
 export interface RemoteStateSource {

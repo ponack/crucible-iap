@@ -247,6 +247,7 @@ func (h *Handler) Logout(c echo.Context) error {
 
 // JWTMiddleware validates Crucible-issued access tokens and sets userID + orgID on the context.
 // Accepts the token either as a Bearer header or a ?token= query param (for EventSource clients).
+// Service account tokens (ciap_ prefix) are looked up in the database instead of JWT-parsed.
 func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -257,6 +258,11 @@ func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 					return echo.NewHTTPError(http.StatusUnauthorized, "missing bearer token")
 				}
 				raw = strings.TrimPrefix(header, "Bearer ")
+			}
+
+			// Service account tokens start with "ciap_" and are validated via DB lookup.
+			if strings.HasPrefix(raw, "ciap_") {
+				return serviceAccountAuth(raw, next, c)
 			}
 
 			claims := &Claims{}
@@ -272,6 +278,36 @@ func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 			c.Set("orgID", claims.OrgID)
 			return next(c)
 		}
+	}
+}
+
+// serviceAccountAuth handles ciap_ prefixed tokens.
+// It is set by the server via SetServiceAccountLookup before any requests are processed.
+var serviceAccountAuth func(token string, next echo.HandlerFunc, c echo.Context) error = func(token string, next echo.HandlerFunc, c echo.Context) error {
+	return echo.NewHTTPError(http.StatusUnauthorized, "service account auth not configured")
+}
+
+// SetServiceAccountLookup wires the DB lookup function for ciap_ tokens.
+// Called once during server startup with the pgxpool.
+func SetServiceAccountLookup(pool *pgxpool.Pool) {
+	serviceAccountAuth = func(raw string, next echo.HandlerFunc, c echo.Context) error {
+		h := sha256.Sum256([]byte(raw))
+
+		var id, orgID, role string
+		err := pool.QueryRow(c.Request().Context(), `
+			UPDATE service_account_tokens
+			SET last_used_at = now()
+			WHERE token_hash = $1
+			RETURNING id, org_id, role
+		`, h[:]).Scan(&id, &orgID, &role)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
+		}
+
+		c.Set("userID", "sa:"+id)
+		c.Set("orgID", orgID)
+		c.Set("saRole", role)
+		return next(c)
 	}
 }
 

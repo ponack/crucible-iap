@@ -23,6 +23,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runs"
+	"github.com/ponack/crucible-iap/internal/serviceaccounts"
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/stacks"
 	"github.com/ponack/crucible-iap/internal/state"
@@ -82,6 +83,9 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 	engine := policy.NewEngine()
 	policyHandler := policies.NewHandler(pool, engine)
 
+	// Wire service account token lookup into the JWT middleware.
+	auth.SetServiceAccountLookup(pool)
+
 	s := &Server{
 		cfg:           cfg,
 		pool:          pool,
@@ -109,6 +113,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	orgHandler := orgs.NewHandler(s.pool)
 	envVarHandler := envvars.NewHandler(s.pool, v)
 	varSetHandler := varsets.NewHandler(s.pool, v)
+	satHandler := serviceaccounts.NewHandler(s.pool)
 	integrationHandler := integrations.NewHandler(s.pool, v)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -140,6 +145,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// ── Authenticated API ──────────────────────────────────────────────────────
 	api := e.Group("/api/v1")
 	api.Use(auth.JWTMiddleware(s.cfg.SecretKey))
+
+	// Service account tokens
+	api.GET("/org/service-account-tokens", satHandler.List, admin)
+	api.POST("/org/service-account-tokens", satHandler.Create, admin)
+	api.DELETE("/org/service-account-tokens/:id", satHandler.Delete, admin)
 
 	// Org members & invites
 	api.GET("/org/me", orgHandler.Me)
