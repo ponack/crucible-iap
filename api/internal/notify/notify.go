@@ -55,6 +55,8 @@ type runData struct {
 	vcsBaseURL      string
 	vcsTokenEnc     []byte
 	slackWebhookEnc []byte
+	gotifyURL       string
+	gotifyTokenEnc  []byte
 	notifyEvents    []string
 }
 
@@ -66,7 +68,9 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		       r.pr_number, r.plan_add, r.plan_change, r.plan_destroy,
 		       s.name, s.repo_url,
 		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
-		       s.vcs_token_enc, s.slack_webhook_enc, s.notify_events
+		       s.vcs_token_enc, s.slack_webhook_enc,
+		       COALESCE(s.gotify_url,''), s.gotify_token_enc,
+		       s.notify_events
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE r.id = $1
@@ -76,7 +80,9 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.prNumber, &d.planAdd, &d.planChange, &d.planDestroy,
 		&d.stackName, &d.repoURL,
 		&d.vcsProvider, &d.vcsBaseURL,
-		&d.vcsTokenEnc, &d.slackWebhookEnc, &d.notifyEvents,
+		&d.vcsTokenEnc, &d.slackWebhookEnc,
+		&d.gotifyURL, &d.gotifyTokenEnc,
+		&d.notifyEvents,
 	)
 	return &d, err
 }
@@ -130,6 +136,12 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 		if slackURL != "" {
 			n.slackPost(ctx, slackURL, n.planSlackMessage(d))
 		}
+		if d.gotifyURL != "" {
+			gotifyToken := n.decryptStr(d.stackID, d.gotifyTokenEnc)
+			if gotifyToken != "" {
+				n.gotifyPost(ctx, d.gotifyURL, gotifyToken, d.stackName+" — plan ready", n.planGotifyMessage(d))
+			}
+		}
 	}
 }
 
@@ -153,7 +165,7 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 		}
 	}
 
-	// Slack: fire on run_failed or run_finished depending on config
+	// Slack + Gotify: fire on run_failed or run_finished depending on config
 	event := "run_finished"
 	if !success {
 		event = "run_failed"
@@ -162,6 +174,16 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 		slackURL := n.decryptStr(d.stackID, d.slackWebhookEnc)
 		if slackURL != "" {
 			n.slackPost(ctx, slackURL, n.runSlackMessage(d, success))
+		}
+		if d.gotifyURL != "" {
+			gotifyToken := n.decryptStr(d.stackID, d.gotifyTokenEnc)
+			if gotifyToken != "" {
+				title := d.stackName + " — run succeeded"
+				if !success {
+					title = d.stackName + " — run failed"
+				}
+				n.gotifyPost(ctx, d.gotifyURL, gotifyToken, title, n.runGotifyMessage(d, success))
+			}
 		}
 	}
 }
@@ -203,6 +225,32 @@ func (n *Notifier) TestSlack(ctx context.Context, stackID string) error {
 		return fmt.Errorf("slack returned HTTP %d — check webhook URL", resp.StatusCode)
 	}
 	return nil
+}
+
+// TestGotify sends a test Gotify message to verify the config is working.
+func (n *Notifier) TestGotify(ctx context.Context, stackID string) error {
+	var stackName string
+	var gotifyURL string
+	var gotifyTokenEnc []byte
+	err := n.pool.QueryRow(ctx, `
+		SELECT name, COALESCE(gotify_url,''), gotify_token_enc FROM stacks WHERE id = $1
+	`, stackID).Scan(&stackName, &gotifyURL, &gotifyTokenEnc)
+	if err != nil {
+		return fmt.Errorf("stack not found")
+	}
+	if gotifyURL == "" {
+		return fmt.Errorf("no Gotify URL configured for this stack")
+	}
+	if len(gotifyTokenEnc) == 0 {
+		return fmt.Errorf("no Gotify token configured for this stack")
+	}
+	token := n.decryptStr(stackID, gotifyTokenEnc)
+	if token == "" {
+		return fmt.Errorf("failed to decrypt Gotify token")
+	}
+	return n.gotifyPost(ctx, gotifyURL, token,
+		"Crucible test notification",
+		fmt.Sprintf("%s — your Gotify integration is working correctly.", stackName))
 }
 
 // PolicyDenied posts a PR comment and sets a failing commit status when a
@@ -359,6 +407,45 @@ func (n *Notifier) slackPost(ctx context.Context, webhookURL, text string) {
 	resp.Body.Close()
 }
 
+// ── Gotify ────────────────────────────────────────────────────────────────────
+
+// gotifyPost sends a message to a Gotify server.
+// POST {gotifyURL}/message?token={token} with JSON body.
+func (n *Notifier) gotifyPost(ctx context.Context, gotifyURL, token, title, message string) error {
+	type gotifyMsg struct {
+		Title    string `json:"title"`
+		Message  string `json:"message"`
+		Priority int    `json:"priority"`
+	}
+	payload := gotifyMsg{Title: title, Message: message, Priority: 5}
+	b, _ := json.Marshal(payload)
+
+	u, err := url.Parse(strings.TrimRight(gotifyURL, "/") + "/message")
+	if err != nil {
+		slog.Warn("notify: invalid gotify URL", "url", gotifyURL, "err", err)
+		return fmt.Errorf("invalid Gotify URL: %w", err)
+	}
+	q := u.Query()
+	q.Set("token", token)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		slog.Warn("notify: gotify post failed", "err", err)
+		return fmt.Errorf("gotify request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("gotify returned HTTP %d — check URL and token", resp.StatusCode)
+	}
+	return nil
+}
+
 // ── Message bodies ────────────────────────────────────────────────────────────
 
 func (n *Notifier) planCommentBody(d *runData) string {
@@ -391,6 +478,23 @@ func (n *Notifier) runSlackMessage(d *runData, success bool) string {
 		status = "❌ failed"
 	}
 	return fmt.Sprintf("*%s* — run %s <%s|View run>", d.stackName, status, n.runURL(d.id))
+}
+
+func (n *Notifier) planGotifyMessage(d *runData) string {
+	add, change, destroy := derefInt(d.planAdd), derefInt(d.planChange), derefInt(d.planDestroy)
+	msg := fmt.Sprintf("to add: %d, to change: %d, to destroy: %d\n%s", add, change, destroy, n.runURL(d.id))
+	if d.runType == "tracked" {
+		msg += "\nApproval required before apply."
+	}
+	return msg
+}
+
+func (n *Notifier) runGotifyMessage(d *runData, success bool) string {
+	status := "succeeded"
+	if !success {
+		status = "failed"
+	}
+	return fmt.Sprintf("Run %s\n%s", status, n.runURL(d.id))
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

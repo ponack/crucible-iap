@@ -20,6 +20,8 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 		VCSBaseURL   *string  `json:"vcs_base_url"`  // nil = no change; "" = clear
 		VCSToken     *string  `json:"vcs_token"`     // nil = no change; "" = clear
 		SlackWebhook *string  `json:"slack_webhook"` // nil = no change; "" = clear
+		GotifyURL    *string  `json:"gotify_url"`    // nil = no change; "" = clear
+		GotifyToken  *string  `json:"gotify_token"`  // nil = no change; "" = clear
 		NotifyEvents []string `json:"notify_events"` // nil = no change; [] = clear all
 	}
 	if err := c.Bind(&req); err != nil {
@@ -82,6 +84,30 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 		}
 	}
 
+	if req.GotifyURL != nil {
+		if *req.GotifyURL == "" {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET gotify_url = NULL WHERE id = $1`, stackID)
+		} else {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET gotify_url = $1 WHERE id = $2`, *req.GotifyURL, stackID)
+		}
+	}
+
+	if req.GotifyToken != nil {
+		if *req.GotifyToken == "" {
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET gotify_token_enc = NULL WHERE id = $1`, stackID)
+		} else {
+			enc, err := h.vault.Encrypt(stackID, []byte(*req.GotifyToken))
+			if err != nil {
+				return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
+			}
+			_, _ = h.pool.Exec(c.Request().Context(),
+				`UPDATE stacks SET gotify_token_enc = $1 WHERE id = $2`, enc, stackID)
+		}
+	}
+
 	if req.NotifyEvents != nil {
 		_, _ = h.pool.Exec(c.Request().Context(),
 			`UPDATE stacks SET notify_events = $1 WHERE id = $2`, req.NotifyEvents, stackID)
@@ -108,6 +134,29 @@ func (h *Handler) TestNotification(c echo.Context) error {
 	}
 
 	if err := h.notifier.TestSlack(c.Request().Context(), stackID); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// TestGotifyNotification sends a test Gotify message to verify the config is working.
+func (h *Handler) TestGotifyNotification(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var exists bool
+	_ = h.pool.QueryRow(c.Request().Context(),
+		`SELECT true FROM stacks WHERE id = $1 AND org_id = $2`, stackID, orgID,
+	).Scan(&exists)
+	if !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	if h.notifier == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "notifier not configured")
+	}
+
+	if err := h.notifier.TestGotify(c.Request().Context(), stackID); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	return c.NoContent(http.StatusNoContent)

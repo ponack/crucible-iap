@@ -203,6 +203,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
 	api.POST("/stacks/:id/notifications/test", stackHandler.TestNotification, member)
+	api.POST("/stacks/:id/notifications/test-gotify", stackHandler.TestGotifyNotification, member)
 
 	// Variable sets
 	api.GET("/variable-sets", varSetHandler.List)

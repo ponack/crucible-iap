@@ -91,6 +91,8 @@ export interface Stack {
 	vcs_base_url?: string;
 	has_vcs_token: boolean;
 	has_slack_webhook: boolean;
+	gotify_url?: string;
+	has_gotify_token: boolean;
 	notify_events: string[];
 	vcs_integration_id?: string;
 	secret_integration_id?: string;
@@ -239,6 +241,8 @@ export const stacks = {
 				vcs_base_url?: string;
 				vcs_token?: string;
 				slack_webhook?: string;
+				gotify_url?: string;
+				gotify_token?: string;
 				notify_events?: string[];
 			}
 		) =>
@@ -247,7 +251,9 @@ export const stacks = {
 				body: JSON.stringify(data)
 			}),
 		test: (stackID: string) =>
-			request<null>(`/stacks/${stackID}/notifications/test`, { method: 'POST' })
+			request<null>(`/stacks/${stackID}/notifications/test`, { method: 'POST' }),
+		testGotify: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/notifications/test-gotify`, { method: 'POST' })
 	},
 
 	integrations: {
