@@ -2,7 +2,7 @@
 # Ephemeral container that executes infrastructure runs.
 # Launched by the worker dispatcher with --read-only, --no-new-privileges, tmpfs /workspace.
 
-FROM alpine:3.21
+FROM alpine:3.21@sha256:22e0ec13c0db6b3e1ba3280e831fc50ba7bffe58e81f31670a64b1afede247bc
 
 ARG OPENTOFU_VERSION=1.9.0
 ARG TERRAFORM_VERSION=1.10.5
@@ -50,5 +50,11 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 
 USER runner
 WORKDIR /workspace
+
+# Verify the entrypoint is reachable and the bash runtime is intact.
+# Interval is long because runners are ephemeral — this is a last-resort
+# liveness check, not a readiness probe.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=1 \
+  CMD bash -c "test -x /usr/local/bin/entrypoint.sh"
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

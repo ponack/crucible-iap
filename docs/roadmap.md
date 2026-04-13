@@ -61,7 +61,7 @@ lint:
 
 ---
 
-### Runner Image Hardening
+### Runner Image Hardening ✓
 
 - Pin runner base image to a digest (not `:latest`) to prevent supply-chain drift
 - Add `HEALTHCHECK` to runner Dockerfile
