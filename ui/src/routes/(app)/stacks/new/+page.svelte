@@ -1,9 +1,36 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { stacks } from '$lib/api/client';
+	import { stacks, stackTemplates, type StackTemplate } from '$lib/api/client';
 
 	let submitting = $state(false);
 	let error = $state<string | null>(null);
+
+	let templates = $state<StackTemplate[]>([]);
+	let selectedTemplateID = $state('');
+
+	onMount(async () => {
+		try {
+			templates = await stackTemplates.list();
+		} catch {
+			// non-fatal — template picker is optional
+		}
+	});
+
+	function applyTemplate(id: string) {
+		const t = templates.find((t) => t.id === id);
+		if (!t) return;
+		form.tool = t.tool as typeof form.tool;
+		form.tool_version = t.tool_version;
+		form.repo_url = t.repo_url;
+		form.repo_branch = t.repo_branch;
+		form.project_root = t.project_root;
+		form.runner_image = t.runner_image;
+		form.auto_apply = t.auto_apply;
+		form.drift_detection = t.drift_detection;
+		form.drift_schedule = t.drift_schedule || '0 */6 * * *';
+		form.auto_remediate_drift = t.auto_remediate_drift;
+	}
 
 	let form = $state({
 		name: '',
@@ -45,6 +72,20 @@
 		<span class="text-zinc-700">/</span>
 		<h1 class="text-lg font-semibold text-white">New stack</h1>
 	</div>
+
+	{#if templates.length > 0}
+		<div class="flex items-center gap-3">
+			<label class="text-xs text-zinc-500 shrink-0" for="template-picker">Start from template</label>
+			<select id="template-picker" class="field-input max-w-xs"
+				bind:value={selectedTemplateID}
+				onchange={() => applyTemplate(selectedTemplateID)}>
+				<option value="">— none —</option>
+				{#each templates as t (t.id)}
+					<option value={t.id}>{t.name}</option>
+				{/each}
+			</select>
+		</div>
+	{/if}
 
 	{#if error}
 		<div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">

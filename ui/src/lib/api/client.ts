@@ -660,6 +660,37 @@ export const org = {
 	}
 };
 
+// ── Stack templates ───────────────────────────────────────────────────────────
+
+export interface StackTemplate {
+	id: string;
+	name: string;
+	description: string;
+	tool: string;
+	tool_version: string;
+	repo_url: string;
+	repo_branch: string;
+	project_root: string;
+	runner_image: string;
+	auto_apply: boolean;
+	drift_detection: boolean;
+	drift_schedule: string;
+	auto_remediate_drift: boolean;
+	vcs_provider: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export const stackTemplates = {
+	list: () => request<StackTemplate[]>('/stack-templates'),
+	get: (id: string) => request<StackTemplate>(`/stack-templates/${id}`),
+	create: (data: Partial<StackTemplate>) =>
+		request<StackTemplate>('/stack-templates', { method: 'POST', body: JSON.stringify(data) }),
+	update: (id: string, data: Partial<StackTemplate>) =>
+		request<StackTemplate>(`/stack-templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+	delete: (id: string) => request<null>(`/stack-templates/${id}`, { method: 'DELETE' })
+};
+
 // ── Health / version ──────────────────────────────────────────────────────────
 
 export interface HealthStatus {
