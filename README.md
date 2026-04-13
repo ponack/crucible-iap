@@ -33,8 +33,9 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 - **Multi-tool** — OpenTofu, Terraform, Ansible, and Pulumi in the same platform
 - **Flexible state storage** — built-in Terraform/OpenTofu HTTP backend backed by MinIO (zero config); or override per-stack with Amazon S3 / S3-compatible (built-in Sig v4), Google Cloud Storage (RSA-SHA256 JWT), or Azure Blob Storage (SharedKeyLite) — credentials encrypted at rest
-- **Ephemeral job runners** — each run in a fresh Docker container: read-only rootfs, `--cap-drop ALL`, tmpfs workspace, per-job scoped JWT — container is gone when the job ends
+- **Ephemeral job runners** — each run in a fresh Docker container: read-only rootfs, `--cap-drop ALL`, tmpfs workspace, per-job scoped JWT — container is gone when the job ends; runner image digest-pinned and cosign-signed on every release
 - **Stack env vars** — AES-256-GCM encrypted at rest with per-stack HKDF-derived keys; injected into runners at job time, never logged or returned by the API
+- **Variable sets** — named collections of env vars defined once and attached to multiple stacks; values are write-only, encrypted with the same AES-256-GCM vault; injection order: external secrets → variable sets → stack env vars (stack wins on collision)
 - **External secret stores** — pull secrets from AWS Secrets Manager (built-in Sig v4, no SDK), HashiCorp Vault KV v2 (token or AppRole), Bitwarden Secrets Manager (AES-256-CBC E2E decryption), or Vaultwarden / self-hosted Bitwarden (PBKDF2-SHA256 / Argon2id master key derivation + AES-CBC vault crypto); merged with built-in env vars, built-in takes precedence on collision
 
 ### Auth and access
@@ -42,12 +43,14 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **SSO via OIDC** — Authentik (bundled optional), Okta, GitHub, Keycloak, or any OIDC provider; PKCE always enforced
 - **Local auth** — single operator account for deployments without an IdP
 - **RBAC** — viewer / member / admin roles enforced at the API layer; org invite flow with single-use tokens
+- **Service account API tokens** — long-lived `ciap_…` tokens for CI pipelines and automation scripts; hashed at rest, shown once at creation, role-scoped, last-used tracked
 - **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup
 
 ### Observability and operations
 
 - **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; metrics internal-only by default
 - **Slack notifications** — per-stack event subscriptions: plan complete, run succeeded, run failed
+- **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) for debugging missed or skipped events
 - **Structured health endpoint** — `/health` reports DB status, version, and uptime
 - **Automatic migrations** — schema migrations run on startup; `migrate` subcommand available for manual control
 
@@ -313,13 +316,13 @@ cd api && go test -race ./...
 - [x] Intuitive dashboard — landing page showing org-wide health at a glance: active/failed runs, stacks with drift, recent audit events, and inline approve/discard/cancel actions without navigating into individual stacks
 - [ ] External worker agents — additional runner nodes that connect to the primary instance, allowing job execution capacity to be scaled out independently
 - [ ] Stack dependency graph — first-class upstream/downstream relationships with automatic downstream triggers after a successful apply
-- [ ] Variable sets — define a shared group of env vars once and attach to multiple stacks; eliminates repetition across similar stacks
+- [x] Variable sets — define a shared group of env vars once and attach to multiple stacks; eliminates repetition across similar stacks
 - [ ] Stack templates / blueprints — create new stacks pre-filled from a saved template (repo, tool, policies, env var schema)
 - [ ] Manual run with variable overrides — trigger a one-off run with temporary env var overrides without changing stack config
-- [ ] Service account API tokens — machine-readable tokens not tied to a user session, for CI pipelines and automation
+- [x] Service account API tokens — machine-readable tokens not tied to a user session, for CI pipelines and automation
 - [x] CI linting — gofmt, go vet, gocyclo, ineffassign, misspell, staticcheck run on every PR; `make lint` target for local use
 - [ ] Email notifications — alongside Slack for teams that need non-Slack alerting
-- [ ] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
+- [x] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
 - [ ] Terraform module registry — private module registry backed by MinIO for internal module distribution without an external registry dependency
 - [ ] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
