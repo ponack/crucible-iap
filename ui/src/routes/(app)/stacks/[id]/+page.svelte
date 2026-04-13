@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const stackID = $derived(page.params.id as string);
@@ -74,6 +74,11 @@
 	let webhookDeliveries = $state<WebhookDelivery[]>([]);
 	let loadingDeliveries = $state(false);
 
+	// Variable sets
+	let stackVarSets = $state<StackVarSetRef[]>([]);
+	let allVarSets = $state<VarSet[]>([]);
+	let attachingVarSet = $state('');
+
 	// Disable/enable
 	let togglingDisabled = $state(false);
 
@@ -109,7 +114,7 @@
 
 	onMount(async () => {
 		try {
-			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes, remoteSourcesRes, allStacksRes, integrationsRes] = await Promise.all([
+			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes, remoteSourcesRes, allStacksRes, integrationsRes, stackVarSetsRes, allVarSetsRes] = await Promise.all([
 				stacks.get(stackID),
 				runs.list(stackID),
 				stacks.tokens.list(stackID),
@@ -118,7 +123,9 @@
 				stacks.env.list(stackID),
 				stacks.remoteState.list(stackID),
 				stacks.list(0, 200),
-				integrations.list()
+				integrations.list(),
+				varSets.forStack(stackID),
+				varSets.list()
 			]);
 			stack = stackRes;
 			recentRuns = runsRes.data;
@@ -129,6 +136,8 @@
 			remoteSources = remoteSourcesRes;
 			allStacksList = allStacksRes.data.filter(s => s.id !== stackID).map(s => ({ id: s.id, name: s.name }));
 			orgIntegrations = integrationsRes;
+			stackVarSets = stackVarSetsRes;
+			allVarSets = allVarSetsRes;
 			selectedVCSIntegration = stackRes.vcs_integration_id ?? '';
 			selectedSecretIntegration = stackRes.secret_integration_id ?? '';
 			if (stackRes.state_backend_provider) {
@@ -427,6 +436,27 @@
 			alert((e as Error).message);
 		} finally {
 			rotatingWebhook = false;
+		}
+	}
+
+	async function attachVarSet() {
+		if (!attachingVarSet) return;
+		try {
+			await varSets.attachToStack(stackID, attachingVarSet);
+			const updated = await varSets.forStack(stackID);
+			stackVarSets = updated;
+			attachingVarSet = '';
+		} catch (e) {
+			alert((e as Error).message);
+		}
+	}
+
+	async function detachVarSet(vsID: string) {
+		try {
+			await varSets.detachFromStack(stackID, vsID);
+			stackVarSets = stackVarSets.filter((s) => s.id !== vsID);
+		} catch (e) {
+			alert((e as Error).message);
 		}
 	}
 
@@ -802,6 +832,66 @@
 				{/if}
 			</p>
 		</form>
+	</section>
+
+	<!-- Variable sets -->
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Variable sets</h2>
+			<a href="/variable-sets" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">Manage →</a>
+		</div>
+		<p class="text-xs text-zinc-500">Attach variable sets to inject shared environment variables into every run on this stack.</p>
+
+		{#if stackVarSets.length > 0}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Name</th>
+							<th class="text-left px-4 py-2">Variables</th>
+							<th class="px-4 py-2"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each stackVarSets as svs (svs.id)}
+							<tr>
+								<td class="px-4 py-2.5">
+									<a href="/variable-sets/{svs.id}" class="text-zinc-200 hover:text-white transition-colors">{svs.name}</a>
+									{#if svs.description}
+										<p class="text-xs text-zinc-600 mt-0.5">{svs.description}</p>
+									{/if}
+								</td>
+								<td class="px-4 py-2.5 text-zinc-500">{svs.var_count}</td>
+								<td class="px-4 py-2.5 text-right">
+									{#if auth.isMemberOrAbove}
+										<button onclick={() => detachVarSet(svs.id)} class="text-xs text-zinc-500 hover:text-red-400">Detach</button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-zinc-600 text-sm">No variable sets attached.</p>
+		{/if}
+
+		{#if auth.isMemberOrAbove}
+			{#if allVarSets.length > stackVarSets.length}
+				<div class="flex items-center gap-2">
+					<select class="field-input w-56" bind:value={attachingVarSet}>
+						<option value="">Select a variable set…</option>
+						{#each allVarSets.filter(vs => !stackVarSets.find(s => s.id === vs.id)) as vs (vs.id)}
+							<option value={vs.id}>{vs.name}</option>
+						{/each}
+					</select>
+					<button onclick={attachVarSet} disabled={!attachingVarSet}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						Attach
+					</button>
+				</div>
+			{/if}
+		{/if}
 	</section>
 
 	<!-- Notifications -->
