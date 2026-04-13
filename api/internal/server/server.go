@@ -182,8 +182,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.PUT("/stacks/:id/policies/:policyID", policyHandler.AttachPolicy, member)
 	api.DELETE("/stacks/:id/policies/:policyID", policyHandler.DetachPolicy, member)
 
-	// Webhook secret rotation
+	// Webhook secret rotation and delivery log
 	api.POST("/stacks/:id/webhook/rotate", webhookHandler.RotateSecret, member)
+	api.GET("/stacks/:id/webhook-deliveries", webhookHandler.ListDeliveries)
 
 	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)

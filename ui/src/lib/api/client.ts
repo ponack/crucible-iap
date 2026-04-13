@@ -278,7 +278,9 @@ export const stacks = {
 
 	webhook: {
 		rotateSecret: (stackID: string) =>
-			request<{ webhook_secret: string }>(`/stacks/${stackID}/webhook/rotate`, { method: 'POST' })
+			request<{ webhook_secret: string }>(`/stacks/${stackID}/webhook/rotate`, { method: 'POST' }),
+		deliveries: (stackID: string, offset = 0, limit = 50) =>
+			request<Paginated<WebhookDelivery>>(`/stacks/${stackID}/webhook-deliveries?offset=${offset}&limit=${limit}`)
 	},
 
 	remoteState: {
@@ -451,6 +453,19 @@ export const audit = {
 		return res.blob();
 	}
 };
+
+// ── Webhook deliveries ────────────────────────────────────────────────────────
+
+export interface WebhookDelivery {
+	id: string;
+	forge: string;
+	event_type: string;
+	delivery_id?: string;
+	outcome: 'triggered' | 'skipped' | 'rejected';
+	skip_reason?: string;
+	run_id?: string;
+	received_at: string;
+}
 
 // ── Remote state sources ──────────────────────────────────────────────────────
 
