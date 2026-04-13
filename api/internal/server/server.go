@@ -28,6 +28,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/stacks"
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
+	"github.com/ponack/crucible-iap/internal/templates"
 	"github.com/ponack/crucible-iap/internal/updater"
 	"github.com/ponack/crucible-iap/internal/varsets"
 	"github.com/ponack/crucible-iap/internal/vault"
@@ -114,6 +115,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	envVarHandler := envvars.NewHandler(s.pool, v)
 	varSetHandler := varsets.NewHandler(s.pool, v)
 	satHandler := serviceaccounts.NewHandler(s.pool)
+	tmplHandler := templates.NewHandler(s.pool)
 	integrationHandler := integrations.NewHandler(s.pool, v)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -215,6 +217,13 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stacks/:id/variable-sets", varSetHandler.ListForStack)
 	api.PUT("/stacks/:id/variable-sets/:vsID", varSetHandler.AttachToStack, member)
 	api.DELETE("/stacks/:id/variable-sets/:vsID", varSetHandler.DetachFromStack, member)
+
+	// Stack templates
+	api.GET("/stack-templates", tmplHandler.List)
+	api.POST("/stack-templates", tmplHandler.Create, member)
+	api.GET("/stack-templates/:id", tmplHandler.Get)
+	api.PATCH("/stack-templates/:id", tmplHandler.Update, member)
+	api.DELETE("/stack-templates/:id", tmplHandler.Delete, admin)
 
 	// Org-level integrations (VCS credentials, secret stores)
 	api.GET("/integrations", integrationHandler.List)
