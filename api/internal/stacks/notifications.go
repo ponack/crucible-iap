@@ -2,96 +2,104 @@
 package stacks
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 )
 
-// UpdateNotifications sets the VCS token, Slack webhook, and notification
-// event list for a stack. Token and webhook values are encrypted before storage
-// and never returned. Omit a field to leave it unchanged; pass an empty string
-// to clear it.
+// UpdateNotifications sets the VCS token, Slack webhook, Gotify config, and
+// notification event list for a stack. Encrypted values are never returned.
+// Omit a field to leave it unchanged; pass an empty string to clear it.
 func (h *Handler) UpdateNotifications(c echo.Context) error {
 	stackID := c.Param("id")
 	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
 
 	var req struct {
 		VCSProvider  *string  `json:"vcs_provider"`  // nil = no change
 		VCSBaseURL   *string  `json:"vcs_base_url"`  // nil = no change; "" = clear
 		VCSToken     *string  `json:"vcs_token"`     // nil = no change; "" = clear
 		SlackWebhook *string  `json:"slack_webhook"` // nil = no change; "" = clear
+		GotifyURL    *string  `json:"gotify_url"`    // nil = no change; "" = clear
+		GotifyToken  *string  `json:"gotify_token"`  // nil = no change; "" = clear
 		NotifyEvents []string `json:"notify_events"` // nil = no change; [] = clear all
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	// Verify the stack belongs to this org before touching it.
 	var exists bool
-	_ = h.pool.QueryRow(c.Request().Context(),
+	_ = h.pool.QueryRow(ctx,
 		`SELECT true FROM stacks WHERE id = $1 AND org_id = $2`, stackID, orgID,
 	).Scan(&exists)
 	if !exists {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 
-	validVCSProviders := map[string]bool{"github": true, "gitlab": true, "gitea": true}
 	if req.VCSProvider != nil {
-		if !validVCSProviders[*req.VCSProvider] {
+		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}
+		if !valid[*req.VCSProvider] {
 			return echo.NewHTTPError(http.StatusBadRequest, "vcs_provider must be one of: github, gitlab, gitea")
 		}
-		_, _ = h.pool.Exec(c.Request().Context(),
-			`UPDATE stacks SET vcs_provider = $1 WHERE id = $2`, *req.VCSProvider, stackID)
+		_, _ = h.pool.Exec(ctx, `UPDATE stacks SET vcs_provider = $1 WHERE id = $2`, *req.VCSProvider, stackID)
 	}
 
-	if req.VCSBaseURL != nil {
-		if *req.VCSBaseURL == "" {
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET vcs_base_url = NULL WHERE id = $1`, stackID)
-		} else {
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET vcs_base_url = $1 WHERE id = $2`, *req.VCSBaseURL, stackID)
-		}
+	h.setNullableStr(ctx, stackID, "vcs_base_url", req.VCSBaseURL)
+
+	if err := h.setEncryptedField(ctx, stackID, "vcs_token_enc", req.VCSToken); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
+	}
+	if err := h.setEncryptedField(ctx, stackID, "slack_webhook_enc", req.SlackWebhook); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
 	}
 
-	if req.VCSToken != nil {
-		if *req.VCSToken == "" {
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET vcs_token_enc = NULL WHERE id = $1`, stackID)
-		} else {
-			enc, err := h.vault.Encrypt(stackID, []byte(*req.VCSToken))
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
-			}
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET vcs_token_enc = $1 WHERE id = $2`, enc, stackID)
-		}
-	}
+	h.setNullableStr(ctx, stackID, "gotify_url", req.GotifyURL)
 
-	if req.SlackWebhook != nil {
-		if *req.SlackWebhook == "" {
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET slack_webhook_enc = NULL WHERE id = $1`, stackID)
-		} else {
-			enc, err := h.vault.Encrypt(stackID, []byte(*req.SlackWebhook))
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
-			}
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET slack_webhook_enc = $1 WHERE id = $2`, enc, stackID)
-		}
+	if err := h.setEncryptedField(ctx, stackID, "gotify_token_enc", req.GotifyToken); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
 	}
 
 	if req.NotifyEvents != nil {
-		_, _ = h.pool.Exec(c.Request().Context(),
-			`UPDATE stacks SET notify_events = $1 WHERE id = $2`, req.NotifyEvents, stackID)
+		_, _ = h.pool.Exec(ctx, `UPDATE stacks SET notify_events = $1 WHERE id = $2`, req.NotifyEvents, stackID)
 	}
 
 	return c.NoContent(http.StatusNoContent)
 }
 
-// TestNotification sends a test Slack message to verify the webhook is working.
-func (h *Handler) TestNotification(c echo.Context) error {
+// setNullableStr sets a plain-text nullable column: NULL when value is "" or nil pointer.
+func (h *Handler) setNullableStr(ctx context.Context, stackID, col string, val *string) {
+	if val == nil {
+		return
+	}
+	if *val == "" {
+		_, _ = h.pool.Exec(ctx, `UPDATE stacks SET `+col+` = NULL WHERE id = $1`, stackID)
+	} else {
+		_, _ = h.pool.Exec(ctx, `UPDATE stacks SET `+col+` = $1 WHERE id = $2`, *val, stackID)
+	}
+}
+
+// setEncryptedField encrypts value and stores it, or NULLs the column when value is "".
+// Does nothing when val is nil.
+func (h *Handler) setEncryptedField(ctx context.Context, stackID, col string, val *string) error {
+	if val == nil {
+		return nil
+	}
+	if *val == "" {
+		_, _ = h.pool.Exec(ctx, `UPDATE stacks SET `+col+` = NULL WHERE id = $1`, stackID)
+		return nil
+	}
+	enc, err := h.vault.Encrypt(stackID, []byte(*val))
+	if err != nil {
+		return err
+	}
+	_, _ = h.pool.Exec(ctx, `UPDATE stacks SET `+col+` = $1 WHERE id = $2`, enc, stackID)
+	return nil
+}
+
+// testNotifier is a shared helper: looks up the stack, ensures a notifier is
+// configured, then calls fn. Reduces boilerplate in Test* handlers.
+func (h *Handler) testNotifier(c echo.Context, fn func() error) error {
 	stackID := c.Param("id")
 	orgID := c.Get("orgID").(string)
 
@@ -102,13 +110,25 @@ func (h *Handler) TestNotification(c echo.Context) error {
 	if !exists {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
-
 	if h.notifier == nil {
 		return echo.NewHTTPError(http.StatusServiceUnavailable, "notifier not configured")
 	}
-
-	if err := h.notifier.TestSlack(c.Request().Context(), stackID); err != nil {
+	if err := fn(); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// TestNotification sends a test Slack message to verify the webhook is working.
+func (h *Handler) TestNotification(c echo.Context) error {
+	return h.testNotifier(c, func() error {
+		return h.notifier.TestSlack(c.Request().Context(), c.Param("id"))
+	})
+}
+
+// TestGotifyNotification sends a test Gotify message to verify the config is working.
+func (h *Handler) TestGotifyNotification(c echo.Context) error {
+	return h.testNotifier(c, func() error {
+		return h.notifier.TestGotify(c.Request().Context(), c.Param("id"))
+	})
 }

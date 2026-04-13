@@ -51,11 +51,15 @@
 	// Notifications
 	let notifVCSToken = $state('');
 	let notifSlackWebhook = $state('');
+	let notifGotifyURL = $state('');
+	let notifGotifyToken = $state('');
 	let notifEvents = $state<string[]>([]);
 	let savingNotif = $state(false);
 	let notifSaved = $state(false);
 	let testingSlack = $state(false);
 	let slackTestResult = $state<{ ok: boolean; msg: string } | null>(null);
+	let testingGotify = $state(false);
+	let gotifyTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 
 	// Org integrations (for assignment to this stack)
 	let orgIntegrations = $state<Integration[]>([]);
@@ -178,6 +182,7 @@
 			auto_remediate_drift: stack.auto_remediate_drift
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
+		notifGotifyURL = stack.gotify_url ?? '';
 	}
 
 	async function saveEdit(e: SubmitEvent) {
@@ -289,16 +294,20 @@
 		savingNotif = true;
 		notifSaved = false;
 		try {
-			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; notify_events: string[] } = {
+			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; gotify_url?: string; gotify_token?: string; notify_events: string[] } = {
 				notify_events: notifEvents
 			};
 			if (notifVCSProvider) data.vcs_provider = notifVCSProvider;
 			data.vcs_base_url = notifVCSBaseURL; // allow clearing
 			if (notifVCSToken !== '') data.vcs_token = notifVCSToken;
 			if (notifSlackWebhook !== '') data.slack_webhook = notifSlackWebhook;
+			// Send Gotify URL always (allows clearing); send token only if provided
+			data.gotify_url = notifGotifyURL;
+			if (notifGotifyToken !== '') data.gotify_token = notifGotifyToken;
 			await stacks.notifications.update(stackID, data);
 			notifVCSToken = '';
 			notifSlackWebhook = '';
+			notifGotifyToken = '';
 			notifSaved = true;
 			stack = await stacks.get(stackID);
 		} catch (err) {
@@ -318,6 +327,19 @@
 			slackTestResult = { ok: false, msg: (e as Error).message };
 		} finally {
 			testingSlack = false;
+		}
+	}
+
+	async function testGotify() {
+		testingGotify = true;
+		gotifyTestResult = null;
+		try {
+			await stacks.notifications.testGotify(stackID);
+			gotifyTestResult = { ok: true, msg: 'Test message sent — check your Gotify app.' };
+		} catch (e) {
+			gotifyTestResult = { ok: false, msg: (e as Error).message };
+		} finally {
+			testingGotify = false;
 		}
 	}
 
@@ -949,10 +971,29 @@
 						placeholder={stack.has_slack_webhook ? 'Enter new value to replace' : 'https://hooks.slack.com/…'}
 						autocomplete="new-password" />
 				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="notif-gotify-url">Gotify server URL</label>
+					<input id="notif-gotify-url" class="field-input"
+						bind:value={notifGotifyURL}
+						placeholder="https://gotify.example.com" />
+					<p class="text-xs text-zinc-600">Leave blank to disable Gotify notifications.</p>
+				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="notif-gotify-token">
+						Gotify app token
+						{#if stack.has_gotify_token}
+							<span class="ml-1 text-green-500 text-xs">● set</span>
+						{/if}
+					</label>
+					<input id="notif-gotify-token" class="field-input" type="password"
+						bind:value={notifGotifyToken}
+						placeholder={stack.has_gotify_token ? 'Enter new value to replace' : 'App token from Gotify'}
+						autocomplete="new-password" />
+				</div>
 			</div>
 
 			<div class="space-y-1.5">
-				<p class="text-xs text-zinc-400">Slack events to notify on</p>
+				<p class="text-xs text-zinc-400">Events to notify on (Slack + Gotify)</p>
 				<div class="flex gap-4 flex-wrap">
 					{#each notifyEventOptions as opt}
 						<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
@@ -982,12 +1023,23 @@
 						{testingSlack ? 'Sending…' : 'Test Slack'}
 					</button>
 				{/if}
+				{#if notifGotifyURL && stack.has_gotify_token}
+					<button type="button" onclick={testGotify} disabled={testingGotify}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						{testingGotify ? 'Sending…' : 'Test Gotify'}
+					</button>
+				{/if}
 				{#if notifSaved}
 					<span class="text-xs text-green-400">Saved.</span>
 				{/if}
 				{#if slackTestResult}
 					<span class="text-xs {slackTestResult.ok ? 'text-green-400' : 'text-red-400'}">
 						{slackTestResult.msg}
+					</span>
+				{/if}
+				{#if gotifyTestResult}
+					<span class="text-xs {gotifyTestResult.ok ? 'text-green-400' : 'text-red-400'}">
+						{gotifyTestResult.msg}
 					</span>
 				{/if}
 			</div>
