@@ -93,6 +93,8 @@ export interface Stack {
 	has_slack_webhook: boolean;
 	gotify_url?: string;
 	has_gotify_token: boolean;
+	ntfy_url?: string;
+	has_ntfy_token: boolean;
 	notify_events: string[];
 	vcs_integration_id?: string;
 	secret_integration_id?: string;
@@ -243,6 +245,8 @@ export const stacks = {
 				slack_webhook?: string;
 				gotify_url?: string;
 				gotify_token?: string;
+				ntfy_url?: string;
+				ntfy_token?: string;
 				notify_events?: string[];
 			}
 		) =>
@@ -253,7 +257,9 @@ export const stacks = {
 		test: (stackID: string) =>
 			request<null>(`/stacks/${stackID}/notifications/test`, { method: 'POST' }),
 		testGotify: (stackID: string) =>
-			request<null>(`/stacks/${stackID}/notifications/test-gotify`, { method: 'POST' })
+			request<null>(`/stacks/${stackID}/notifications/test-gotify`, { method: 'POST' }),
+		testNtfy: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/notifications/test-ntfy`, { method: 'POST' })
 	},
 
 	integrations: {

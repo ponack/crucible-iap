@@ -204,6 +204,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
 	api.POST("/stacks/:id/notifications/test", stackHandler.TestNotification, member)
 	api.POST("/stacks/:id/notifications/test-gotify", stackHandler.TestGotifyNotification, member)
+	api.POST("/stacks/:id/notifications/test-ntfy", stackHandler.TestNtfyNotification, member)
 
 	// Variable sets
 	api.GET("/variable-sets", varSetHandler.List)

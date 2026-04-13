@@ -53,6 +53,8 @@
 	let notifSlackWebhook = $state('');
 	let notifGotifyURL = $state('');
 	let notifGotifyToken = $state('');
+	let notifNtfyURL = $state('');
+	let notifNtfyToken = $state('');
 	let notifEvents = $state<string[]>([]);
 	let savingNotif = $state(false);
 	let notifSaved = $state(false);
@@ -60,6 +62,8 @@
 	let slackTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 	let testingGotify = $state(false);
 	let gotifyTestResult = $state<{ ok: boolean; msg: string } | null>(null);
+	let testingNtfy = $state(false);
+	let ntfyTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 
 	// Org integrations (for assignment to this stack)
 	let orgIntegrations = $state<Integration[]>([]);
@@ -183,6 +187,7 @@
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
+		notifNtfyURL = stack.ntfy_url ?? '';
 	}
 
 	async function saveEdit(e: SubmitEvent) {
@@ -294,7 +299,7 @@
 		savingNotif = true;
 		notifSaved = false;
 		try {
-			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; gotify_url?: string; gotify_token?: string; notify_events: string[] } = {
+			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; gotify_url?: string; gotify_token?: string; ntfy_url?: string; ntfy_token?: string; notify_events: string[] } = {
 				notify_events: notifEvents
 			};
 			if (notifVCSProvider) data.vcs_provider = notifVCSProvider;
@@ -304,10 +309,13 @@
 			// Send Gotify URL always (allows clearing); send token only if provided
 			data.gotify_url = notifGotifyURL;
 			if (notifGotifyToken !== '') data.gotify_token = notifGotifyToken;
+			data.ntfy_url = notifNtfyURL; // allow clearing
+			if (notifNtfyToken !== '') data.ntfy_token = notifNtfyToken;
 			await stacks.notifications.update(stackID, data);
 			notifVCSToken = '';
 			notifSlackWebhook = '';
 			notifGotifyToken = '';
+			notifNtfyToken = '';
 			notifSaved = true;
 			stack = await stacks.get(stackID);
 		} catch (err) {
@@ -340,6 +348,19 @@
 			gotifyTestResult = { ok: false, msg: (e as Error).message };
 		} finally {
 			testingGotify = false;
+		}
+	}
+
+	async function testNtfy() {
+		testingNtfy = true;
+		ntfyTestResult = null;
+		try {
+			await stacks.notifications.testNtfy(stackID);
+			ntfyTestResult = { ok: true, msg: 'Test message sent — check your ntfy app.' };
+		} catch (e) {
+			ntfyTestResult = { ok: false, msg: (e as Error).message };
+		} finally {
+			testingNtfy = false;
 		}
 	}
 
@@ -990,10 +1011,29 @@
 						placeholder={stack.has_gotify_token ? 'Enter new value to replace' : 'App token from Gotify'}
 						autocomplete="new-password" />
 				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="notif-ntfy-url">ntfy topic URL</label>
+					<input id="notif-ntfy-url" class="field-input"
+						bind:value={notifNtfyURL}
+						placeholder="https://ntfy.sh/my-topic" />
+					<p class="text-xs text-zinc-600">Include the topic in the URL. Leave blank to disable ntfy notifications.</p>
+				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="notif-ntfy-token">
+						ntfy access token <span class="text-zinc-600">(optional, for private topics)</span>
+						{#if stack.has_ntfy_token}
+							<span class="ml-1 text-green-500 text-xs">● set</span>
+						{/if}
+					</label>
+					<input id="notif-ntfy-token" class="field-input" type="password"
+						bind:value={notifNtfyToken}
+						placeholder={stack.has_ntfy_token ? 'Enter new value to replace' : 'tk_…'}
+						autocomplete="new-password" />
+				</div>
 			</div>
 
 			<div class="space-y-1.5">
-				<p class="text-xs text-zinc-400">Events to notify on (Slack + Gotify)</p>
+				<p class="text-xs text-zinc-400">Events to notify on (Slack + Gotify + ntfy)</p>
 				<div class="flex gap-4 flex-wrap">
 					{#each notifyEventOptions as opt}
 						<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
@@ -1029,6 +1069,12 @@
 						{testingGotify ? 'Sending…' : 'Test Gotify'}
 					</button>
 				{/if}
+				{#if notifNtfyURL}
+					<button type="button" onclick={testNtfy} disabled={testingNtfy}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						{testingNtfy ? 'Sending…' : 'Test ntfy'}
+					</button>
+				{/if}
 				{#if notifSaved}
 					<span class="text-xs text-green-400">Saved.</span>
 				{/if}
@@ -1040,6 +1086,11 @@
 				{#if gotifyTestResult}
 					<span class="text-xs {gotifyTestResult.ok ? 'text-green-400' : 'text-red-400'}">
 						{gotifyTestResult.msg}
+					</span>
+				{/if}
+				{#if ntfyTestResult}
+					<span class="text-xs {ntfyTestResult.ok ? 'text-green-400' : 'text-red-400'}">
+						{ntfyTestResult.msg}
 					</span>
 				{/if}
 			</div>
