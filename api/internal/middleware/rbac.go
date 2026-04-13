@@ -30,6 +30,8 @@ func roleFromString(s string) Role {
 
 // RequireRole returns Echo middleware that enforces a minimum org role.
 // It reads userID and orgID from context (set by JWTMiddleware).
+// For service account tokens, the role is pre-set in context as "saRole"
+// so no database query is needed.
 func RequireRole(pool *pgxpool.Pool, minimum Role) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -39,13 +41,18 @@ func RequireRole(pool *pgxpool.Pool, minimum Role) echo.MiddlewareFunc {
 				return echo.NewHTTPError(http.StatusUnauthorized, "missing auth context")
 			}
 
+			// Service account tokens pre-set their role; skip the DB lookup.
 			var role string
-			err := pool.QueryRow(c.Request().Context(), `
-				SELECT role FROM organization_members
-				WHERE org_id = $1 AND user_id = $2
-			`, orgID, userID).Scan(&role)
-			if err != nil {
-				return echo.NewHTTPError(http.StatusForbidden, "not a member of this organization")
+			if saRole, ok := c.Get("saRole").(string); ok && saRole != "" {
+				role = saRole
+			} else {
+				err := pool.QueryRow(c.Request().Context(), `
+					SELECT role FROM organization_members
+					WHERE org_id = $1 AND user_id = $2
+				`, orgID, userID).Scan(&role)
+				if err != nil {
+					return echo.NewHTTPError(http.StatusForbidden, "not a member of this organization")
+				}
 			}
 
 			if roleFromString(role) < minimum {
