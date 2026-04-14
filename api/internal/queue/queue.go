@@ -31,6 +31,10 @@ type RunJobArgs struct {
 	// AutoApply skips the unconfirmed gate on tracked runs and queues the apply
 	// phase immediately. Used by auto-apply stacks and drift auto-remediation.
 	AutoApply bool `json:"auto_apply,omitempty"`
+	// VarOverrides are KEY=value pairs injected into the runner env after all
+	// other sources, giving them the highest precedence. Set by manual runs
+	// triggered with per-run overrides; preserved through the apply phase.
+	VarOverrides []string `json:"var_overrides,omitempty"`
 }
 
 func (RunJobArgs) Kind() string { return "run" }

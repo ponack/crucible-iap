@@ -144,6 +144,8 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	logWriter := io.MultiWriter(&logBuf, &pgNotifyWriter{pool: w.pool, runID: args.RunID})
 
 	vcsToken, extraEnv := w.loadRunEnv(ctx, log, args.StackID, args.APIURL)
+	// Per-run overrides win over everything: append last so they take highest precedence.
+	extraEnv = append(extraEnv, args.VarOverrides...)
 	memLimit, cpuLimit, timeoutMins := w.resolveRunnerLimits(ctx)
 
 	spec := runner.JobSpec{
@@ -244,6 +246,7 @@ func (w *RunWorker) completeRun(ctx context.Context, log *slog.Logger, orgID str
 			Tool: args.Tool, RunnerImage: args.RunnerImage,
 			RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
 			RunType: "apply", APIURL: args.APIURL,
+			VarOverrides: args.VarOverrides,
 		})
 		log.Info("run job complete (auto-apply queued)")
 		return nil

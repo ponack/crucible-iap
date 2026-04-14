@@ -32,6 +32,10 @@
 	// Run creation
 	let triggeringRun = $state(false);
 	let triggeringDrift = $state(false);
+	let showOverrides = $state(false);
+	let overrides = $state<{ key: string; value: string }[]>([]);
+	let newOverrideKey = $state('');
+	let newOverrideValue = $state('');
 
 	// Destroy modal
 	let showDestroyModal = $state(false);
@@ -217,12 +221,31 @@
 	async function triggerRun() {
 		triggeringRun = true;
 		try {
-			const run = await runs.create(stackID);
+			const run = await runs.create(stackID, 'tracked', overrides);
 			goto(`/runs/${run.id}`);
 		} catch (e) {
 			alert((e as Error).message);
 			triggeringRun = false;
 		}
+	}
+
+	function addOverride() {
+		const key = newOverrideKey.trim();
+		const value = newOverrideValue.trim();
+		if (!key) return;
+		// Replace existing key if duplicate
+		const idx = overrides.findIndex((o) => o.key === key);
+		if (idx >= 0) {
+			overrides[idx] = { key, value };
+		} else {
+			overrides = [...overrides, { key, value }];
+		}
+		newOverrideKey = '';
+		newOverrideValue = '';
+	}
+
+	function removeOverride(key: string) {
+		overrides = overrides.filter((o) => o.key !== key);
 	}
 
 	async function triggerDrift() {
@@ -586,6 +609,15 @@
 				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{triggeringRun ? 'Queuing…' : 'Trigger run'}
 			</button>
+			<button
+				onclick={() => { showOverrides = !showOverrides; }}
+				title="Variable overrides for this run"
+				class="border transition-colors text-sm px-2 py-1.5 rounded-lg
+					{overrides.length > 0
+						? 'border-indigo-600 text-indigo-400 hover:border-indigo-400'
+						: 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}">
+				{overrides.length > 0 ? `Overrides (${overrides.length})` : 'Overrides'}
+			</button>
 			{#if stack.drift_detection}
 				<button onclick={triggerDrift} disabled={triggeringDrift}
 					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
@@ -616,6 +648,57 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Variable overrides panel -->
+	{#if showOverrides}
+	<div class="border border-zinc-800 rounded-xl p-4 space-y-3">
+		<div class="flex items-center justify-between">
+			<div>
+				<p class="text-sm font-medium text-white">Variable overrides</p>
+				<p class="text-xs text-zinc-500 mt-0.5">KEY=value pairs injected into this run only, taking highest precedence over all other env sources.</p>
+			</div>
+			{#if overrides.length > 0}
+				<button onclick={() => { overrides = []; }} class="text-xs text-zinc-500 hover:text-red-400 transition-colors">Clear all</button>
+			{/if}
+		</div>
+
+		<!-- Existing overrides -->
+		{#if overrides.length > 0}
+		<div class="divide-y divide-zinc-800 border border-zinc-800 rounded-lg overflow-hidden">
+			{#each overrides as ov}
+			<div class="flex items-center gap-2 px-3 py-2 bg-zinc-900">
+				<code class="text-xs text-indigo-300 font-mono flex-shrink-0">{ov.key}</code>
+				<span class="text-zinc-600 text-xs">=</span>
+				<code class="text-xs text-zinc-300 font-mono truncate flex-1">{ov.value || '(empty)'}</code>
+				<button onclick={() => removeOverride(ov.key)} class="text-zinc-600 hover:text-red-400 transition-colors text-xs ml-1">✕</button>
+			</div>
+			{/each}
+		</div>
+		{/if}
+
+		<!-- Add a new override -->
+		<div class="flex gap-2">
+			<input
+				bind:value={newOverrideKey}
+				placeholder="KEY"
+				class="field-input font-mono text-xs flex-1 min-w-0"
+				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOverride(); } }}
+			/>
+			<input
+				bind:value={newOverrideValue}
+				placeholder="value"
+				class="field-input font-mono text-xs flex-[2] min-w-0"
+				onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addOverride(); } }}
+			/>
+			<button
+				onclick={addOverride}
+				disabled={!newOverrideKey.trim()}
+				class="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-40 text-zinc-300 text-xs px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+				Add
+			</button>
+		</div>
+	</div>
+	{/if}
 
 	<!-- Edit form -->
 	{#if editing}
