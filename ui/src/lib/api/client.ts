@@ -379,6 +379,7 @@ export interface Run {
 	queued_at: string;
 	started_at?: string;
 	finished_at?: string;
+	var_overrides?: string[]; // KEY=value pairs; only present on Get, not list responses
 }
 
 export interface RunPolicyResult {
@@ -409,8 +410,15 @@ export const runs = {
 		return request<Paginated<Run>>(`/stacks/${stackID}/runs?${p}`);
 	},
 	get: (id: string) => request<Run>(`/runs/${id}`),
-	create: (stackID: string, type = 'tracked') =>
-		request<Run>(`/stacks/${stackID}/runs`, { method: 'POST', body: JSON.stringify({ type }) }),
+	create: (
+		stackID: string,
+		type = 'tracked',
+		varOverrides: { key: string; value: string }[] = []
+	) =>
+		request<Run>(`/stacks/${stackID}/runs`, {
+			method: 'POST',
+			body: JSON.stringify({ type, var_overrides: varOverrides })
+		}),
 	triggerDrift: (stackID: string) =>
 		request<Run>(`/stacks/${stackID}/drift`, { method: 'POST' }),
 	confirm: (id: string) => request<null>(`/runs/${id}/confirm`, { method: 'POST' }),

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -71,6 +72,29 @@ type Run struct {
 	QueuedAt         time.Time  `json:"queued_at"`
 	StartedAt        *time.Time `json:"started_at,omitempty"`
 	FinishedAt       *time.Time `json:"finished_at,omitempty"`
+	VarOverrides     []string   `json:"var_overrides,omitempty"`
+}
+
+// envVarKeyRE matches valid environment variable names.
+var envVarKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// parseVarOverrides converts [{key, value}] request entries to KEY=value strings,
+// validating keys and enforcing a maximum count.
+func parseVarOverrides(raw []struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}) ([]string, error) {
+	if len(raw) > 50 {
+		return nil, fmt.Errorf("too many var_overrides (max 50)")
+	}
+	out := make([]string, 0, len(raw))
+	for _, kv := range raw {
+		if !envVarKeyRE.MatchString(kv.Key) {
+			return nil, fmt.Errorf("invalid var_override key %q: must match [A-Za-z_][A-Za-z0-9_]*", kv.Key)
+		}
+		out = append(out, kv.Key+"="+kv.Value)
+	}
+	return out, nil
 }
 
 // ListAll returns paginated runs across all stacks in the authenticated org.
@@ -186,13 +210,21 @@ func (h *Handler) List(c echo.Context) error {
 func (h *Handler) Create(c echo.Context) error {
 	stackID := c.Param("stackID")
 	var req struct {
-		Type string `json:"type"` // tracked | proposed | destroy
+		Type         string `json:"type"` // tracked | proposed | destroy
+		VarOverrides []struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		} `json:"var_overrides"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	if req.Type == "" {
 		req.Type = "tracked"
+	}
+	varOverrides, err := parseVarOverrides(req.VarOverrides)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
 	// Fetch stack details needed to build the job spec
@@ -203,35 +235,38 @@ func (h *Handler) Create(c echo.Context) error {
 		RepoBranch  string
 		ProjectRoot string
 	}
-	err := h.pool.QueryRow(c.Request().Context(), `
+	if err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
 		FROM stacks WHERE id = $1
-	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
-	if err != nil {
+	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 
 	var r Run
-	err = h.pool.QueryRow(c.Request().Context(), `
-		INSERT INTO runs (stack_id, type, trigger)
-		VALUES ($1, $2, 'manual')
-		RETURNING id, stack_id, status, type, trigger, is_drift, queued_at
-	`, stackID, req.Type).Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger, &r.IsDrift, &r.QueuedAt)
-	if err != nil {
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		INSERT INTO runs (stack_id, type, trigger, var_overrides)
+		VALUES ($1, $2, 'manual', $3)
+		RETURNING id, stack_id, status, type, trigger, is_drift, queued_at, var_overrides
+	`, stackID, req.Type, varOverrides).Scan(
+		&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger, &r.IsDrift, &r.QueuedAt, &r.VarOverrides); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if r.VarOverrides == nil {
+		r.VarOverrides = []string{}
 	}
 
 	apiURL := h.runnerAPIURL(c)
 	if _, err := h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
-		RunID:       r.ID,
-		StackID:     stackID,
-		Tool:        stack.Tool,
-		RunnerImage: stack.RunnerImage,
-		RepoURL:     stack.RepoURL,
-		RepoBranch:  stack.RepoBranch,
-		ProjectRoot: stack.ProjectRoot,
-		RunType:     req.Type,
-		APIURL:      apiURL,
+		RunID:        r.ID,
+		StackID:      stackID,
+		Tool:         stack.Tool,
+		RunnerImage:  stack.RunnerImage,
+		RepoURL:      stack.RepoURL,
+		RepoBranch:   stack.RepoBranch,
+		ProjectRoot:  stack.ProjectRoot,
+		RunType:      req.Type,
+		APIURL:       apiURL,
+		VarOverrides: varOverrides,
 	}); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue run: "+err.Error())
 	}
@@ -260,7 +295,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE(tb.name,''), COALESCE(tb.email,''),
 		       COALESCE(ab.name,''), COALESCE(ab.email,''),
 		       r.approved_at,
-		       r.queued_at, r.started_at, r.finished_at
+		       r.queued_at, r.started_at, r.finished_at,
+		       r.var_overrides
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		LEFT JOIN users tb ON tb.id = r.triggered_by
@@ -274,9 +310,13 @@ func (h *Handler) Get(c echo.Context) error {
 		&r.TriggeredByName, &r.TriggeredByEmail,
 		&r.ApprovedByName, &r.ApprovedByEmail,
 		&r.ApprovedAt,
-		&r.QueuedAt, &r.StartedAt, &r.FinishedAt)
+		&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
+		&r.VarOverrides)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+	if r.VarOverrides == nil {
+		r.VarOverrides = []string{}
 	}
 	return c.JSON(http.StatusOK, r)
 }
@@ -319,8 +359,8 @@ func (h *Handler) Confirm(c echo.Context) error {
 	err := h.pool.QueryRow(c.Request().Context(), `
 		UPDATE runs SET status = 'confirmed', approved_by = $2, approved_at = now()
 		WHERE id = $1 AND status = 'unconfirmed'
-		RETURNING id, stack_id, type, status
-	`, id, userID).Scan(&r.ID, &r.StackID, &r.Type, &r.Status)
+		RETURNING id, stack_id, type, status, var_overrides
+	`, id, userID).Scan(&r.ID, &r.StackID, &r.Type, &r.Status, &r.VarOverrides)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusConflict, "run cannot be confirmed in its current state")
 	}
@@ -343,6 +383,7 @@ func (h *Handler) Confirm(c echo.Context) error {
 		Tool: stack.Tool, RunnerImage: stack.RunnerImage,
 		RepoURL: stack.RepoURL, RepoBranch: stack.RepoBranch, ProjectRoot: stack.ProjectRoot,
 		RunType: "apply", APIURL: apiURL,
+		VarOverrides: r.VarOverrides,
 	})
 
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
