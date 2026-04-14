@@ -14,7 +14,7 @@
 	let runnerError = $state<string | null>(null);
 
 	// Notification defaults
-	let notifDefaultsForm = $state({ default_slack_webhook: '', default_vcs_provider: 'github', default_vcs_base_url: '' });
+	let notifDefaultsForm = $state({ default_slack_webhook: '', default_vcs_provider: 'github', default_vcs_base_url: '', default_gotify_url: '', default_gotify_token: '', default_ntfy_url: '', default_ntfy_token: '' });
 	let savingNotifDefaults = $state(false);
 	let notifDefaultsSaved = $state(false);
 	let notifDefaultsError = $state<string | null>(null);
@@ -39,7 +39,11 @@
 			notifDefaultsForm = {
 				default_slack_webhook: s.default_slack_webhook ?? '',
 				default_vcs_provider: s.default_vcs_provider || 'github',
-				default_vcs_base_url: s.default_vcs_base_url ?? ''
+				default_vcs_base_url: s.default_vcs_base_url ?? '',
+				default_gotify_url: s.default_gotify_url ?? '',
+				default_gotify_token: s.default_gotify_token ?? '',
+				default_ntfy_url: s.default_ntfy_url ?? '',
+				default_ntfy_token: s.default_ntfy_token ?? ''
 			};
 			retentionForm = { artifact_retention_days: s.artifact_retention_days ?? 0 };
 		}).catch(() => {});
@@ -197,6 +201,39 @@
 						placeholder="https://hooks.slack.com/services/…"
 						autocomplete="new-password" />
 					<p class="text-xs text-zinc-600">New stacks will inherit this webhook. Leave blank to require per-stack configuration.</p>
+				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="default-gotify-url">Default Gotify server URL</label>
+						<input id="default-gotify-url" class="field-input font-mono text-sm"
+							bind:value={notifDefaultsForm.default_gotify_url}
+							placeholder="https://gotify.example.com" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="default-gotify-token">Default Gotify app token</label>
+						<input id="default-gotify-token" class="field-input font-mono text-sm" type="password"
+							bind:value={notifDefaultsForm.default_gotify_token}
+							placeholder="App token from Gotify"
+							autocomplete="new-password" />
+					</div>
+				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="default-ntfy-url">Default ntfy topic URL</label>
+						<input id="default-ntfy-url" class="field-input font-mono text-sm"
+							bind:value={notifDefaultsForm.default_ntfy_url}
+							placeholder="https://ntfy.sh/my-topic" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="default-ntfy-token">
+							Default ntfy access token
+							<span class="text-zinc-600">(optional)</span>
+						</label>
+						<input id="default-ntfy-token" class="field-input font-mono text-sm" type="password"
+							bind:value={notifDefaultsForm.default_ntfy_token}
+							placeholder="tk_… (for private topics)"
+							autocomplete="new-password" />
+					</div>
 				</div>
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-1.5">

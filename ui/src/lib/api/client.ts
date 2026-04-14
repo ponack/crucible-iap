@@ -574,6 +574,10 @@ export interface SystemSettings {
 	default_slack_webhook: string;
 	default_vcs_provider: string;
 	default_vcs_base_url: string;
+	default_gotify_url: string;
+	default_gotify_token: string;
+	default_ntfy_url: string;
+	default_ntfy_token: string;
 	artifact_retention_days: number;
 	updated_at: string;
 }

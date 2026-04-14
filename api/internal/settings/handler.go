@@ -22,6 +22,10 @@ type Settings struct {
 	DefaultSlackWebhook   string    `json:"default_slack_webhook"`
 	DefaultVCSProvider    string    `json:"default_vcs_provider"`
 	DefaultVCSBaseURL     string    `json:"default_vcs_base_url"`
+	DefaultGotifyURL      string    `json:"default_gotify_url"`
+	DefaultGotifyToken    string    `json:"default_gotify_token"`
+	DefaultNtfyURL        string    `json:"default_ntfy_url"`
+	DefaultNtfyToken      string    `json:"default_ntfy_token"`
 	ArtifactRetentionDays int       `json:"artifact_retention_days"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }
@@ -55,6 +59,10 @@ func (h *Handler) Update(c echo.Context) error {
 		DefaultSlackWebhook   *string `json:"default_slack_webhook"`
 		DefaultVCSProvider    *string `json:"default_vcs_provider"`
 		DefaultVCSBaseURL     *string `json:"default_vcs_base_url"`
+		DefaultGotifyURL      *string `json:"default_gotify_url"`
+		DefaultGotifyToken    *string `json:"default_gotify_token"`
+		DefaultNtfyURL        *string `json:"default_ntfy_url"`
+		DefaultNtfyToken      *string `json:"default_ntfy_token"`
 		ArtifactRetentionDays *int    `json:"artifact_retention_days"`
 	}
 	if err := c.Bind(&req); err != nil {
@@ -80,20 +88,25 @@ func (h *Handler) Update(c echo.Context) error {
 
 	_, err := h.pool.Exec(c.Request().Context(), `
 		UPDATE system_settings SET
-			runner_default_image      = COALESCE($1, runner_default_image),
-			runner_max_concurrent     = COALESCE($2, runner_max_concurrent),
-			runner_job_timeout_mins   = COALESCE($3, runner_job_timeout_mins),
-			runner_memory_limit       = COALESCE($4, runner_memory_limit),
-			runner_cpu_limit          = COALESCE($5, runner_cpu_limit),
-			default_slack_webhook     = COALESCE($6, default_slack_webhook),
-			default_vcs_provider      = COALESCE($7, default_vcs_provider),
-			default_vcs_base_url      = COALESCE($8, default_vcs_base_url),
-			artifact_retention_days   = COALESCE($9, artifact_retention_days),
+			runner_default_image      = COALESCE($1,  runner_default_image),
+			runner_max_concurrent     = COALESCE($2,  runner_max_concurrent),
+			runner_job_timeout_mins   = COALESCE($3,  runner_job_timeout_mins),
+			runner_memory_limit       = COALESCE($4,  runner_memory_limit),
+			runner_cpu_limit          = COALESCE($5,  runner_cpu_limit),
+			default_slack_webhook     = COALESCE($6,  default_slack_webhook),
+			default_vcs_provider      = COALESCE($7,  default_vcs_provider),
+			default_vcs_base_url      = COALESCE($8,  default_vcs_base_url),
+			default_gotify_url        = COALESCE($9,  default_gotify_url),
+			default_gotify_token      = COALESCE($10, default_gotify_token),
+			default_ntfy_url          = COALESCE($11, default_ntfy_url),
+			default_ntfy_token        = COALESCE($12, default_ntfy_token),
+			artifact_retention_days   = COALESCE($13, artifact_retention_days),
 			updated_at                = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
 		req.RunnerMemoryLimit, req.RunnerCPULimit,
 		req.DefaultSlackWebhook, req.DefaultVCSProvider, req.DefaultVCSBaseURL,
+		req.DefaultGotifyURL, req.DefaultGotifyToken, req.DefaultNtfyURL, req.DefaultNtfyToken,
 		req.ArtifactRetentionDays)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -114,12 +127,15 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		SELECT runner_default_image, runner_max_concurrent, runner_job_timeout_mins,
 		       runner_memory_limit, runner_cpu_limit,
 		       COALESCE(default_slack_webhook, ''), COALESCE(default_vcs_provider, 'github'),
-		       COALESCE(default_vcs_base_url, ''), COALESCE(artifact_retention_days, 0),
-		       updated_at
+		       COALESCE(default_vcs_base_url, ''),
+		       COALESCE(default_gotify_url, ''), COALESCE(default_gotify_token, ''),
+		       COALESCE(default_ntfy_url, ''), COALESCE(default_ntfy_token, ''),
+		       COALESCE(artifact_retention_days, 0), updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
 		&s.RunnerMemoryLimit, &s.RunnerCPULimit,
 		&s.DefaultSlackWebhook, &s.DefaultVCSProvider, &s.DefaultVCSBaseURL,
+		&s.DefaultGotifyURL, &s.DefaultGotifyToken, &s.DefaultNtfyURL, &s.DefaultNtfyToken,
 		&s.ArtifactRetentionDays, &s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
