@@ -25,6 +25,7 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 		GotifyToken  *string  `json:"gotify_token"`  // nil = no change; "" = clear
 		NtfyURL      *string  `json:"ntfy_url"`      // nil = no change; "" = clear
 		NtfyToken    *string  `json:"ntfy_token"`    // nil = no change; "" = clear
+		NotifyEmail  *string  `json:"notify_email"`  // nil = no change; "" = clear
 		NotifyEvents []string `json:"notify_events"` // nil = no change; [] = clear all
 	}
 	if err := c.Bind(&req); err != nil {
@@ -85,6 +86,8 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 				`UPDATE stacks SET ntfy_token_enc = $1 WHERE id = $2`, enc, stackID)
 		}
 	}
+
+	h.setNullableStr(ctx, stackID, "notify_email", req.NotifyEmail)
 
 	if req.NotifyEvents != nil {
 		_, _ = h.pool.Exec(ctx, `UPDATE stacks SET notify_events = $1 WHERE id = $2`, req.NotifyEvents, stackID)
@@ -164,4 +167,26 @@ func (h *Handler) TestNtfyNotification(c echo.Context) error {
 	return h.testNotifier(c, func() error {
 		return h.notifier.TestNtfy(c.Request().Context(), c.Param("id"))
 	})
+}
+
+// TestEmailNotification sends a test email to the address configured on the stack.
+func (h *Handler) TestEmailNotification(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var notifyEmail string
+	_ = h.pool.QueryRow(c.Request().Context(),
+		`SELECT COALESCE(notify_email,'') FROM stacks WHERE id = $1 AND org_id = $2`,
+		stackID, orgID,
+	).Scan(&notifyEmail)
+	if notifyEmail == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "no email address configured for this stack")
+	}
+	if h.notifier == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "notifier not configured")
+	}
+	if err := h.notifier.TestEmail(c.Request().Context(), notifyEmail); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
 }

@@ -64,6 +64,7 @@ type Stack struct {
 	HasGotifyToken       bool       `json:"has_gotify_token"`
 	NtfyURL              string     `json:"ntfy_url,omitempty"`
 	HasNtfyToken         bool       `json:"has_ntfy_token"`
+	NotifyEmail          string     `json:"notify_email,omitempty"`
 	NotifyEvents         []string   `json:"notify_events"`
 	VCSIntegrationID     *string    `json:"vcs_integration_id,omitempty"`
 	SecretIntegrationID  *string    `json:"secret_integration_id,omitempty"`
@@ -224,6 +225,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.vcs_token_enc IS NOT NULL, s.slack_webhook_enc IS NOT NULL,
 		       COALESCE(s.gotify_url,''), s.gotify_token_enc IS NOT NULL,
 		       COALESCE(s.ntfy_url,''), s.ntfy_token_enc IS NOT NULL,
+		       COALESCE(s.notify_email,''),
 		       COALESCE(s.notify_events, '{}'),
 		       s.vcs_integration_id, s.secret_integration_id,
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
@@ -234,7 +236,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
 		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL,
-		&s.HasVCSToken, &s.HasSlackWebhook, &s.GotifyURL, &s.HasGotifyToken, &s.NtfyURL, &s.HasNtfyToken, &s.NotifyEvents,
+		&s.HasVCSToken, &s.HasSlackWebhook, &s.GotifyURL, &s.HasGotifyToken, &s.NtfyURL, &s.HasNtfyToken,
+		&s.NotifyEmail, &s.NotifyEvents,
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
 		&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)

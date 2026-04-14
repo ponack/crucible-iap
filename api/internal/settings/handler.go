@@ -26,6 +26,12 @@ type Settings struct {
 	DefaultGotifyToken    string    `json:"default_gotify_token"`
 	DefaultNtfyURL        string    `json:"default_ntfy_url"`
 	DefaultNtfyToken      string    `json:"default_ntfy_token"`
+	SMTPHost              string    `json:"smtp_host"`
+	SMTPPort              int       `json:"smtp_port"`
+	SMTPUsername          string    `json:"smtp_username"`
+	SMTPPassword          string    `json:"smtp_password"` // write-only; returned as "" on GET
+	SMTPFrom              string    `json:"smtp_from"`
+	SMTPTLS               bool      `json:"smtp_tls"`
 	ArtifactRetentionDays int       `json:"artifact_retention_days"`
 	UpdatedAt             time.Time `json:"updated_at"`
 }
@@ -63,6 +69,12 @@ func (h *Handler) Update(c echo.Context) error {
 		DefaultGotifyToken    *string `json:"default_gotify_token"`
 		DefaultNtfyURL        *string `json:"default_ntfy_url"`
 		DefaultNtfyToken      *string `json:"default_ntfy_token"`
+		SMTPHost              *string `json:"smtp_host"`
+		SMTPPort              *int    `json:"smtp_port"`
+		SMTPUsername          *string `json:"smtp_username"`
+		SMTPPassword          *string `json:"smtp_password"`
+		SMTPFrom              *string `json:"smtp_from"`
+		SMTPTLS               *bool   `json:"smtp_tls"`
 		ArtifactRetentionDays *int    `json:"artifact_retention_days"`
 	}
 	if err := c.Bind(&req); err != nil {
@@ -100,13 +112,20 @@ func (h *Handler) Update(c echo.Context) error {
 			default_gotify_token      = COALESCE($10, default_gotify_token),
 			default_ntfy_url          = COALESCE($11, default_ntfy_url),
 			default_ntfy_token        = COALESCE($12, default_ntfy_token),
-			artifact_retention_days   = COALESCE($13, artifact_retention_days),
+			smtp_host                 = COALESCE($13, smtp_host),
+			smtp_port                 = COALESCE($14, smtp_port),
+			smtp_username             = COALESCE($15, smtp_username),
+			smtp_password             = COALESCE($16, smtp_password),
+			smtp_from                 = COALESCE($17, smtp_from),
+			smtp_tls                  = COALESCE($18, smtp_tls),
+			artifact_retention_days   = COALESCE($19, artifact_retention_days),
 			updated_at                = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
 		req.RunnerMemoryLimit, req.RunnerCPULimit,
 		req.DefaultSlackWebhook, req.DefaultVCSProvider, req.DefaultVCSBaseURL,
 		req.DefaultGotifyURL, req.DefaultGotifyToken, req.DefaultNtfyURL, req.DefaultNtfyToken,
+		req.SMTPHost, req.SMTPPort, req.SMTPUsername, req.SMTPPassword, req.SMTPFrom, req.SMTPTLS,
 		req.ArtifactRetentionDays)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -121,6 +140,8 @@ func (h *Handler) Update(c echo.Context) error {
 
 // Load fetches the settings row, using env-config values as fallback defaults
 // so existing deployments work before the migration has run.
+// The smtp_password field is intentionally omitted from the returned struct
+// (it returns an empty string) to avoid leaking credentials over the API.
 func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Settings, error) {
 	var s Settings
 	err := pool.QueryRow(ctx, `
@@ -130,12 +151,16 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(default_vcs_base_url, ''),
 		       COALESCE(default_gotify_url, ''), COALESCE(default_gotify_token, ''),
 		       COALESCE(default_ntfy_url, ''), COALESCE(default_ntfy_token, ''),
+		       COALESCE(smtp_host, ''), COALESCE(smtp_port, 587),
+		       COALESCE(smtp_username, ''), COALESCE(smtp_from, ''),
+		       COALESCE(smtp_tls, true),
 		       COALESCE(artifact_retention_days, 0), updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
 		&s.RunnerMemoryLimit, &s.RunnerCPULimit,
 		&s.DefaultSlackWebhook, &s.DefaultVCSProvider, &s.DefaultVCSBaseURL,
 		&s.DefaultGotifyURL, &s.DefaultGotifyToken, &s.DefaultNtfyURL, &s.DefaultNtfyToken,
+		&s.SMTPHost, &s.SMTPPort, &s.SMTPUsername, &s.SMTPFrom, &s.SMTPTLS,
 		&s.ArtifactRetentionDays, &s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
@@ -146,7 +171,21 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 			RunnerMemoryLimit:    cfg.RunnerMemoryLimit,
 			RunnerCPULimit:       cfg.RunnerCPULimit,
 			DefaultVCSProvider:   "github",
+			SMTPPort:             587,
+			SMTPTLS:              true,
 		}, nil
 	}
 	return &s, nil
+}
+
+// LoadSMTP fetches only the SMTP credentials including the password.
+// Used internally by the notifier — never exposed over the API.
+func LoadSMTP(ctx context.Context, pool *pgxpool.Pool) (host string, port int, username, password, from string, useTLS bool, err error) {
+	err = pool.QueryRow(ctx, `
+		SELECT COALESCE(smtp_host,''), COALESCE(smtp_port,587),
+		       COALESCE(smtp_username,''), COALESCE(smtp_password,''),
+		       COALESCE(smtp_from,''), COALESCE(smtp_tls,true)
+		FROM system_settings WHERE id = true
+	`).Scan(&host, &port, &username, &password, &from, &useTLS)
+	return
 }
