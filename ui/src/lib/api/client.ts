@@ -95,6 +95,7 @@ export interface Stack {
 	has_gotify_token: boolean;
 	ntfy_url?: string;
 	has_ntfy_token: boolean;
+	notify_email?: string;
 	notify_events: string[];
 	vcs_integration_id?: string;
 	secret_integration_id?: string;
@@ -259,7 +260,9 @@ export const stacks = {
 		testGotify: (stackID: string) =>
 			request<null>(`/stacks/${stackID}/notifications/test-gotify`, { method: 'POST' }),
 		testNtfy: (stackID: string) =>
-			request<null>(`/stacks/${stackID}/notifications/test-ntfy`, { method: 'POST' })
+			request<null>(`/stacks/${stackID}/notifications/test-ntfy`, { method: 'POST' }),
+		testEmail: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/notifications/test-email`, { method: 'POST' })
 	},
 
 	integrations: {
@@ -586,6 +589,12 @@ export interface SystemSettings {
 	default_gotify_token: string;
 	default_ntfy_url: string;
 	default_ntfy_token: string;
+	smtp_host: string;
+	smtp_port: number;
+	smtp_username: string;
+	smtp_password: string; // write-only — API always returns ''
+	smtp_from: string;
+	smtp_tls: boolean;
 	artifact_retention_days: number;
 	updated_at: string;
 }

@@ -59,6 +59,7 @@
 	let notifGotifyToken = $state('');
 	let notifNtfyURL = $state('');
 	let notifNtfyToken = $state('');
+	let notifEmail = $state('');
 	let notifEvents = $state<string[]>([]);
 	let savingNotif = $state(false);
 	let notifSaved = $state(false);
@@ -68,6 +69,8 @@
 	let gotifyTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 	let testingNtfy = $state(false);
 	let ntfyTestResult = $state<{ ok: boolean; msg: string } | null>(null);
+	let testingEmail = $state(false);
+	let emailTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 
 	// Org integrations (for assignment to this stack)
 	let orgIntegrations = $state<Integration[]>([]);
@@ -192,6 +195,7 @@
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
 		notifNtfyURL = stack.ntfy_url ?? '';
+		notifEmail = stack.notify_email ?? '';
 	}
 
 	async function saveEdit(e: SubmitEvent) {
@@ -322,7 +326,7 @@
 		savingNotif = true;
 		notifSaved = false;
 		try {
-			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; gotify_url?: string; gotify_token?: string; ntfy_url?: string; ntfy_token?: string; notify_events: string[] } = {
+			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; gotify_url?: string; gotify_token?: string; ntfy_url?: string; ntfy_token?: string; notify_email?: string; notify_events: string[] } = {
 				notify_events: notifEvents
 			};
 			if (notifVCSProvider) data.vcs_provider = notifVCSProvider;
@@ -334,6 +338,7 @@
 			if (notifGotifyToken !== '') data.gotify_token = notifGotifyToken;
 			data.ntfy_url = notifNtfyURL; // allow clearing
 			if (notifNtfyToken !== '') data.ntfy_token = notifNtfyToken;
+			data.notify_email = notifEmail; // allow clearing
 			await stacks.notifications.update(stackID, data);
 			notifVCSToken = '';
 			notifSlackWebhook = '';
@@ -384,6 +389,19 @@
 			ntfyTestResult = { ok: false, msg: (e as Error).message };
 		} finally {
 			testingNtfy = false;
+		}
+	}
+
+	async function testEmail() {
+		testingEmail = true;
+		emailTestResult = null;
+		try {
+			await stacks.notifications.testEmail(stackID);
+			emailTestResult = { ok: true, msg: 'Test email sent — check your inbox.' };
+		} catch (e) {
+			emailTestResult = { ok: false, msg: (e as Error).message };
+		} finally {
+			testingEmail = false;
 		}
 	}
 
@@ -1116,7 +1134,16 @@
 			</div>
 
 			<div class="space-y-1.5">
-				<p class="text-xs text-zinc-400">Events to notify on (Slack + Gotify + ntfy)</p>
+				<label class="field-label" for="notif-email">Email address(es)</label>
+				<input id="notif-email" type="email" class="field-input"
+					bind:value={notifEmail}
+					placeholder="alerts@example.com"
+					multiple />
+				<p class="text-xs text-zinc-600">Separate multiple addresses with commas. Requires SMTP configured in Settings → Notifications.</p>
+			</div>
+
+			<div class="space-y-1.5">
+				<p class="text-xs text-zinc-400">Events to notify on (Slack + Gotify + ntfy + email)</p>
 				<div class="flex gap-4 flex-wrap">
 					{#each notifyEventOptions as opt}
 						<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
@@ -1158,6 +1185,12 @@
 						{testingNtfy ? 'Sending…' : 'Test ntfy'}
 					</button>
 				{/if}
+				{#if notifEmail}
+					<button type="button" onclick={testEmail} disabled={testingEmail}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						{testingEmail ? 'Sending…' : 'Test email'}
+					</button>
+				{/if}
 				{#if notifSaved}
 					<span class="text-xs text-green-400">Saved.</span>
 				{/if}
@@ -1174,6 +1207,11 @@
 				{#if ntfyTestResult}
 					<span class="text-xs {ntfyTestResult.ok ? 'text-green-400' : 'text-red-400'}">
 						{ntfyTestResult.msg}
+					</span>
+				{/if}
+				{#if emailTestResult}
+					<span class="text-xs {emailTestResult.ok ? 'text-green-400' : 'text-red-400'}">
+						{emailTestResult.msg}
 					</span>
 				{/if}
 			</div>

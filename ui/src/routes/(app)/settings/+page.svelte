@@ -13,12 +13,6 @@
 	let runnerSaved = $state(false);
 	let runnerError = $state<string | null>(null);
 
-	// Notification defaults
-	let notifDefaultsForm = $state({ default_slack_webhook: '', default_vcs_provider: 'github', default_vcs_base_url: '', default_gotify_url: '', default_gotify_token: '', default_ntfy_url: '', default_ntfy_token: '' });
-	let savingNotifDefaults = $state(false);
-	let notifDefaultsSaved = $state(false);
-	let notifDefaultsError = $state<string | null>(null);
-
 	// Retention settings
 	let retentionForm = $state({ artifact_retention_days: 0 });
 	let savingRetention = $state(false);
@@ -35,15 +29,6 @@
 				runner_job_timeout_mins: s.runner_job_timeout_mins,
 				runner_memory_limit: s.runner_memory_limit,
 				runner_cpu_limit: s.runner_cpu_limit
-			};
-			notifDefaultsForm = {
-				default_slack_webhook: s.default_slack_webhook ?? '',
-				default_vcs_provider: s.default_vcs_provider || 'github',
-				default_vcs_base_url: s.default_vcs_base_url ?? '',
-				default_gotify_url: s.default_gotify_url ?? '',
-				default_gotify_token: s.default_gotify_token ?? '',
-				default_ntfy_url: s.default_ntfy_url ?? '',
-				default_ntfy_token: s.default_ntfy_token ?? ''
 			};
 			retentionForm = { artifact_retention_days: s.artifact_retention_days ?? 0 };
 		}).catch(() => {});
@@ -63,22 +48,6 @@
 			runnerError = (err as Error).message;
 		} finally {
 			savingRunner = false;
-		}
-	}
-
-	async function saveNotifDefaults(e: SubmitEvent) {
-		e.preventDefault();
-		savingNotifDefaults = true;
-		notifDefaultsSaved = false;
-		notifDefaultsError = null;
-		try {
-			await system.settings.update(notifDefaultsForm);
-			notifDefaultsSaved = true;
-			setTimeout(() => (notifDefaultsSaved = false), 3000);
-		} catch (err) {
-			notifDefaultsError = (err as Error).message;
-		} finally {
-			savingNotifDefaults = false;
 		}
 	}
 
@@ -131,6 +100,15 @@
 		</div>
 	</div>
 
+	<!-- Notification settings moved to dedicated tab -->
+	<div class="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-4 flex items-center justify-between">
+		<div>
+			<p class="text-sm font-medium text-white">Notifications</p>
+			<p class="text-xs text-zinc-500 mt-0.5">Configure Slack, Gotify, ntfy, email (SMTP), and VCS defaults.</p>
+		</div>
+		<a href="/settings/notifications" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Configure →</a>
+	</div>
+
 	<!-- Runner settings -->
 	{#if runnerSettings}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
@@ -178,92 +156,6 @@
 						{savingRunner ? 'Saving…' : 'Save runner settings'}
 					</button>
 					{#if runnerSaved}
-						<span class="text-xs text-green-400">Saved.</span>
-					{/if}
-				</div>
-			</form>
-		</div>
-
-		<!-- Notification defaults -->
-		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
-			<div class="px-6 py-4 border-b border-zinc-800">
-				<p class="text-xs text-zinc-500 uppercase tracking-widest">Notification defaults</p>
-				<p class="text-xs text-zinc-600 mt-1">Pre-fill new stacks' notification settings. Stacks can override these values individually.</p>
-			</div>
-			<form onsubmit={saveNotifDefaults} class="px-6 py-5 space-y-4">
-				{#if notifDefaultsError}
-					<div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">{notifDefaultsError}</div>
-				{/if}
-				<div class="space-y-1.5">
-					<label class="field-label" for="default-slack">Default Slack webhook URL</label>
-					<input id="default-slack" class="field-input font-mono text-sm" type="password"
-						bind:value={notifDefaultsForm.default_slack_webhook}
-						placeholder="https://hooks.slack.com/services/…"
-						autocomplete="new-password" />
-					<p class="text-xs text-zinc-600">New stacks will inherit this webhook. Leave blank to require per-stack configuration.</p>
-				</div>
-				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-1.5">
-						<label class="field-label" for="default-gotify-url">Default Gotify server URL</label>
-						<input id="default-gotify-url" class="field-input font-mono text-sm"
-							bind:value={notifDefaultsForm.default_gotify_url}
-							placeholder="https://gotify.example.com" />
-					</div>
-					<div class="space-y-1.5">
-						<label class="field-label" for="default-gotify-token">Default Gotify app token</label>
-						<input id="default-gotify-token" class="field-input font-mono text-sm" type="password"
-							bind:value={notifDefaultsForm.default_gotify_token}
-							placeholder="App token from Gotify"
-							autocomplete="new-password" />
-					</div>
-				</div>
-				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-1.5">
-						<label class="field-label" for="default-ntfy-url">Default ntfy topic URL</label>
-						<input id="default-ntfy-url" class="field-input font-mono text-sm"
-							bind:value={notifDefaultsForm.default_ntfy_url}
-							placeholder="https://ntfy.sh/my-topic" />
-					</div>
-					<div class="space-y-1.5">
-						<label class="field-label" for="default-ntfy-token">
-							Default ntfy access token
-							<span class="text-zinc-600">(optional)</span>
-						</label>
-						<input id="default-ntfy-token" class="field-input font-mono text-sm" type="password"
-							bind:value={notifDefaultsForm.default_ntfy_token}
-							placeholder="tk_… (for private topics)"
-							autocomplete="new-password" />
-					</div>
-				</div>
-				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-1.5">
-						<label class="field-label" for="default-vcs-provider">Default VCS provider</label>
-						<select id="default-vcs-provider" class="field-input" bind:value={notifDefaultsForm.default_vcs_provider}>
-							<option value="github">GitHub</option>
-							<option value="gitlab">GitLab</option>
-							<option value="gitea">Gitea / Gogs</option>
-						</select>
-					</div>
-					{#if notifDefaultsForm.default_vcs_provider !== 'github'}
-						<div class="space-y-1.5">
-							<label class="field-label" for="default-vcs-base-url">
-								Default instance base URL
-								{#if notifDefaultsForm.default_vcs_provider === 'gitlab'}
-									<span class="text-zinc-600"> (blank = gitlab.com)</span>
-								{/if}
-							</label>
-							<input id="default-vcs-base-url" class="field-input font-mono text-sm"
-								bind:value={notifDefaultsForm.default_vcs_base_url}
-								placeholder="https://gitlab.example.com" />
-						</div>
-					{/if}
-				</div>
-				<div class="flex items-center gap-3">
-					<button type="submit" disabled={savingNotifDefaults}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
-						{savingNotifDefaults ? 'Saving…' : 'Save notification defaults'}
-					</button>
-					{#if notifDefaultsSaved}
 						<span class="text-xs text-green-400">Saved.</span>
 					{/if}
 				</div>

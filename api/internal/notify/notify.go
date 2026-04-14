@@ -7,16 +7,19 @@ package notify
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/smtp"
 	"net/url"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/vault"
 )
 
@@ -59,6 +62,7 @@ type runData struct {
 	gotifyTokenEnc  []byte
 	ntfyURL         string
 	ntfyTokenEnc    []byte
+	notifyEmail     string
 	notifyEvents    []string
 }
 
@@ -73,6 +77,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		       s.vcs_token_enc, s.slack_webhook_enc,
 		       COALESCE(s.gotify_url,''), s.gotify_token_enc,
 		       COALESCE(s.ntfy_url,''), s.ntfy_token_enc,
+		       COALESCE(s.notify_email,''),
 		       s.notify_events
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
@@ -86,6 +91,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.vcsTokenEnc, &d.slackWebhookEnc,
 		&d.gotifyURL, &d.gotifyTokenEnc,
 		&d.ntfyURL, &d.ntfyTokenEnc,
+		&d.notifyEmail,
 		&d.notifyEvents,
 	)
 	return &d, err
@@ -150,6 +156,10 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 			n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
 				d.stackName+" — plan ready", n.planNtfyMessage(d), "warning")
 		}
+		if d.notifyEmail != "" {
+			n.sendEmailNotification(ctx, d.notifyEmail, d.stackName+" — plan ready",
+				n.planEmailBody(d))
+		}
 	}
 }
 
@@ -203,6 +213,9 @@ func (n *Notifier) sendRunPushNotifications(ctx context.Context, d *runData, suc
 		}
 		n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
 			title, n.runNtfyMessage(d, success), priority)
+	}
+	if d.notifyEmail != "" {
+		n.sendEmailNotification(ctx, d.notifyEmail, title, n.runEmailBody(d, success))
 	}
 }
 
@@ -588,6 +601,145 @@ func (n *Notifier) runNtfyMessage(d *runData, success bool) string {
 		status = "failed"
 	}
 	return fmt.Sprintf("Run %s\n%s", status, n.runURL(d.id))
+}
+
+// ── Email ─────────────────────────────────────────────────────────────────────
+
+// sendEmailNotification loads SMTP config and sends an email. Best-effort —
+// logs on failure, never returns an error to the caller.
+func (n *Notifier) sendEmailNotification(ctx context.Context, to, subject, body string) {
+	host, port, username, password, from, useTLS, err := settings.LoadSMTP(ctx, n.pool)
+	if err != nil || host == "" {
+		return
+	}
+	if from == "" {
+		from = "crucible@" + host
+	}
+	// Deliver to each address in a comma-separated list.
+	for _, addr := range strings.Split(to, ",") {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		if err := n.emailPost(ctx, host, port, username, password, from, addr, subject, body, useTLS); err != nil {
+			slog.Warn("notify: email send failed", "to", addr, "err", err)
+		}
+	}
+}
+
+// emailPost sends a plain-text email via SMTP.
+// Port 465 uses implicit TLS (SMTPS); other ports use STARTTLS or plaintext.
+func (n *Notifier) emailPost(_ context.Context, host string, port int, username, password, from, to, subject, body string, useTLS bool) error {
+	msg := buildEmailMsg(from, to, subject, body)
+	addr := fmt.Sprintf("%s:%d", host, port)
+	switch {
+	case port == 465:
+		return smtpsSend(addr, host, username, password, from, to, msg)
+	case !useTLS:
+		return smtpPlainSend(addr, host, username, password, from, to, msg)
+	default:
+		var auth smtp.Auth
+		if username != "" {
+			auth = smtp.PlainAuth("", username, password, host)
+		}
+		return smtp.SendMail(addr, auth, from, []string{to}, msg)
+	}
+}
+
+// buildEmailMsg assembles a minimal RFC 5322 message.
+func buildEmailMsg(from, to, subject, body string) []byte {
+	return []byte("From: " + from + "\r\n" +
+		"To: " + to + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"Content-Type: text/plain; charset=utf-8\r\n" +
+		"\r\n" +
+		body)
+}
+
+// smtpsSend delivers msg using implicit TLS (port 465 / SMTPS).
+func smtpsSend(addr, host, username, password, from, to string, msg []byte) error {
+	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host})
+	if err != nil {
+		return fmt.Errorf("smtp tls dial: %w", err)
+	}
+	defer conn.Close()
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return fmt.Errorf("smtp client: %w", err)
+	}
+	defer c.Close()
+	if username != "" {
+		if err := c.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+	return smtpSendData(c, from, to, msg)
+}
+
+// smtpPlainSend delivers msg without TLS (port 25 relays, test servers).
+func smtpPlainSend(addr, host, username, password, from, to string, msg []byte) error {
+	c, err := smtp.Dial(addr)
+	if err != nil {
+		return fmt.Errorf("smtp dial: %w", err)
+	}
+	defer c.Close()
+	if username != "" {
+		if err := c.Auth(smtp.PlainAuth("", username, password, host)); err != nil {
+			return fmt.Errorf("smtp auth: %w", err)
+		}
+	}
+	return smtpSendData(c, from, to, msg)
+}
+
+// smtpSendData issues MAIL FROM / RCPT TO / DATA on an already-authenticated client.
+func smtpSendData(c *smtp.Client, from, to string, msg []byte) error {
+	if err := c.Mail(from); err != nil {
+		return err
+	}
+	if err := c.Rcpt(to); err != nil {
+		return err
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	return w.Close()
+}
+
+// TestEmail sends a test email to verify SMTP configuration is working.
+func (n *Notifier) TestEmail(ctx context.Context, to string) error {
+	host, port, username, password, from, useTLS, err := settings.LoadSMTP(ctx, n.pool)
+	if err != nil || host == "" {
+		return fmt.Errorf("SMTP is not configured — set the host in Settings → Notifications")
+	}
+	if from == "" {
+		from = "crucible@" + host
+	}
+	return n.emailPost(ctx, host, port, username, password, from, to,
+		"Crucible test notification",
+		"Your Crucible email notifications are working correctly.",
+		useTLS)
+}
+
+func (n *Notifier) planEmailBody(d *runData) string {
+	add, change, destroy := derefInt(d.planAdd), derefInt(d.planChange), derefInt(d.planDestroy)
+	body := fmt.Sprintf("Stack: %s\nPlan: +%d ~%d -%d\n\nView run: %s",
+		d.stackName, add, change, destroy, n.runURL(d.id))
+	if d.runType == "tracked" {
+		body += "\n\nApproval required before apply."
+	}
+	return body
+}
+
+func (n *Notifier) runEmailBody(d *runData, success bool) string {
+	status := "succeeded"
+	if !success {
+		status = "failed"
+	}
+	return fmt.Sprintf("Stack: %s\nStatus: %s\n\nView run: %s", d.stackName, status, n.runURL(d.id))
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

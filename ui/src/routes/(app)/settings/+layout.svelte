@@ -5,6 +5,7 @@
 
 	const navItems = [
 		{ label: 'General', href: '/settings' },
+		{ label: 'Notifications', href: '/settings/notifications' },
 		{ label: 'Members', href: '/settings/members' },
 		{ label: 'Integrations', href: '/settings/integrations' },
 		{ label: 'API Tokens', href: '/settings/api-tokens' }
