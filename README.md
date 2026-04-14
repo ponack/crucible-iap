@@ -49,13 +49,14 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 ### Observability and operations
 
 - **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; metrics internal-only by default
-- **Slack notifications** — per-stack event subscriptions: plan complete, run succeeded, run failed
+- **Push notifications** — per-stack Slack webhooks, Gotify, and ntfy event subscriptions: plan complete, run succeeded, run failed; topic URL + optional Bearer token for ntfy; URL + encrypted app token for Gotify
 - **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) for debugging missed or skipped events
 - **Structured health endpoint** — `/health` reports DB status, version, and uptime
 - **Automatic migrations** — schema migrations run on startup; `migrate` subcommand available for manual control
 
 ### Deployment
 
+- **Stack templates** — save a stack configuration as a reusable template (tool, repo, branch, project root, policies, auto-apply, drift settings); new stacks can be pre-filled from a template in one click
 - **Single `docker compose up`** — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
 - **Separated API and Worker** — the HTTP API server and the Docker job runner run as distinct containers; the API has no Docker socket, the worker has no public ports
 - **Zero-config TLS** — Let's Encrypt via Caddy; bring your own cert or reverse proxy with the `external-proxy` profile
@@ -305,6 +306,8 @@ cd api && go test -race ./...
 - [x] Stack-level environment variables — AES-256-GCM encrypted at rest, injected into runner containers
 - [x] PR/MR feedback — plan summary comments and commit status checks on GitHub and GitLab
 - [x] Slack notifications — configurable per-stack event subscriptions
+- [x] Gotify notifications — per-stack Gotify server URL + encrypted app token; fires on plan complete, run succeeded/failed
+- [x] ntfy notifications — per-stack ntfy topic URL + optional Bearer token; fires on plan complete, run succeeded/failed
 - [x] External secret store integrations — AWS Secrets Manager (Sig v4, no SDK), HashiCorp Vault KV v2 (token + AppRole), Bitwarden Secrets Manager (E2E decryption), Vaultwarden (self-hosted; PBKDF2/Argon2id + AES-CBC vault crypto)
 - [x] Multi-cloud state backend options — S3 / S3-compatible (Sig v4), GCS (JWT + OAuth2), Azure Blob Storage (SharedKeyLite)
 - [x] Gitea and Gogs webhook support — modern X-Hub-Signature-256 compat + legacy X-Gitea-Signature fallback
@@ -317,7 +320,7 @@ cd api && go test -race ./...
 - [ ] External worker agents — additional runner nodes that connect to the primary instance, allowing job execution capacity to be scaled out independently
 - [ ] Stack dependency graph — first-class upstream/downstream relationships with automatic downstream triggers after a successful apply
 - [x] Variable sets — define a shared group of env vars once and attach to multiple stacks; eliminates repetition across similar stacks
-- [ ] Stack templates / blueprints — create new stacks pre-filled from a saved template (repo, tool, policies, env var schema)
+- [x] Stack templates / blueprints — create new stacks pre-filled from a saved template (tool, repo, branch, project root, auto-apply, drift settings)
 - [ ] Manual run with variable overrides — trigger a one-off run with temporary env var overrides without changing stack config
 - [x] Service account API tokens — machine-readable tokens not tied to a user session, for CI pipelines and automation
 - [x] CI linting — gofmt, go vet, gocyclo, ineffassign, misspell, staticcheck run on every PR; `make lint` target for local use
