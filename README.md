@@ -48,7 +48,8 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 ### Observability and operations
 
-- **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; metrics internal-only by default
+- **Monitoring page** — Grafana panels embedded directly in the Crucible UI at `/monitoring`; all five dashboard panels (HTTP request rate, error rate, latency p50/p95/p99, run completions, queue depth) rendered inline with a 30 s auto-refresh; link to the full Grafana dashboard for admin use
+- **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; Grafana served at `{BASE_URL}/grafana`
 - **Push notifications** — per-stack Slack webhooks, Gotify, and ntfy event subscriptions: plan complete, run succeeded, run failed; topic URL + optional Bearer token for ntfy; URL + encrypted app token for Gotify
 - **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) for debugging missed or skipped events
 - **Structured health endpoint** — `/health` reports DB status, version, and uptime
@@ -300,6 +301,8 @@ cd api && go test -race ./...
 - [x] Settings UI — member management, role changes, invite links
 - [x] Automatic migrations on startup
 - [x] Prometheus metrics + Grafana dashboards (built-in, served at `/grafana`)
+- [x] Monitoring page — Grafana panels embedded in the Crucible UI; no separate Grafana tab needed for day-to-day observability
+- [x] Org-level Gotify and ntfy defaults — configure default push notification endpoints in Settings; new stacks inherit them
 - [x] Structured `/health` endpoint (DB status, version, uptime)
 - [x] Policy management UI + drift detection scheduling
 - [x] Operator documentation + security hardening guide
