@@ -51,10 +51,15 @@ crucible.example.com {
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         X-Content-Type-Options    "nosniff"
-        X-Frame-Options           "DENY"
         Referrer-Policy           "strict-origin-when-cross-origin"
         -Server
     }
+
+    # X-Frame-Options must not apply to /grafana/* — the /monitoring page
+    # embeds Grafana panels as iframes and the browser will refuse to render
+    # them if this header is present on the Grafana responses.
+    @notgrafana not path /grafana/*
+    header @notgrafana X-Frame-Options "DENY"
 
     log {
         output stderr

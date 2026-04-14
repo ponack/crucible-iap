@@ -28,6 +28,20 @@ different host and needs to reach the container over the network.
 | `traefik.yml` | Traefik v3 (file provider or Docker labels) |
 | `caddy-standalone.Caddyfile` | Caddy running outside Docker Compose |
 
+## Important: Grafana iframe embedding
+
+The `/monitoring` page embeds Grafana panels as iframes loaded from `/grafana/*`.
+If your proxy sets `X-Frame-Options: DENY` or `Content-Security-Policy: frame-ancestors 'none'` globally, the browser will refuse to render the panels.
+
+Apply those headers only to non-Grafana routes. In Caddy:
+
+```caddy
+@notgrafana not path /grafana/*
+header @notgrafana X-Frame-Options "DENY"
+```
+
+In nginx, scope the header to the non-Grafana location blocks rather than the server block.
+
 ## Important: SSE log streaming
 
 The live run log endpoint (`GET /api/v1/runs/:id/logs`) uses Server-Sent Events.
