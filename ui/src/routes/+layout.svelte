@@ -58,6 +58,7 @@
 				<a href="/variable-sets" class={navClass('/variable-sets')}>Variable Sets</a>
 				<a href="/stack-templates" class={navClass('/stack-templates')}>Templates</a>
 				<a href="/audit" class={navClass('/audit')}>Audit Log</a>
+				<a href="/monitoring" class={navClass('/monitoring')}>Monitoring</a>
 				<a href="/settings" class={navClass('/settings')}>Settings</a>
 			</nav>
 			<div class="px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500 truncate" title={auth.user?.email}>
