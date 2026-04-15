@@ -240,6 +240,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// Stack state lock management
 	api.DELETE("/stacks/:id/lock", stateHandler.ForceUnlock, admin)
 
+	// Stack state resource explorer
+	api.GET("/stacks/:id/state/resources", stateHandler.ListResources)
+
 	// Stack external state backend (S3, GCS, Azure Blob)
 	api.GET("/stacks/:id/state-backend", stackHandler.GetStateBackend, member)
 	api.PUT("/stacks/:id/state-backend", stackHandler.UpsertStateBackend, member)

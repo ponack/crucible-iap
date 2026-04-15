@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const stackID = $derived(page.params.id as string);
@@ -103,6 +103,10 @@
 	let addingRemoteSourceError = $state<string | null>(null);
 	let allStacksList = $state<{ id: string; name: string }[]>([]);
 
+	// Resource explorer
+	let stateResources = $state<StateResource[]>([]);
+	let resourceFilter = $state('');
+
 	// State backend
 	let stateBackendProvider = $state<StateBackendProvider | ''>('');
 	let savingStateBackend = $state(false);
@@ -177,6 +181,9 @@
 		} finally {
 			loadingDeliveries = false;
 		}
+
+		// Load state resources independently — no state yet is normal.
+		stacks.state.resources(stackID).then(r => (stateResources = r)).catch(() => {});
 	});
 
 	function resetForm() {
@@ -797,6 +804,63 @@
 			</div>
 		{/each}
 	</div>
+
+	<!-- Resource explorer -->
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Resources</h2>
+			{#if stateResources.length > 0}
+				<span class="text-xs text-zinc-600">{stateResources.length} resource{stateResources.length === 1 ? '' : 's'}</span>
+			{/if}
+		</div>
+		{#if stateResources.length === 0}
+			<p class="text-zinc-600 text-sm">No state yet — trigger a run to populate resources.</p>
+		{:else}
+			{#if stateResources.length > 5}
+				<input
+					class="field-input w-64"
+					placeholder="Filter by type or name…"
+					bind:value={resourceFilter}
+				/>
+			{/if}
+			{@const filtered = stateResources.filter(r =>
+				!resourceFilter ||
+				r.type.includes(resourceFilter) ||
+				r.address.includes(resourceFilter)
+			)}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Address</th>
+							<th class="text-left px-4 py-2">Type</th>
+							<th class="text-left px-4 py-2">Mode</th>
+							<th class="text-right px-4 py-2">Instances</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each filtered as r (r.address)}
+							<tr>
+								<td class="px-4 py-2.5 font-mono text-xs text-zinc-200">{r.address}</td>
+								<td class="px-4 py-2.5 font-mono text-xs text-zinc-400">{r.type}</td>
+								<td class="px-4 py-2.5">
+									<span class="text-xs {r.mode === 'managed' ? 'text-green-400' : 'text-zinc-500'}">
+										{r.mode}
+									</span>
+								</td>
+								<td class="px-4 py-2.5 text-right text-zinc-400 text-xs">{r.instance_count}</td>
+							</tr>
+						{/each}
+						{#if filtered.length === 0}
+							<tr>
+								<td colspan="4" class="px-4 py-4 text-center text-zinc-600 text-sm">No resources match filter.</td>
+							</tr>
+						{/if}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
 
 	<!-- Policies -->
 	<section class="space-y-3">

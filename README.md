@@ -331,7 +331,7 @@ cd api && go test -race ./...
 - [x] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
 - [ ] Terraform module registry — private module registry backed by MinIO for internal module distribution without an external registry dependency
-- [ ] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
+- [x] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
 - [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
 - [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [ ] Fine-grained RBAC — resource-level permissions (per-stack viewer/approver roles) rather than a single org-wide role
