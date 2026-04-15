@@ -310,7 +310,8 @@ export const stacks = {
 			request<null>(`/stacks/${stackID}/remote-state-sources/${sourceID}`, { method: 'DELETE' })
 	},
 	state: {
-		resources: (stackID: string) => request<StateResource[]>(`/stacks/${stackID}/state/resources`)
+		resources: (stackID: string) => request<StateResource[]>(`/stacks/${stackID}/state/resources`),
+		forceUnlock: (stackID: string) => request<{ cleared_lock_id: string }>(`/stacks/${stackID}/lock`, { method: 'DELETE' })
 	}
 };
 
