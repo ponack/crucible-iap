@@ -114,19 +114,34 @@ func (h *Handler) Login(c echo.Context) error {
 		return err
 	}
 
+	pkceVerifier, err := randomString(32)
+	if err != nil {
+		return err
+	}
+
+	secure := !h.cfg.IsDev()
 	c.SetCookie(&http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
-		Secure:   !h.cfg.IsDev(),
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	c.SetCookie(&http.Cookie{
+		Name:     "oauth_pkce",
+		Value:    pkceVerifier,
+		Path:     "/",
+		MaxAge:   300,
+		HttpOnly: true,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 
 	url := h.oauth2.AuthCodeURL(state,
 		gooidc.Nonce(nonce),
-		oauth2.S256ChallengeOption(nonce), // PKCE
+		oauth2.S256ChallengeOption(pkceVerifier),
 	)
 	return c.Redirect(http.StatusTemporaryRedirect, url)
 }
@@ -143,12 +158,18 @@ func (h *Handler) Callback(c echo.Context) error {
 	}
 	c.SetCookie(&http.Cookie{Name: "oauth_state", MaxAge: -1, Path: "/"})
 
+	pkceCookie, err := c.Cookie("oauth_pkce")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing pkce cookie")
+	}
+	c.SetCookie(&http.Cookie{Name: "oauth_pkce", MaxAge: -1, Path: "/"})
+
 	code := c.QueryParam("code")
 	if code == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "missing code")
 	}
 
-	token, err := h.oauth2.Exchange(c.Request().Context(), code)
+	token, err := h.oauth2.Exchange(c.Request().Context(), code, oauth2.VerifierOption(pkceCookie.Value))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, "token exchange failed")
 	}
@@ -193,7 +214,7 @@ func (h *Handler) Callback(c echo.Context) error {
 	if uiBase == "" {
 		uiBase = h.cfg.BaseURL
 	}
-	dest := fmt.Sprintf("%s/auth/callback?access_token=%s&refresh_token=%s",
+	dest := fmt.Sprintf("%s/callback?access_token=%s&refresh_token=%s",
 		uiBase, accessToken, refreshToken)
 	return c.Redirect(http.StatusTemporaryRedirect, dest)
 }
