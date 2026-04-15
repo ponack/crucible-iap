@@ -118,7 +118,7 @@ variable "vm_memory" {
 
 variable "vm_storage" {
   type    = string
-  default = "local-lvm"
+  default = "local"
 }
 ```
 
@@ -154,7 +154,7 @@ resource "proxmox_virtual_environment_vm" "test_vm" {
   disk {
     datastore_id = var.vm_storage
     interface    = "scsi0"
-    size         = 20
+    size         = 40  # must be >= the template disk size; OpenTofu cannot shrink a cloned disk
   }
 
   network_device {
@@ -178,7 +178,10 @@ resource "proxmox_virtual_environment_vm" "test_vm" {
   }
 
   agent {
-    enabled = true
+    # Set to true only if qemu-guest-agent is installed and running inside the template.
+    # If enabled = true and the agent is absent, the provider waits indefinitely and
+    # the run will not complete until Crucible's job timeout kills it (default 60 min).
+    enabled = false
   }
 
   lifecycle {
@@ -225,7 +228,7 @@ vm_name        = "crucible-test-vm"
 vm_template_id = 9000   # numeric VMID of the ubuntu-24.04 template
 vm_cores       = 2
 vm_memory      = 2048
-vm_storage     = "local-lvm"
+vm_storage     = "local"   # check Datacenter → Storage in Proxmox UI for the correct pool name
 ```
 
 Push all files to your repository before continuing.
@@ -260,7 +263,7 @@ Before configuring secrets, create a policy so it can be attached immediately.
 ```rego
 package crucible
 
-plan := result {
+plan := result if {
   result := {
     "deny":    deny_msgs,
     "warn":    warn_msgs,
@@ -269,7 +272,7 @@ plan := result {
 }
 
 # Block unexpected deletions of non-VM resources
-deny_msgs[msg] {
+deny_msgs contains msg if {
   r := input.resource_changes[_]
   r.change.actions[_] == "delete"
   r.type != "proxmox_virtual_environment_vm"
@@ -277,7 +280,7 @@ deny_msgs[msg] {
 }
 
 # Warn on large change sets
-warn_msgs[msg] {
+warn_msgs contains msg if {
   count(input.resource_changes) > 3
   msg := sprintf("this plan changes %d resources — confirm carefully", [count(input.resource_changes)])
 }
@@ -384,3 +387,48 @@ The run lifecycle is:
 > **Note:** The `proxmox-safety` policy blocks unexpected deletions of non-VM resources, but explicitly allows `delete` on `proxmox_virtual_environment_vm`. A destroy run on this stack will pass policy evaluation.
 
 Destroy runs always require explicit confirmation — auto-apply is never used, even if the stack has auto-apply enabled.
+
+---
+
+## Troubleshooting
+
+### "Error acquiring the state lock"
+
+A runner container that was killed mid-operation (OOM, host restart, network drop, job timeout) may leave a lock in Crucible's database without releasing it. OpenTofu cannot acquire the lock on the next run.
+
+**Fix:** Stack detail page → **Force unlock** button (admin only). This clears the lock row from Crucible's database. Only use this after confirming the run that held the lock has fully stopped — check `docker ps | grep crucible-run` to verify no runner containers are still alive.
+
+If the Force unlock button reports "no lock held" but runs still fail, check for stale River retry jobs accumulating in the queue — many failed runs competing for the lock will each acquire it briefly then release it, making the table appear empty by the time you check. Clear stuck retry jobs:
+
+```bash
+docker compose exec postgres psql -U crucible -c \
+  "UPDATE river_job SET state = 'discarded', finalized_at = now() \
+   WHERE state = 'retryable';"
+```
+
+Then trigger a fresh Plan run.
+
+### Run hangs for 60 minutes then fails with io-error in Proxmox
+
+`agent { enabled = true }` in your `main.tf` causes the `bpg/proxmox` provider to wait indefinitely for the QEMU guest agent to respond after VM creation. If your template does not have `qemu-guest-agent` installed and running, this wait never completes.
+
+**Fix:** Set `agent { enabled = false }` unless your template has the agent installed. To add the agent to your template:
+
+```bash
+apt-get install -y qemu-guest-agent
+systemctl enable --now qemu-guest-agent
+```
+
+Then shut down the template VM and convert it back to a template in the Proxmox UI before re-enabling the agent in your OpenTofu config.
+
+### "disk resize failure: requested size is lower than current size"
+
+OpenTofu cannot shrink a cloned disk. The `size` value in the `disk` block must be **greater than or equal to** the template's disk size.
+
+**Fix:** Check the template's disk size in Proxmox UI (select the template → Hardware tab → Hard Disk) and set `size` in `main.tf` to at least that value.
+
+### Wrong storage pool name
+
+Proxmox storage pool names vary by installation. Common names are `local` (directory storage), `local-lvm` (LVM-thin), and `local-zfs` (ZFS). If the pool name in `vm_storage` doesn't match an existing pool, the apply will fail with `storage '...' does not exist`.
+
+**Fix:** Check **Datacenter → Storage** in the Proxmox UI for the correct pool name and update the `TF_VAR_vm_storage` env var on the Crucible stack (or the default in `variables.tf`).
