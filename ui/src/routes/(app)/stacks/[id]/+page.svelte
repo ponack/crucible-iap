@@ -42,6 +42,9 @@
 	let destroyConfirmName = $state('');
 	let triggeringDestroy = $state(false);
 
+	// Force unlock
+	let forcingUnlock = $state(false);
+
 	// Policy attachment
 	let attachingPolicy = $state('');
 
@@ -226,6 +229,19 @@
 			goto('/stacks');
 		} catch (e) {
 			alert((e as Error).message);
+		}
+	}
+
+	async function forceUnlock() {
+		if (!confirm('Force-unlock state? Only do this if the run that held the lock has already stopped.')) return;
+		forcingUnlock = true;
+		try {
+			await stacks.state.forceUnlock(stackID);
+			stateResources = await stacks.state.resources(stackID);
+		} catch (e) {
+			alert((e as Error).message);
+		} finally {
+			forcingUnlock = false;
 		}
 	}
 
@@ -666,6 +682,11 @@
 				</button>
 			{/if}
 			{#if auth.isAdmin}
+				<button onclick={forceUnlock} disabled={forcingUnlock}
+					class="border border-yellow-900 hover:border-yellow-700 text-yellow-500 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+					title="Clear a stuck state lock from a failed or cancelled run">
+					{forcingUnlock ? 'Unlocking…' : 'Force unlock'}
+				</button>
 				<button onclick={deleteStack}
 					class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
 					Delete
