@@ -98,6 +98,106 @@ func (h *Handler) Get(c echo.Context) error {
 	return c.Blob(http.StatusOK, "application/json", data)
 }
 
+// StateResource is a single resource entry extracted from Terraform state.
+type StateResource struct {
+	Address       string `json:"address"`
+	Type          string `json:"type"`
+	Name          string `json:"name"`
+	Module        string `json:"module,omitempty"`
+	Mode          string `json:"mode"`
+	InstanceCount int    `json:"instance_count"`
+}
+
+// ListResources parses the current state and returns the resource list.
+// GET /api/v1/stacks/:id/state/resources — JWT auth, any org member.
+func (h *Handler) ListResources(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+
+	var exists bool
+	if err := h.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)
+	`, stackID, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	data, err := h.readState(ctx, stackID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if data == nil {
+		return c.JSON(http.StatusOK, []StateResource{})
+	}
+
+	var raw struct {
+		Resources []struct {
+			Module    string `json:"module"`
+			Mode      string `json:"mode"`
+			Type      string `json:"type"`
+			Name      string `json:"name"`
+			Instances []any  `json:"instances"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to parse state")
+	}
+
+	out := make([]StateResource, 0, len(raw.Resources))
+	for _, r := range raw.Resources {
+		addr := r.Type + "." + r.Name
+		if r.Module != "" {
+			addr = r.Module + "." + addr
+		}
+		out = append(out, StateResource{
+			Address:       addr,
+			Type:          r.Type,
+			Name:          r.Name,
+			Module:        r.Module,
+			Mode:          r.Mode,
+			InstanceCount: len(r.Instances),
+		})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// readState loads raw state bytes from MinIO or the external backend.
+// Returns nil, nil when no state has been written yet.
+func (h *Handler) readState(ctx context.Context, stackID string) ([]byte, error) {
+	if b, err := h.resolveBackend(ctx, stackID); err != nil {
+		return nil, err
+	} else if b != nil {
+		rc, err := b.GetState(ctx, stackID)
+		if statebackend.IsNotFound(err) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		defer rc.Close()
+		return io.ReadAll(rc)
+	}
+
+	obj, err := h.storage.GetState(ctx, stackID)
+	if err != nil {
+		resp := minio.ToErrorResponse(err)
+		if resp.Code == "NoSuchKey" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer obj.Close()
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		resp := minio.ToErrorResponse(err)
+		if resp.Code == "NoSuchKey" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return data, nil
+}
+
 // POST /api/v1/state/:stackID — update state (caller must hold the lock)
 func (h *Handler) Update(c echo.Context) error {
 	stackID := c.Param("stackID")

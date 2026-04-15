@@ -308,6 +308,9 @@ export const stacks = {
 			}),
 		remove: (stackID: string, sourceID: string) =>
 			request<null>(`/stacks/${stackID}/remote-state-sources/${sourceID}`, { method: 'DELETE' })
+	},
+	state: {
+		resources: (stackID: string) => request<StateResource[]>(`/stacks/${stackID}/state/resources`)
 	}
 };
 
@@ -574,6 +577,15 @@ export interface RemoteStateSource {
 	source_stack_slug: string;
 	env_var_prefix: string;
 	created_at: string;
+}
+
+export interface StateResource {
+	address: string;
+	type: string;
+	name: string;
+	module?: string;
+	mode: string;
+	instance_count: number;
 }
 
 export interface SystemSettings {
