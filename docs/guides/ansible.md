@@ -31,7 +31,7 @@ Crucible captures the `--check --diff` output as the plan artifact. The PLAY REC
 
 ## 1. Repository structure
 
-```
+```text
 homelab-ansible/
 ├── site.yml               # main playbook (default; override with CRUCIBLE_ANSIBLE_PLAYBOOK)
 ├── teardown.yml           # required only if you use destroy runs
@@ -50,7 +50,7 @@ homelab-ansible/
 
 The runner auto-detects inventory files at the following paths (checked in order):
 
-```
+```text
 inventory.ini  →  inventory.yml  →  inventory.yaml  →  inventory  →  hosts  →  hosts.ini
 ```
 
@@ -88,6 +88,37 @@ all:
   ansible.builtin.hostname:
     name: "{{ inventory_hostname }}"
 
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600   # skip if cache is less than 1 hour old
+
+- name: Upgrade all packages
+  ansible.builtin.apt:
+    upgrade: dist            # equivalent to apt-get dist-upgrade
+    autoremove: true
+    autoclean: true
+  register: apt_upgrade_result
+
+- name: Log upgrade summary
+  ansible.builtin.debug:
+    msg: >-
+      {{ apt_upgrade_result.stdout_lines
+         | select('match', '.*upgraded.*')
+         | list
+         | default(['no changes'], true) }}
+
+- name: Check if reboot is required
+  ansible.builtin.stat:
+    path: /var/run/reboot-required
+  register: reboot_required
+
+- name: Reboot if kernel or libc was updated
+  ansible.builtin.reboot:
+    msg: "Crucible: reboot after dist-upgrade"
+    reboot_timeout: 300
+  when: reboot_required.stat.exists
+
 - name: Install base packages
   ansible.builtin.apt:
     name:
@@ -96,7 +127,6 @@ all:
       - htop
       - unattended-upgrades
     state: present
-    update_cache: true
 
 - name: Create service user
   ansible.builtin.user:
@@ -113,6 +143,10 @@ all:
     job: "apt-get autoclean -y >> /var/log/apt-autoclean.log 2>&1"
     user: root
 ```
+
+> **Check-mode behaviour:** `ansible.builtin.apt` with `upgrade: dist` reports `changed=true` in `--check` mode whenever packages are available to upgrade, even though nothing is actually installed. This is expected — you will see `changed=N` in the plan output whenever the host has pending updates. The reboot task is also marked changed during check if `/var/run/reboot-required` exists on the host.
+>
+> **`become: true`** must be set on the play (it is in `site.yml` above) — apt and reboot both require root.
 
 ### `roles/base/handlers/main.yml`
 
@@ -286,22 +320,54 @@ Stack detail → **Trigger proposed run**. The runner executes:
 ansible-playbook site.yml --check --diff -i inventory.yml
 ```
 
-A successful check looks like:
+A fully patched host with no pending updates looks like:
 
-```
+```text
 PLAY [Configure servers] *****************************************************
 
-TASK [base : Set hostname] ***************************************************
+TASK [base : Update apt cache] ***********************************************
+ok: [web01]
+
+TASK [base : Upgrade all packages] *******************************************
+ok: [web01]
+
+TASK [base : Check if reboot is required] ************************************
 ok: [web01]
 
 TASK [base : Install base packages] ******************************************
 ok: [web01]
 
 PLAY RECAP *******************************************************************
-web01                      : ok=4    changed=0    unreachable=0    failed=0
+web01                      : ok=6    changed=0    unreachable=0    failed=0
 ```
 
-The output is stored as the plan artifact and shown in the UI. `changed=0` means the host is already in the desired state; push a change to see diffs.
+A host with pending OS updates looks like:
+
+```text
+TASK [base : Upgrade all packages] *******************************************
+changed: [web01]
+
+TASK [base : Check if reboot is required] ************************************
+ok: [web01]
+
+TASK [base : Reboot if kernel or libc was updated] ***************************
+skipping: [web01]
+
+PLAY RECAP *******************************************************************
+web01                      : ok=6    changed=1    unreachable=0    failed=0
+```
+
+If a kernel update is pending, the reboot task also shows `changed`:
+
+```text
+TASK [base : Reboot if kernel or libc was updated] ***************************
+changed: [web01]
+
+PLAY RECAP *******************************************************************
+web01                      : ok=7    changed=2    unreachable=0    failed=0
+```
+
+The output is stored as the plan artifact. Confirm the run to apply updates and reboot if needed.
 
 ### GitOps apply (tracked)
 
@@ -371,7 +437,7 @@ Then set `ANSIBLE_VAULT_PASSWORD_FILE=/tmp/.vault_pass` as a non-secret env var 
 
 To target a subset of hosts per run, use separate stacks — one per environment — each with a different `CRUCIBLE_ANSIBLE_INVENTORY` pointing to an environment-specific file:
 
-```
+```text
 inventory/
 ├── production.yml
 └── staging.yml
