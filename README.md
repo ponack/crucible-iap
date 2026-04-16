@@ -336,6 +336,7 @@ cd api && go test -race ./...
 - [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
 - [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [ ] Fine-grained RBAC — resource-level permissions (per-stack viewer/approver roles) rather than a single org-wide role
+- [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
 
 ## License
 
