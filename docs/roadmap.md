@@ -83,11 +83,19 @@ Implemented. Ansible runs follow the same check → confirm → apply lifecycle 
 
 ## Medium Term
 
-### Pulumi Support
+### Pulumi Support ✓
 
-- Implement `run_pulumi` in `entrypoint.sh`
-- Pulumi DIY backend via MinIO (Pulumi supports `PULUMI_BACKEND_URL=s3://...`)
-- Stack reference support for cross-stack outputs
+Implemented. Pulumi runs follow the same preview → confirm → apply lifecycle as OpenTofu:
+
+- `pulumi preview --diff` output is captured and uploaded as the plan artifact
+- `pulumi preview --json` is parsed for `create` / `update` / `delete` counts (shown in run summary and PR comments)
+- MinIO is automatically configured as the DIY S3 backend (`PULUMI_BACKEND_URL=s3://...`) — no Pulumi Cloud account required
+- `PULUMI_CONFIG_PASSPHRASE` must be set as a stack secret for state encryption
+- Override the backend with `PULUMI_BACKEND_URL` on the stack for AWS S3, GCS, or any S3-compatible store
+- Override the stack name with `CRUCIBLE_PULUMI_STACK` (default: `crucible-<stack-id>`)
+- Node.js (for TypeScript/JavaScript programs) and Python are pre-installed in the runner image; `pulumi install` handles language plugins and dependencies at run time
+
+Stack references for cross-stack outputs are not yet implemented — use remote state sources as a workaround.
 
 ### Stack Dependency Graph
 

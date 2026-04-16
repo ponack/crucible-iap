@@ -234,8 +234,111 @@ run_ansible() {
 }
 
 # ── Pulumi ────────────────────────────────────────────────────────────────────
+
+# Parse `pulumi preview --json` output and report the change summary to Crucible.
+report_pulumi_summary() {
+    local json_file="$1"
+    local add=0 change=0 destroy=0
+    if [[ -f "${json_file}" ]]; then
+        add=$(jq -r '.changeSummary.create // 0' "${json_file}" 2>/dev/null || echo 0)
+        change=$(jq -r '.changeSummary.update // 0' "${json_file}" 2>/dev/null || echo 0)
+        destroy=$(jq -r '.changeSummary.delete // 0' "${json_file}" 2>/dev/null || echo 0)
+    fi
+    log "pulumi summary: create=${add} update=${change} delete=${destroy}"
+    curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan-summary" \
+        "${API_HEADERS[@]}" \
+        -d "{\"add\":${add},\"change\":${change},\"destroy\":${destroy}}" \
+        || log "warn: failed to report plan summary"
+}
+
 run_pulumi() {
-    fail "pulumi runner not yet implemented"
+    local stack="${CRUCIBLE_PULUMI_STACK:-crucible-${CRUCIBLE_STACK_ID}}"
+    log "tool=pulumi run_type=${CRUCIBLE_RUN_TYPE}"
+    log "version: $(pulumi version 2>&1)"
+
+    # State passphrase is required — Pulumi encrypts stack config and secrets.
+    [[ -n "${PULUMI_CONFIG_PASSPHRASE:-}" ]] \
+        || fail "PULUMI_CONFIG_PASSPHRASE is required for Pulumi stacks — set it as a secret env var on this stack"
+
+    # Store Pulumi's home directory on the tmpfs workspace so it can write
+    # language plugins and credentials without hitting the read-only rootfs.
+    export PULUMI_HOME=/workspace/.pulumi
+    export PULUMI_SKIP_UPDATE_CHECK=1
+
+    # Configure the DIY S3 backend unless the user has already set PULUMI_BACKEND_URL.
+    if [[ -z "${PULUMI_BACKEND_URL:-}" ]]; then
+        local proto="http"
+        [[ "${CRUCIBLE_MINIO_USE_SSL:-false}" == "true" ]] && proto="https"
+        local ssl_flag="true"
+        [[ "${CRUCIBLE_MINIO_USE_SSL:-false}" == "true" ]] && ssl_flag="false"
+        export AWS_ACCESS_KEY_ID="${CRUCIBLE_MINIO_ACCESS_KEY:?CRUCIBLE_MINIO_ACCESS_KEY is required for the built-in Pulumi backend}"
+        export AWS_SECRET_ACCESS_KEY="${CRUCIBLE_MINIO_SECRET_KEY:?CRUCIBLE_MINIO_SECRET_KEY is required for the built-in Pulumi backend}"
+        export AWS_REGION=us-east-1
+        export PULUMI_BACKEND_URL="s3://${CRUCIBLE_MINIO_BUCKET_STATE}?region=us-east-1&endpoint=${proto}://${CRUCIBLE_MINIO_ENDPOINT}&disableSSL=${ssl_flag}&s3ForcePathStyle=true"
+        log "backend: minio (${proto}://${CRUCIBLE_MINIO_ENDPOINT}/${CRUCIBLE_MINIO_BUCKET_STATE})"
+    else
+        log "backend: ${PULUMI_BACKEND_URL} (from PULUMI_BACKEND_URL stack env var)"
+    fi
+
+    # Install language plugins and program dependencies (npm install, pip install, etc.)
+    log "installing dependencies"
+    pulumi install --non-interactive 2>&1 \
+        || log "warn: pulumi install had warnings — continuing"
+
+    # Select the stack; create it on first run.
+    pulumi stack select "${stack}" --non-interactive 2>/dev/null \
+        || pulumi stack init "${stack}" --non-interactive
+    log "stack: ${stack}"
+
+    case "${CRUCIBLE_RUN_TYPE}" in
+        apply)
+            # Second phase: confirmed run re-enqueues with run_type=apply.
+            log "applying: ${stack}"
+            report_status "applying"
+            # Download the saved preview text for audit (best-effort).
+            curl -sf "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan" \
+                -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+                -o /workspace/pulumi_preview.txt \
+                || log "warn: could not retrieve preview artifact (non-fatal)"
+            pulumi up --yes --non-interactive --stack "${stack}" 2>&1
+            ;;
+
+        destroy)
+            log "running destroy preview: ${stack}"
+            report_status "planning"
+            pulumi preview --destroy --diff --non-interactive --stack "${stack}" \
+                2>&1 | tee /workspace/pulumi_preview.txt || {
+                upload_plan /workspace/pulumi_preview.txt
+                fail "pulumi destroy preview failed"
+            }
+            upload_plan /workspace/pulumi_preview.txt
+            pulumi preview --destroy --json --non-interactive --stack "${stack}" \
+                > /workspace/pulumi_preview.json 2>/dev/null || true
+            report_pulumi_summary /workspace/pulumi_preview.json
+            log "destroy preview complete — awaiting confirmation"
+            ;;
+
+        proposed|tracked|*)
+            # Plan phase: run preview, capture text diff + JSON summary.
+            log "running preview: ${stack}"
+            report_status "planning"
+            pulumi preview --diff --non-interactive --stack "${stack}" \
+                2>&1 | tee /workspace/pulumi_preview.txt || {
+                upload_plan /workspace/pulumi_preview.txt
+                fail "pulumi preview failed"
+            }
+            upload_plan /workspace/pulumi_preview.txt
+            # Second preview pass for machine-readable summary counts.
+            pulumi preview --json --non-interactive --stack "${stack}" \
+                > /workspace/pulumi_preview.json 2>/dev/null || true
+            report_pulumi_summary /workspace/pulumi_preview.json
+            if [[ "${CRUCIBLE_RUN_TYPE}" == "proposed" ]]; then
+                log "preview complete (proposed — no apply)"
+            else
+                log "preview complete — awaiting confirmation"
+            fi
+            ;;
+    esac
 }
 
 # ── VCS authentication ────────────────────────────────────────────────────────

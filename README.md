@@ -162,6 +162,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 | [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
+| [docs/guides/pulumi.md](docs/guides/pulumi.md) | End-to-end guide: running Pulumi programs with preview → confirm → up and built-in MinIO state backend |
 
 ## Connecting a Git repository
 

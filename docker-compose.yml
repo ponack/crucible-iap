@@ -171,6 +171,8 @@ services:
       - minio_data:/data
     networks:
       - backend
+      # Pulumi runners talk directly to MinIO for DIY S3 backend state storage.
+      - runner
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s

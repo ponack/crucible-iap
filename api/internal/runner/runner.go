@@ -37,6 +37,14 @@ type JobSpec struct {
 	MemoryLimit    string   // Docker memory limit, e.g. "2g" — overrides config default if non-empty
 	CPULimit       string   // Docker CPU limit, e.g. "1.0" — overrides config default if non-empty
 	TimeoutMinutes int      // Job timeout — overrides config default if > 0
+
+	// MinIO backend credentials — injected for Pulumi runs so the runner can
+	// configure the DIY S3 backend without requiring manual stack env vars.
+	MinioEndpoint    string
+	MinioAccessKey   string
+	MinioSecretKey   string
+	MinioBucketState string
+	MinioUseSSL      bool
 }
 
 type Runner struct {
@@ -125,6 +133,10 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 	// Scoped environment — credentials injected as env vars, never in image.
 	// ExtraEnv (decrypted stack env vars) is appended last so operators can
 	// override tool behaviour without touching the image.
+	minioSSL := "false"
+	if spec.MinioUseSSL {
+		minioSSL = "true"
+	}
 	env := []string{
 		"CRUCIBLE_RUN_ID=" + spec.RunID,
 		"CRUCIBLE_STACK_ID=" + spec.StackID,
@@ -136,6 +148,17 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		"CRUCIBLE_PROJECT_ROOT=" + spec.ProjectRoot,
 		"CRUCIBLE_RUN_TYPE=" + spec.RunType,
 		"CRUCIBLE_VCS_TOKEN=" + spec.VCSToken, // empty string if no integration set
+	}
+	// Inject MinIO credentials for Pulumi runners so they can configure the
+	// DIY S3 backend automatically. Not injected for other tools.
+	if spec.Tool == "pulumi" {
+		env = append(env,
+			"CRUCIBLE_MINIO_ENDPOINT="+spec.MinioEndpoint,
+			"CRUCIBLE_MINIO_ACCESS_KEY="+spec.MinioAccessKey,
+			"CRUCIBLE_MINIO_SECRET_KEY="+spec.MinioSecretKey,
+			"CRUCIBLE_MINIO_BUCKET_STATE="+spec.MinioBucketState,
+			"CRUCIBLE_MINIO_USE_SSL="+minioSSL,
+		)
 	}
 	env = append(env, spec.ExtraEnv...)
 
