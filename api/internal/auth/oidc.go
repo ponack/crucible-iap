@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -214,7 +215,7 @@ func (h *Handler) Callback(c echo.Context) error {
 	if uiBase == "" {
 		uiBase = h.cfg.BaseURL
 	}
-	dest := fmt.Sprintf("%s/callback?access_token=%s&refresh_token=%s",
+	dest := fmt.Sprintf("%s/callback#access_token=%s&refresh_token=%s",
 		uiBase, accessToken, refreshToken)
 	return c.Redirect(http.StatusTemporaryRedirect, dest)
 }
@@ -302,6 +303,36 @@ func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 	}
 }
 
+// saFailTracker limits brute-force attempts against service account tokens.
+// It tracks per-IP failure counts and locks out IPs that exceed saMaxFails
+// within a saWindowSecs sliding window.
+var (
+	saFailMu      sync.Mutex
+	saFailCounts  = make(map[string][2]int64) // ip -> [count, windowResetUnix]
+)
+
+const saMaxFails   = 20
+const saWindowSecs = 300 // 5 minutes
+
+func saCheckAndRecord(ip string, failed bool) bool {
+	saFailMu.Lock()
+	defer saFailMu.Unlock()
+	now := time.Now().Unix()
+	entry := saFailCounts[ip]
+	if now > entry[1] {
+		// Window expired — reset.
+		entry = [2]int64{0, now + saWindowSecs}
+	}
+	if !failed {
+		// Successful auth — clear the counter.
+		delete(saFailCounts, ip)
+		return false
+	}
+	entry[0]++
+	saFailCounts[ip] = entry
+	return entry[0] > saMaxFails
+}
+
 // serviceAccountAuth handles ciap_ prefixed tokens.
 // It is set by the server via SetServiceAccountLookup before any requests are processed.
 var serviceAccountAuth func(token string, next echo.HandlerFunc, c echo.Context) error = func(token string, next echo.HandlerFunc, c echo.Context) error {
@@ -312,6 +343,11 @@ var serviceAccountAuth func(token string, next echo.HandlerFunc, c echo.Context)
 // Called once during server startup with the pgxpool.
 func SetServiceAccountLookup(pool *pgxpool.Pool) {
 	serviceAccountAuth = func(raw string, next echo.HandlerFunc, c echo.Context) error {
+		ip := c.RealIP()
+		if saCheckAndRecord(ip, true) {
+			return echo.NewHTTPError(http.StatusTooManyRequests, "too many failed attempts")
+		}
+
 		h := sha256.Sum256([]byte(raw))
 
 		var id, orgID, role string
@@ -325,6 +361,7 @@ func SetServiceAccountLookup(pool *pgxpool.Pool) {
 			return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
 		}
 
+		saCheckAndRecord(ip, false) // clear failure counter on success
 		c.Set("userID", "sa:"+id)
 		c.Set("orgID", orgID)
 		c.Set("saRole", role)
