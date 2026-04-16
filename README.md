@@ -332,6 +332,8 @@ cd api && go test -race ./...
 - [x] Manual run with variable overrides — trigger a one-off run with temporary env var overrides without changing stack config
 - [x] Service account API tokens — machine-readable tokens not tied to a user session, for CI pipelines and automation
 - [x] CI linting — gofmt, go vet, gocyclo, ineffassign, misspell, staticcheck run on every PR; `make lint` target for local use
+- [x] Ansible support — check → confirm → apply lifecycle with PLAY RECAP parsing, inventory auto-detection, and destroy playbook support
+- [x] Pulumi support — preview → confirm → up lifecycle with built-in MinIO DIY S3 backend, TypeScript/JavaScript/Python runners, and changeSummary parsing for PR comments
 - [x] Email notifications — SMTP (STARTTLS/SMTPS/plaintext) per-stack email address; fires on plan complete, run succeeded/failed; configured in Settings → Notifications
 - [x] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
