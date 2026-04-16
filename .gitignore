@@ -36,3 +36,6 @@ deploy/volumes/
 *.tfstate
 *.tfstate.backup
 .terraform.lock.hcl
+
+# AI assistant context files — keep local, never publish
+CLAUDE.md
