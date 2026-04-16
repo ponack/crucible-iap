@@ -29,7 +29,6 @@ type Settings struct {
 	SMTPHost              string    `json:"smtp_host"`
 	SMTPPort              int       `json:"smtp_port"`
 	SMTPUsername          string    `json:"smtp_username"`
-	SMTPPassword          string    `json:"smtp_password"` // write-only; returned as "" on GET
 	SMTPFrom              string    `json:"smtp_from"`
 	SMTPTLS               bool      `json:"smtp_tls"`
 	ArtifactRetentionDays int       `json:"artifact_retention_days"`
