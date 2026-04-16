@@ -3,6 +3,9 @@
 package runs
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 
@@ -84,10 +87,19 @@ func (h *Handler) ReportPlanSummary(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// planHMAC computes HMAC-SHA256 over plan bytes using the server secret key.
+func (h *Handler) planHMAC(data []byte) string {
+	mac := hmac.New(sha256.New, []byte(h.cfg.SecretKey))
+	mac.Write(data)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 // DownloadPlanInternal is the runner-facing plan download endpoint used by the
 // apply phase. Authentication is via the runner JWT (aud=runner, runID claim).
 // Unlike the user-facing DownloadPlan, this does not require an org check —
 // the run token is already scoped to the exact run being fetched.
+// The stored HMAC is verified before streaming the plan to guard against
+// plan artifact tampering between the plan and apply phases.
 func (h *Handler) DownloadPlanInternal(c echo.Context) error {
 	id := c.Param("id")
 
@@ -96,15 +108,33 @@ func (h *Handler) DownloadPlanInternal(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "token not valid for this run")
 	}
 
+	// Fetch stored HMAC — NULL means a pre-migration run; skip verification.
+	var storedHMAC *string
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT plan_hmac FROM runs WHERE id = $1
+	`, id).Scan(&storedHMAC); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fetch plan integrity record")
+	}
+
 	obj, err := h.storage.GetPlan(c.Request().Context(), id)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "plan artifact not found in storage")
 	}
 	defer obj.Close()
 
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read plan artifact")
+	}
+
+	if storedHMAC != nil {
+		if !hmac.Equal([]byte(h.planHMAC(data)), []byte(*storedHMAC)) {
+			return echo.NewHTTPError(http.StatusForbidden, "plan artifact integrity check failed")
+		}
+	}
+
 	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+id[:8]+`.tfplan"`)
-	c.Response().Header().Set("Content-Type", "application/octet-stream")
-	return c.Stream(http.StatusOK, "application/octet-stream", obj)
+	return c.Blob(http.StatusOK, "application/octet-stream", data)
 }
 
 // UploadPlan receives the binary plan artifact from the runner and stores it in MinIO.
@@ -128,8 +158,8 @@ func (h *Handler) UploadPlan(c echo.Context) error {
 
 	planKey := "plans/" + id + ".tfplan"
 	_, _ = h.pool.Exec(c.Request().Context(), `
-		UPDATE runs SET plan_url = $1 WHERE id = $2
-	`, planKey, id)
+		UPDATE runs SET plan_url = $1, plan_hmac = $2 WHERE id = $3
+	`, planKey, h.planHMAC(body), id)
 
 	return c.NoContent(http.StatusNoContent)
 }

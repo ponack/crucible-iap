@@ -279,34 +279,20 @@ func (h *Handler) Unlock(c echo.Context) error {
 	stackID := c.Param("stackID")
 
 	var info LockInfo
-	// Body decode is best-effort. Some OpenTofu builds or network conditions
-	// can result in an empty or malformed body; failing hard here leaves the
-	// lock permanently stuck since OpenTofu treats a non-200 unlock response
-	// as a warning and exits 0 anyway. Authentication is already verified by
-	// BasicAuthMiddleware, so falling back to an unconditional stack-scoped
-	// delete is safe.
-	_ = json.NewDecoder(c.Request().Body).Decode(&info)
-
-	var rowsAffected int64
-	if info.ID != "" {
-		tag, err := h.pool.Exec(c.Request().Context(), `
-			DELETE FROM state_locks WHERE stack_id = $1 AND lock_id = $2
-		`, stackID, info.ID)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		rowsAffected = tag.RowsAffected()
-	} else {
-		// No lock ID decoded — release whatever lock exists for this stack.
-		tag, err := h.pool.Exec(c.Request().Context(), `
-			DELETE FROM state_locks WHERE stack_id = $1
-		`, stackID)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		rowsAffected = tag.RowsAffected()
+	if err := json.NewDecoder(c.Request().Body).Decode(&info); err != nil || info.ID == "" {
+		// OpenTofu always sends a valid lock ID in the UNLOCK body. An empty or
+		// unparseable body indicates a malformed request; reject it so callers
+		// cannot clear an arbitrary stack lock without knowing the lock ID.
+		return echo.NewHTTPError(http.StatusBadRequest, "lock ID is required")
 	}
-	if rowsAffected == 0 {
+
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		DELETE FROM state_locks WHERE stack_id = $1 AND lock_id = $2
+	`, stackID, info.ID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if tag.RowsAffected() == 0 {
 		return echo.NewHTTPError(http.StatusConflict, "lock not found or ID mismatch")
 	}
 	return c.NoContent(http.StatusOK)
