@@ -154,6 +154,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 
 | Document | Description |
 | -------- | ----------- |
+| **[docs/quickstart.md](docs/quickstart.md)** | **Your first stack in 15 minutes — start here** |
 | [docs/architecture.md](docs/architecture.md) | Component diagram, request flow, security model, DB schema |
 | [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, backup, monitoring, troubleshooting |
 | [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting |
