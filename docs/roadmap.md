@@ -101,6 +101,28 @@ Define a named group of env vars once and attach to multiple stacks. Eliminates 
 
 Resource-level permissions: per-stack viewer and approver roles, not just org-wide member/admin. Needed for larger teams where different people own different stacks.
 
+### Exportable Config
+
+Export the full instance configuration as a single compressed archive (`.tar.gz` or `.zip`) — and import it on another instance. Useful for backup, DR, staging-to-prod promotion, and onboarding new team members into an identical environment.
+
+**What gets exported:**
+
+- Stacks (all fields except encrypted secrets — env var names are included but values are omitted)
+- Policies (name, type, Rego body, stack attachments)
+- Variable sets (names and attached stacks; encrypted values omitted)
+- Org settings (runner defaults, SMTP config minus password, notification defaults)
+- Integration metadata (name, type — no credentials)
+
+**What is intentionally excluded:**
+
+- Encrypted secret values (env var values, VCS tokens, integration credentials) — these are write-only and cannot be exported safely
+- Run history, audit log, state files — operational data, not config
+- Users and org membership — identity is tied to the IdP
+
+**Format:** A JSON manifest (`crucible-export.json`) inside a gzip-compressed tar. Importable via `POST /api/v1/admin/import` with a dry-run mode that reports conflicts before committing.
+
+**Conflict strategy:** Import by default skips objects that already exist by name/slug; a `--overwrite` flag replaces them. Stacks imported without state simply start fresh on first run.
+
 ---
 
 ## Long Term / Speculative
