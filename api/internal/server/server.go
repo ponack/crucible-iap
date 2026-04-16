@@ -126,11 +126,16 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	e.GET("/health", s.handleHealth)
 	e.GET("/metrics", metrics.Handler())
 	e.GET("/auth/config", authHandler.GetAuthConfig)
-	e.GET("/auth/login", authHandler.Login)
-	e.GET("/auth/callback", authHandler.Callback)
-	e.POST("/auth/local", authHandler.LocalLogin)
-	e.POST("/auth/refresh", authHandler.Refresh)
-	e.POST("/auth/logout", authHandler.Logout)
+
+	// Auth endpoints get a tighter per-IP rate limit (10 req/min) to slow credential stuffing.
+	authRL := middleware.RateLimiter(middleware.NewRateLimiterMemoryStoreWithConfig(
+		middleware.RateLimiterMemoryStoreConfig{Rate: 10.0 / 60, Burst: 5},
+	))
+	e.GET("/auth/login", authHandler.Login, authRL)
+	e.GET("/auth/callback", authHandler.Callback, authRL)
+	e.POST("/auth/local", authHandler.LocalLogin, authRL)
+	e.POST("/auth/refresh", authHandler.Refresh, authRL)
+	e.POST("/auth/logout", authHandler.Logout, authRL)
 	e.GET("/api/v1/invites/:token", orgHandler.GetInvite)
 
 	// Webhook ingestion — authenticated internally via HMAC/token

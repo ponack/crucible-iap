@@ -7,7 +7,7 @@
 	let error = $state<string | null>(null);
 
 	onMount(() => {
-		const params = new URLSearchParams(window.location.search);
+		const params = new URLSearchParams(window.location.hash.slice(1));
 		const accessToken = params.get('access_token');
 		const refreshToken = params.get('refresh_token');
 
