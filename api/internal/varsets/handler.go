@@ -28,9 +28,9 @@ type VarSet struct {
 
 // VarMeta is a variable's metadata — the value is never included.
 type VarMeta struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	IsSecret bool      `json:"is_secret"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	IsSecret  bool      `json:"is_secret"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

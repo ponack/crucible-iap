@@ -307,11 +307,11 @@ func JWTMiddleware(secretKey string) echo.MiddlewareFunc {
 // It tracks per-IP failure counts and locks out IPs that exceed saMaxFails
 // within a saWindowSecs sliding window.
 var (
-	saFailMu      sync.Mutex
-	saFailCounts  = make(map[string][2]int64) // ip -> [count, windowResetUnix]
+	saFailMu     sync.Mutex
+	saFailCounts = make(map[string][2]int64) // ip -> [count, windowResetUnix]
 )
 
-const saMaxFails   = 20
+const saMaxFails = 20
 const saWindowSecs = 300 // 5 minutes
 
 func saCheckAndRecord(ip string, failed bool) bool {

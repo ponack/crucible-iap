@@ -6,58 +6,9 @@ The canonical checklist lives in [README.md](../README.md#roadmap). This documen
 
 ## Up Next
 
-### Code Quality & Developer Experience
+### Code Quality & Developer Experience ✓
 
-**Go Report Card integration** ([gojp/goreportcard](https://github.com/gojp/goreportcard))
-
-Run goreportcard-equivalent checks in CI on every PR targeting `main`. Goal: clean score before adding the badge to README.
-
-Checks to add to `.github/workflows/ci.yml`:
-
-| Check | Tool | Notes |
-| ----- | ---- | ----- |
-| Formatting | `gofmt -l` | Fail if any files differ |
-| Suspicious constructs | `go vet ./...` | Already in most Go CIs |
-| Cyclomatic complexity | `gocyclo -over 15 .` | Threshold 15; ignore generated files |
-| Unused assignments | `ineffassign ./...` | |
-| Common typos | `misspell -error .` | Catches comments + strings |
-| Static analysis | `staticcheck ./...` | Superset of golint; preferred over deprecated golint |
-
-Also add a `make lint` target so contributors can run the same checks locally before pushing. The target should run both Go linting and `pnpm lint` for the UI in one command.
-
-Once the codebase passes cleanly, add the goreportcard badge to README alongside the existing CI and license badges.
-
-Implementation sketch for `.github/workflows/ci.yml`:
-
-```yaml
-lint:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-go@v5
-      with:
-        go-version-file: api/go.mod
-    - name: Install linters
-      run: |
-        go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
-        go install github.com/client9/misspell/cmd/misspell@latest
-        go install honnef.co/go/tools/cmd/staticcheck@latest
-        go install github.com/gordonklaus/ineffassign@latest
-    - name: gofmt
-      run: |
-        files=$(gofmt -l ./api/...)
-        [ -z "$files" ] || (echo "Unformatted files: $files" && exit 1)
-    - name: go vet
-      run: cd api && go vet ./...
-    - name: gocyclo
-      run: gocyclo -over 15 api/
-    - name: misspell
-      run: misspell -error api/
-    - name: staticcheck
-      run: cd api && staticcheck ./...
-    - name: ineffassign
-      run: ineffassign api/...
-```
+CI lint job (`gofmt`, `go vet`, `staticcheck`, `gocyclo -over 15`, `ineffassign`, `misspell`) runs on every PR. `make lint` runs the same checks locally. Go Report Card badge added to README.
 
 ---
 

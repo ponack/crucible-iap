@@ -6,6 +6,7 @@
 
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/ponack/crucible-iap)](https://github.com/ponack/crucible-iap/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ponack/crucible-iap/api)](https://goreportcard.com/report/github.com/ponack/crucible-iap/api)
 ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)
 ![Status: Beta](https://img.shields.io/badge/status-beta-blue)
 
