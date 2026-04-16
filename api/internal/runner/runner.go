@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/ponack/crucible-iap/internal/config"
@@ -57,7 +58,9 @@ func New(cfg *config.Config) (*Runner, error) {
 // actionable warning if not. Runs once at startup so operators learn about
 // misconfiguration before the first job is queued, not mid-run.
 func (r *Runner) validateNetwork(ctx context.Context) {
-	networks, err := r.docker.NetworkList(ctx, filters.NewArgs(filters.Arg("name", r.cfg.RunnerNetwork)))
+	networks, err := r.docker.NetworkList(ctx, network.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("name", r.cfg.RunnerNetwork)),
+	})
 	if err != nil {
 		slog.Warn("could not verify runner network — Docker API error", "network", r.cfg.RunnerNetwork, "err", err)
 		return

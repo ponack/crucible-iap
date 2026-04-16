@@ -605,6 +605,7 @@ export interface SystemSettings {
 	smtp_host: string;
 	smtp_port: number;
 	smtp_username: string;
+	smtp_password?: string; // write-only — never returned by GET, only sent on update
 	smtp_from: string;
 	smtp_tls: boolean;
 	artifact_retention_days: number;
