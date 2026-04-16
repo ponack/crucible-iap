@@ -14,6 +14,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/ponack/crucible-iap/internal/config"
@@ -48,7 +49,31 @@ func New(cfg *config.Config) (*Runner, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to docker: %w", err)
 	}
-	return &Runner{docker: docker, cfg: cfg}, nil
+	r := &Runner{docker: docker, cfg: cfg}
+	r.validateNetwork(context.Background())
+	return r, nil
+}
+
+// validateNetwork checks the configured runner network exists and logs an
+// actionable warning if not. Runs once at startup so operators learn about
+// misconfiguration before the first job is queued, not mid-run.
+func (r *Runner) validateNetwork(ctx context.Context) {
+	networks, err := r.docker.NetworkList(ctx, network.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("name", r.cfg.RunnerNetwork)),
+	})
+	if err != nil {
+		slog.Warn("could not verify runner network — Docker API error", "network", r.cfg.RunnerNetwork, "err", err)
+		return
+	}
+	for _, n := range networks {
+		if n.Name == r.cfg.RunnerNetwork {
+			return
+		}
+	}
+	slog.Warn("runner network does not exist — containers will fail to start",
+		"network", r.cfg.RunnerNetwork,
+		"hint", fmt.Sprintf("docker network create %s", r.cfg.RunnerNetwork),
+	)
 }
 
 // logline writes a prefixed informational line directly to logWriter so it
@@ -261,23 +286,34 @@ func coalesce(a, b string) string {
 	return b
 }
 
-// parseMemory converts "2g" → bytes (simplified).
+// parseMemory converts "2g" → bytes. Returns 2 GB and logs a warning on
+// invalid input so containers never run unbounded (Docker treats 0 as unlimited).
 func parseMemory(s string) int64 {
+	const defaultMemory = 2 * 1024 * 1024 * 1024 // 2 GB
 	var val int64
 	var unit string
-	fmt.Sscanf(s, "%d%s", &val, &unit)
+	if n, _ := fmt.Sscanf(s, "%d%s", &val, &unit); n == 0 || val <= 0 {
+		slog.Warn("invalid runner memory limit, using 2GB default", "value", s)
+		return defaultMemory
+	}
 	switch unit {
 	case "g", "G":
 		return val * 1024 * 1024 * 1024
 	case "m", "M":
 		return val * 1024 * 1024
+	default:
+		slog.Warn("unrecognised memory unit, using 2GB default", "value", s)
+		return defaultMemory
 	}
-	return val
 }
 
-// parseCPU converts "1.0" → NanoCPUs.
+// parseCPU converts "1.0" → NanoCPUs. Returns 1 CPU and logs a warning on
+// invalid input so containers never run unbounded (Docker treats 0 as unlimited).
 func parseCPU(s string) int64 {
 	var f float64
-	fmt.Sscanf(s, "%f", &f)
+	if n, _ := fmt.Sscanf(s, "%f", &f); n == 0 || f <= 0 {
+		slog.Warn("invalid runner CPU limit, using 1.0 default", "value", s)
+		return int64(1e9)
+	}
 	return int64(f * 1e9)
 }

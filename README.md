@@ -5,6 +5,7 @@
 **Crucible IAP - Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
 
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/ponack/crucible-iap)](https://github.com/ponack/crucible-iap/releases/latest)
 ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)
 ![Status: Beta](https://img.shields.io/badge/status-beta-blue)
 
