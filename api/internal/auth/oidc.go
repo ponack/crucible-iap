@@ -231,7 +231,7 @@ func (h *Handler) Refresh(c echo.Context) error {
 	rc := &jwt.RegisteredClaims{}
 	_, err := jwt.ParseWithClaims(req.RefreshToken, rc, func(t *jwt.Token) (any, error) {
 		return []byte(h.cfg.SecretKey), nil
-	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithAudience("refresh"))
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithAudience("refresh"), jwt.WithExpirationRequired())
 	if err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, "invalid refresh token")
 	}
@@ -501,5 +501,8 @@ func randomString(n int) (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return base64.URLEncoding.EncodeToString(b)[:n], nil
+	// RawURLEncoding (no padding) avoids truncation which would reduce effective
+	// entropy. 32 bytes → 43 base64url chars, meeting RFC 7636's minimum for
+	// PKCE verifiers. 16 bytes → 22 chars for state/nonce, which is fine.
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
