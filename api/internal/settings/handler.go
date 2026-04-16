@@ -4,13 +4,51 @@ package settings
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/config"
 )
+
+var memoryLimitRe = regexp.MustCompile(`^(\d+)([mMgG])$`)
+
+// validateMemoryLimit accepts values like "512m", "2g". Allowed range: 128 MB – 64 GB.
+func validateMemoryLimit(s string) error {
+	m := memoryLimitRe.FindStringSubmatch(s)
+	if m == nil {
+		return fmt.Errorf("runner_memory_limit must be a number followed by m or g (e.g. '512m', '2g')")
+	}
+	val, _ := strconv.ParseInt(m[1], 10, 64)
+	unit := m[2]
+	var mb int64
+	switch unit {
+	case "m", "M":
+		mb = val
+	case "g", "G":
+		mb = val * 1024
+	}
+	if mb < 128 {
+		return fmt.Errorf("runner_memory_limit must be at least 128m")
+	}
+	if mb > 65536 {
+		return fmt.Errorf("runner_memory_limit must not exceed 64g")
+	}
+	return nil
+}
+
+// validateCPULimit accepts values like "0.5", "1.0", "4". Allowed range: 0.1 – 32.
+func validateCPULimit(s string) error {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f < 0.1 || f > 32 {
+		return fmt.Errorf("runner_cpu_limit must be a number between 0.1 and 32 (e.g. '1.0')")
+	}
+	return nil
+}
 
 // Settings mirrors the system_settings DB row.
 type Settings struct {
@@ -53,6 +91,68 @@ func (h *Handler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, s)
 }
 
+// validateRunnerFields checks runner-specific bounds for a settings update.
+func validateRunnerFields(maxConcurrent, timeoutMins, retentionDays *int, memLimit, cpuLimit *string) error {
+	if maxConcurrent != nil && (*maxConcurrent < 1 || *maxConcurrent > 50) {
+		return fmt.Errorf("runner_max_concurrent must be between 1 and 50")
+	}
+	if timeoutMins != nil && (*timeoutMins < 1 || *timeoutMins > 480) {
+		return fmt.Errorf("runner_job_timeout_mins must be between 1 and 480")
+	}
+	if retentionDays != nil && *retentionDays < 0 {
+		return fmt.Errorf("artifact_retention_days must be 0 (keep forever) or positive")
+	}
+	if memLimit != nil && *memLimit != "" {
+		if err := validateMemoryLimit(*memLimit); err != nil {
+			return err
+		}
+	}
+	if cpuLimit != nil && *cpuLimit != "" {
+		if err := validateCPULimit(*cpuLimit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateSettingsUpdate checks all field constraints for a settings update request.
+func validateSettingsUpdate(req *struct {
+	RunnerDefaultImage    *string `json:"runner_default_image"`
+	RunnerMaxConcurrent   *int    `json:"runner_max_concurrent"`
+	RunnerJobTimeoutMins  *int    `json:"runner_job_timeout_mins"`
+	RunnerMemoryLimit     *string `json:"runner_memory_limit"`
+	RunnerCPULimit        *string `json:"runner_cpu_limit"`
+	DefaultSlackWebhook   *string `json:"default_slack_webhook"`
+	DefaultVCSProvider    *string `json:"default_vcs_provider"`
+	DefaultVCSBaseURL     *string `json:"default_vcs_base_url"`
+	DefaultGotifyURL      *string `json:"default_gotify_url"`
+	DefaultGotifyToken    *string `json:"default_gotify_token"`
+	DefaultNtfyURL        *string `json:"default_ntfy_url"`
+	DefaultNtfyToken      *string `json:"default_ntfy_token"`
+	SMTPHost              *string `json:"smtp_host"`
+	SMTPPort              *int    `json:"smtp_port"`
+	SMTPUsername          *string `json:"smtp_username"`
+	SMTPPassword          *string `json:"smtp_password"`
+	SMTPFrom              *string `json:"smtp_from"`
+	SMTPTLS               *bool   `json:"smtp_tls"`
+	ArtifactRetentionDays *int    `json:"artifact_retention_days"`
+}) error {
+	if err := validateRunnerFields(req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
+		req.ArtifactRetentionDays, req.RunnerMemoryLimit, req.RunnerCPULimit); err != nil {
+		return err
+	}
+	if req.SMTPPort != nil && (*req.SMTPPort < 1 || *req.SMTPPort > 65535) {
+		return fmt.Errorf("smtp_port must be between 1 and 65535")
+	}
+	if req.DefaultVCSProvider != nil {
+		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}
+		if !valid[*req.DefaultVCSProvider] {
+			return fmt.Errorf("default_vcs_provider must be github, gitlab, or gitea")
+		}
+	}
+	return nil
+}
+
 // Update persists new system settings (admin-only).
 func (h *Handler) Update(c echo.Context) error {
 	var req struct {
@@ -79,22 +179,8 @@ func (h *Handler) Update(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-
-	// Validate numeric bounds.
-	if req.RunnerMaxConcurrent != nil && (*req.RunnerMaxConcurrent < 1 || *req.RunnerMaxConcurrent > 50) {
-		return echo.NewHTTPError(http.StatusBadRequest, "runner_max_concurrent must be between 1 and 50")
-	}
-	if req.RunnerJobTimeoutMins != nil && (*req.RunnerJobTimeoutMins < 1 || *req.RunnerJobTimeoutMins > 480) {
-		return echo.NewHTTPError(http.StatusBadRequest, "runner_job_timeout_mins must be between 1 and 480")
-	}
-	if req.ArtifactRetentionDays != nil && *req.ArtifactRetentionDays < 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "artifact_retention_days must be 0 (keep forever) or positive")
-	}
-	if req.DefaultVCSProvider != nil {
-		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}
-		if !valid[*req.DefaultVCSProvider] {
-			return echo.NewHTTPError(http.StatusBadRequest, "default_vcs_provider must be github, gitlab, or gitea")
-		}
+	if err := validateSettingsUpdate(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
 	_, err := h.pool.Exec(c.Request().Context(), `
