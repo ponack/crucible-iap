@@ -73,6 +73,7 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 	e.Use(metrics.Middleware())
 
 	if cfg.IsDev() {
+		slog.Warn("running in development mode — CORS is unrestricted; do not use in production")
 		e.Use(middleware.CORS())
 	} else {
 		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
