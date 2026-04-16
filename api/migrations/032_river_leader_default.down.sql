@@ -1,0 +1,1 @@
+ALTER TABLE river_leader ALTER COLUMN name DROP DEFAULT;
