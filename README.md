@@ -160,6 +160,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/policies.md](docs/policies.md) | Rego policy authoring guide with examples |
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
+| [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
 
 ## Connecting a Git repository
 
