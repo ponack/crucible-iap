@@ -103,25 +103,40 @@ Resource-level permissions: per-stack viewer and approver roles, not just org-wi
 
 ### Exportable Config
 
-Export the full instance configuration as a single compressed archive (`.tar.gz` or `.zip`) — and import it on another instance. Useful for backup, DR, staging-to-prod promotion, and onboarding new team members into an identical environment.
+Export the full instance configuration as a single compressed archive (`.tar.gz`) — and import it on another instance. Useful for backup, DR, staging-to-prod promotion, and onboarding new team members into an identical environment.
 
 **What gets exported:**
 
-- Stacks (all fields except encrypted secrets — env var names are included but values are omitted)
+- Stacks (all fields; secret values omitted unless `--password` is provided — see below)
 - Policies (name, type, Rego body, stack attachments)
-- Variable sets (names and attached stacks; encrypted values omitted)
+- Variable sets (names and attached stacks; encrypted values omitted unless `--password` is provided)
 - Org settings (runner defaults, SMTP config minus password, notification defaults)
-- Integration metadata (name, type — no credentials)
+- Integration metadata (name, type; credentials omitted unless `--password` is provided)
 
-**What is intentionally excluded:**
+**What is always excluded:**
 
-- Encrypted secret values (env var values, VCS tokens, integration credentials) — these are write-only and cannot be exported safely
 - Run history, audit log, state files — operational data, not config
 - Users and org membership — identity is tied to the IdP
 
-**Format:** A JSON manifest (`crucible-export.json`) inside a gzip-compressed tar. Importable via `POST /api/v1/admin/import` with a dry-run mode that reports conflicts before committing.
+**Archive layout:**
 
-**Conflict strategy:** Import by default skips objects that already exist by name/slug; a `--overwrite` flag replaces them. Stacks imported without state simply start fresh on first run.
+```text
+crucible-export-<timestamp>.tar.gz
+├── crucible-export.json   # plaintext config manifest (human-readable)
+└── secrets.enc            # present only when --password is supplied
+```
+
+**Optional secret export (`--password`):**
+
+When an export password is provided, all encrypted secret values (stack env var values, VCS tokens, integration credentials, SMTP password) are decrypted from the vault, re-encrypted as a single blob using AES-256-GCM with an Argon2id-derived key, and written to `secrets.enc`. The Argon2id parameters and a random salt are stored in the file header so the import side needs only the password — no shared vault key required.
+
+On import with the matching password, `secrets.enc` is decrypted and each secret value is re-encrypted under the new instance's vault key before being written to the database. Without the password, `secrets.enc` is ignored and secrets are imported as empty (operators re-enter them post-import).
+
+This design keeps the plaintext manifest readable and auditable regardless of whether secrets are included, and the secrets blob is clearly a separate, opt-in artifact.
+
+**Format:** `crucible-export.json` is a versioned JSON document. The `version` field allows future schema evolution and is checked on import before committing.
+
+**Conflict strategy:** Import by default skips objects that already exist by name/slug; an `--overwrite` flag replaces them. Stacks imported without state simply start fresh on first run.
 
 ---
 
