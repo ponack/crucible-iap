@@ -133,7 +133,7 @@ func (h *Handler) DownloadPlanInternal(c echo.Context) error {
 		}
 	}
 
-	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+id[:8]+`.tfplan"`)
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="plan.tfplan"`)
 	return c.Blob(http.StatusOK, "application/octet-stream", data)
 }
 

@@ -345,7 +345,7 @@ func (h *Handler) DownloadPlan(c echo.Context) error {
 	}
 	defer obj.Close()
 
-	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+id[:8]+`.tfplan"`)
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="plan.tfplan"`)
 	c.Response().Header().Set("Content-Type", "application/octet-stream")
 	return c.Stream(http.StatusOK, "application/octet-stream", obj)
 }
