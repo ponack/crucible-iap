@@ -7,6 +7,8 @@ FROM alpine:3.21@sha256:22e0ec13c0db6b3e1ba3280e831fc50ba7bffe58e81f31670a64b1af
 ARG OPENTOFU_VERSION=1.9.0
 ARG TERRAFORM_VERSION=1.10.5
 ARG ANSIBLE_VERSION=11.2.0
+ARG PULUMI_VERSION=3.154.0
+ARG NODE_VERSION=22
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -15,6 +17,8 @@ RUN apk add --no-cache \
     curl \
     git \
     jq \
+    nodejs \
+    npm \
     python3 \
     py3-pip \
     openssh-client \
@@ -37,6 +41,11 @@ RUN curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/te
 
 # Install Ansible
 RUN pip3 install --no-cache-dir --break-system-packages ansible==${ANSIBLE_VERSION}
+
+# Install Pulumi CLI
+RUN curl -fsSL "https://github.com/pulumi/pulumi/releases/download/v${PULUMI_VERSION}/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
+    | tar -xz --strip-components=1 -C /usr/local/bin/ pulumi/pulumi \
+    && chmod +x /usr/local/bin/pulumi
 
 # Non-root user for running jobs
 RUN addgroup -S runner && adduser -S -G runner runner

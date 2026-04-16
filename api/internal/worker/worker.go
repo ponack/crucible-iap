@@ -164,6 +164,12 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		MemoryLimit:    memLimit,
 		CPULimit:       cpuLimit,
 		TimeoutMinutes: timeoutMins,
+		// MinIO — used by Pulumi runners for the DIY S3 backend.
+		MinioEndpoint:    w.cfg.MinioEndpoint,
+		MinioAccessKey:   w.cfg.MinioAccessKey,
+		MinioSecretKey:   w.cfg.MinioSecretKey,
+		MinioBucketState: w.cfg.MinioBucketState,
+		MinioUseSSL:      w.cfg.MinioUseSSL,
 	}
 
 	runErr := w.runner.Execute(ctx, spec, logWriter)
