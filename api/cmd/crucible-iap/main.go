@@ -88,7 +88,11 @@ func runServe() {
 		os.Exit(1)
 	}
 
-	v := vault.New(cfg.SecretKey)
+	v, err := vault.LoadOrCreate(context.Background(), pool, cfg.SecretKey)
+	if err != nil {
+		slog.Error("failed to initialise vault", "err", err)
+		os.Exit(1)
+	}
 	n := notify.New(pool, v, cfg.BaseURL)
 
 	srv := server.New(cfg, pool, store, q, v, n)
@@ -143,7 +147,11 @@ func runWorker() {
 		os.Exit(1)
 	}
 
-	v := vault.New(cfg.SecretKey)
+	v, err := vault.LoadOrCreate(context.Background(), pool, cfg.SecretKey)
+	if err != nil {
+		slog.Error("failed to initialise vault", "err", err)
+		os.Exit(1)
+	}
 	n := notify.New(pool, v, cfg.BaseURL)
 
 	d, err := worker.New(pool, cfg, r, store, v, n, q)

@@ -18,13 +18,22 @@ import (
 // Vault encrypts and decrypts secret values using a master key.
 type Vault struct {
 	masterKey []byte
+	salt      []byte // nil = legacy nil-salt HKDF (pre-migration only)
 }
 
-// New creates a Vault from the application secret key string.
+// New creates a Vault from the application secret key string using nil HKDF
+// salt. Only used during vault data migration to decrypt legacy ciphertext;
+// production code should use LoadOrCreate which provides a deployment salt.
 func New(secretKey string) *Vault {
-	// SHA-256 the key so any length becomes a valid 32-byte AES key.
 	h := sha256.Sum256([]byte(secretKey))
 	return &Vault{masterKey: h[:]}
+}
+
+// NewWithSalt creates a Vault with a deployment-unique HKDF salt. All new
+// encryptions and post-migration decryptions use this form.
+func NewWithSalt(secretKey string, salt []byte) *Vault {
+	h := sha256.Sum256([]byte(secretKey))
+	return &Vault{masterKey: h[:], salt: salt}
 }
 
 // Encrypt encrypts plaintext for the given stackID using AES-256-GCM.
@@ -95,7 +104,7 @@ func (v *Vault) decryptWithContext(ctx string, data []byte) ([]byte, error) {
 }
 
 func (v *Vault) deriveKeyFor(info string) ([]byte, error) {
-	r := hkdf.New(sha256.New, v.masterKey, nil, []byte(info))
+	r := hkdf.New(sha256.New, v.masterKey, v.salt, []byte(info))
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(r, key); err != nil {
 		return nil, err
