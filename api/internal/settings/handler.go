@@ -4,13 +4,51 @@ package settings
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/config"
 )
+
+var memoryLimitRe = regexp.MustCompile(`^(\d+)([mMgG])$`)
+
+// validateMemoryLimit accepts values like "512m", "2g". Allowed range: 128 MB – 64 GB.
+func validateMemoryLimit(s string) error {
+	m := memoryLimitRe.FindStringSubmatch(s)
+	if m == nil {
+		return fmt.Errorf("runner_memory_limit must be a number followed by m or g (e.g. '512m', '2g')")
+	}
+	val, _ := strconv.ParseInt(m[1], 10, 64)
+	unit := m[2]
+	var mb int64
+	switch unit {
+	case "m", "M":
+		mb = val
+	case "g", "G":
+		mb = val * 1024
+	}
+	if mb < 128 {
+		return fmt.Errorf("runner_memory_limit must be at least 128m")
+	}
+	if mb > 65536 {
+		return fmt.Errorf("runner_memory_limit must not exceed 64g")
+	}
+	return nil
+}
+
+// validateCPULimit accepts values like "0.5", "1.0", "4". Allowed range: 0.1 – 32.
+func validateCPULimit(s string) error {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f < 0.1 || f > 32 {
+		return fmt.Errorf("runner_cpu_limit must be a number between 0.1 and 32 (e.g. '1.0')")
+	}
+	return nil
+}
 
 // Settings mirrors the system_settings DB row.
 type Settings struct {
@@ -89,6 +127,19 @@ func (h *Handler) Update(c echo.Context) error {
 	}
 	if req.ArtifactRetentionDays != nil && *req.ArtifactRetentionDays < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "artifact_retention_days must be 0 (keep forever) or positive")
+	}
+	if req.RunnerMemoryLimit != nil && *req.RunnerMemoryLimit != "" {
+		if err := validateMemoryLimit(*req.RunnerMemoryLimit); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+	}
+	if req.RunnerCPULimit != nil && *req.RunnerCPULimit != "" {
+		if err := validateCPULimit(*req.RunnerCPULimit); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		}
+	}
+	if req.SMTPPort != nil && (*req.SMTPPort < 1 || *req.SMTPPort > 65535) {
+		return echo.NewHTTPError(http.StatusBadRequest, "smtp_port must be between 1 and 65535")
 	}
 	if req.DefaultVCSProvider != nil {
 		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}

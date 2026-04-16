@@ -81,6 +81,18 @@ func (h *Handler) AddRemoteStateSource(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "a stack cannot reference its own state")
 	}
 
+	// Verify caller has at least member role in this org. The route middleware
+	// already enforces this, but we check explicitly here because this handler
+	// creates a token on the source stack — an operation that should require
+	// write access. When per-stack RBAC is added, this is the right place to
+	// check access to the source stack specifically.
+	var callerRole string
+	if err := h.pool.QueryRow(c.Request().Context(),
+		`SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2`,
+		orgID, userID).Scan(&callerRole); err != nil || (callerRole != "member" && callerRole != "admin") {
+		return echo.NewHTTPError(http.StatusForbidden, "member role required to configure remote state")
+	}
+
 	// Verify both stacks belong to this org.
 	var depExists, srcExists bool
 	h.pool.QueryRow(c.Request().Context(),
