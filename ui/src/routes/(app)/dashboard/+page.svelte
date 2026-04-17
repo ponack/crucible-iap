@@ -150,27 +150,63 @@
 		discarded:   'bg-zinc-600'
 	};
 
+	const auditVerbMap: Record<string, string> = {
+		'stack.created': 'created stack',
+		'stack.updated': 'updated stack',
+		'stack.deleted': 'deleted stack',
+		'stack.enabled': 'enabled stack',
+		'stack.disabled': 'disabled stack',
+		'stack.token.created': 'created stack token',
+		'stack.token.revoked': 'revoked stack token',
+		'stack.remote_state.added': 'added remote state source',
+		'stack.remote_state.removed': 'removed remote state source',
+		'stack.dependency.added': 'added stack dependency',
+		'stack.dependency.removed': 'removed stack dependency',
+		'run.created': 'triggered run',
+		'run.queued': 'run queued',
+		'run.preparing': 'run preparing',
+		'run.planning': 'run planning',
+		'run.unconfirmed': 'plan ready — awaiting approval',
+		'run.confirmed': 'approved run',
+		'run.applying': 'run applying',
+		'run.finished': 'run finished',
+		'run.failed': 'run failed',
+		'run.canceled': 'run canceled',
+		'run.discarded': 'run discarded',
+		'policy.created': 'created policy',
+		'policy.updated': 'updated policy',
+		'policy.deleted': 'deleted policy',
+		'variable_set.created': 'created variable set',
+		'variable_set.updated': 'updated variable set',
+		'variable_set.deleted': 'deleted variable set',
+		'variable_set.attached': 'attached variable set',
+		'variable_set.detached': 'detached variable set',
+		'org.member.updated': 'updated member role',
+		'org.member.removed': 'removed member',
+		'org.invite.created': 'sent invite',
+		'org.invite.revoked': 'revoked invite'
+	};
+
 	function auditVerb(action: string) {
-		const map: Record<string, string> = {
-			'stack.created': 'created stack',
-			'stack.updated': 'updated stack',
-			'stack.deleted': 'deleted stack',
-			'run.created': 'triggered run',
-			'run.confirmed': 'approved run',
-			'run.discarded': 'discarded run',
-			'run.canceled': 'canceled run',
-			'policy.created': 'created policy',
-			'policy.updated': 'updated policy',
-			'policy.deleted': 'deleted policy',
-			'stack.remote_state.added': 'added remote state source',
-			'stack.remote_state.removed': 'removed remote state source',
-			'stack.token.created': 'created stack token',
-			'stack.token.revoked': 'revoked stack token',
-			'org.member.removed': 'removed member',
-			'org.invite.created': 'sent invite',
-			'org.invite.revoked': 'revoked invite'
-		};
-		return map[action] ?? action;
+		return auditVerbMap[action] ?? action;
+	}
+
+	// Returns Tailwind classes and a short symbol for each action category.
+	function auditIcon(ev: { action: string; actor_type: string; actor_id?: string }): { bg: string; fg: string; symbol: string } {
+		const a = ev.action;
+		if (a === 'run.finished')   return { bg: 'bg-green-900',  fg: 'text-green-400',  symbol: '✓' };
+		if (a === 'run.failed')     return { bg: 'bg-red-900',    fg: 'text-red-400',    symbol: '✗' };
+		if (a === 'run.unconfirmed')return { bg: 'bg-yellow-900', fg: 'text-yellow-400', symbol: '…' };
+		if (a === 'run.confirmed')  return { bg: 'bg-green-900',  fg: 'text-green-400',  symbol: '✓' };
+		if (a === 'run.discarded' || a === 'run.canceled')
+			return { bg: 'bg-zinc-800', fg: 'text-zinc-500', symbol: '×' };
+		if (a.startsWith('run.'))   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '▶' };
+		if (a.startsWith('stack.')) return { bg: 'bg-indigo-900', fg: 'text-indigo-400', symbol: 'S' };
+		if (a.startsWith('policy.'))return { bg: 'bg-violet-900', fg: 'text-violet-400', symbol: 'P' };
+		if (a.startsWith('variable_set.')) return { bg: 'bg-teal-900', fg: 'text-teal-400', symbol: 'V' };
+		if (a.startsWith('org.'))   return { bg: 'bg-zinc-800',   fg: 'text-zinc-400',   symbol: 'O' };
+		if (ev.actor_id)            return { bg: 'bg-zinc-800',   fg: 'text-zinc-400',   symbol: ev.actor_id[0].toUpperCase() };
+		return { bg: 'bg-zinc-800', fg: 'text-zinc-500', symbol: '·' };
 	}
 </script>
 
@@ -358,9 +394,10 @@
 			{:else}
 				<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800">
 					{#each recentAudit as ev (ev.id)}
+						{@const icon = auditIcon(ev)}
 						<div class="flex items-start gap-3 px-4 py-2.5">
-							<div class="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-								<span class="text-zinc-400 text-xs">{(ev.actor_id ?? '?')[0]?.toUpperCase()}</span>
+							<div class="w-6 h-6 rounded-full {icon.bg} flex items-center justify-center flex-shrink-0 mt-0.5">
+								<span class="{icon.fg} text-xs">{icon.symbol}</span>
 							</div>
 							<div class="flex-1 min-w-0">
 								<p class="text-sm text-zinc-300 truncate">{auditVerb(ev.action)}</p>

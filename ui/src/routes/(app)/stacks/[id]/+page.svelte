@@ -690,6 +690,7 @@
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
+			<!-- Primary run actions -->
 			<button onclick={triggerRun} disabled={triggeringRun}
 				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{triggeringRun ? 'Queuing…' : 'Trigger run'}
@@ -709,6 +710,11 @@
 					{triggeringDrift ? 'Queuing…' : 'Drift check'}
 				</button>
 			{/if}
+
+			<!-- Separator -->
+			<div class="w-px h-5 bg-zinc-700 mx-1"></div>
+
+			<!-- Stack management -->
 			<button onclick={() => { editing = !editing; resetForm(); }}
 				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{editing ? 'Cancel' : 'Edit'}
@@ -719,17 +725,20 @@
 					{togglingDisabled ? '…' : stack.is_disabled ? 'Enable' : 'Disable'}
 				</button>
 			{/if}
+
+			<!-- Separator before destructive actions -->
 			{#if auth.isMemberOrAbove}
+				<div class="w-px h-5 bg-zinc-700 mx-1"></div>
 				<button onclick={() => { showDestroyModal = true; destroyConfirmName = ''; }}
 					class="border border-orange-900 hover:border-orange-700 text-orange-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
-					Destroy infra
+					Destroy
 				</button>
 			{/if}
 			{#if auth.isAdmin}
 				<button onclick={forceUnlock} disabled={forcingUnlock}
-					class="border border-yellow-900 hover:border-yellow-700 text-yellow-500 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+					class="border border-zinc-700 hover:border-zinc-600 text-zinc-500 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
 					title="Clear a stuck state lock from a failed or cancelled run">
-					{forcingUnlock ? 'Unlocking…' : 'Force unlock'}
+					{forcingUnlock ? '…' : 'Unlock'}
 				</button>
 				<button onclick={deleteStack}
 					class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
