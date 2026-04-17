@@ -55,6 +55,7 @@
 				<a href="/stacks" class={navClass('/stacks')}>Stacks</a>
 				<a href="/runs" class={navClass('/runs')}>Runs</a>
 				<a href="/policies" class={navClass('/policies')}>Policies</a>
+				<a href="/registry" class={navClass('/registry')}>Registry</a>
 				<a href="/variable-sets" class={navClass('/variable-sets')}>Variable Sets</a>
 				<a href="/stack-templates" class={navClass('/stack-templates')}>Templates</a>
 				<a href="/audit" class={navClass('/audit')}>Audit Log</a>

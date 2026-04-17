@@ -806,3 +806,37 @@ export const system = {
 			request<SystemSettings>('/system/settings', { method: 'PUT', body: JSON.stringify(data) })
 	},
 };
+
+// ── Module Registry ───────────────────────────────────────────────────────────
+
+export interface RegistryModule {
+	id: string;
+	namespace: string;
+	name: string;
+	provider: string;
+	version: string;
+	readme?: string;
+	yanked: boolean;
+	published_by?: string;
+	published_at: string;
+}
+
+async function requestForm<T>(path: string, body: FormData): Promise<T> {
+	const headers: Record<string, string> = {};
+	if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
+	const res = await fetch('/api/v1' + path, { method: 'POST', headers, body });
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ error: res.statusText }));
+		throw new Error((err as { error?: string }).error ?? 'Request failed');
+	}
+	if (res.status === 204) return null as T;
+	return res.json() as Promise<T>;
+}
+
+export const registry = {
+	list: (q?: string) =>
+		request<RegistryModule[]>(`/registry/modules${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+	get: (id: string) => request<RegistryModule>(`/registry/modules/${id}`),
+	publish: (form: FormData) => requestForm<RegistryModule>('/registry/modules', form),
+	yank: (id: string) => request<null>(`/registry/modules/${id}`, { method: 'DELETE' }),
+};
