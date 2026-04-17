@@ -326,7 +326,7 @@ cd api && go test -race ./...
 - [x] Org-level notification defaults — pre-fill Slack webhook and VCS provider config for new stacks
 - [x] Intuitive dashboard — landing page showing org-wide health at a glance: active/failed runs, stacks with drift, recent audit events, and inline approve/discard/cancel actions without navigating into individual stacks
 - [ ] External worker agents — additional runner nodes that connect to the primary instance, allowing job execution capacity to be scaled out independently
-- [ ] Stack dependency graph — first-class upstream/downstream relationships with automatic downstream triggers after a successful apply
+- [x] Stack dependency graph — first-class upstream/downstream relationships with automatic downstream triggers after a successful apply; cycle detection via recursive CTE
 - [x] Variable sets — define a shared group of env vars once and attach to multiple stacks; eliminates repetition across similar stacks
 - [x] Stack templates / blueprints — create new stacks pre-filled from a saved template (tool, repo, branch, project root, auto-apply, drift settings)
 - [x] Manual run with variable overrides — trigger a one-off run with temporary env var overrides without changing stack config
