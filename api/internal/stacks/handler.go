@@ -73,6 +73,8 @@ type Stack struct {
 	IsDisabled           bool       `json:"is_disabled"`
 	LastRunStatus        string     `json:"last_run_status,omitempty"`
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
+	UpstreamCount        int        `json:"upstream_count"`
+	DownstreamCount      int        `json:"downstream_count"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -117,6 +119,8 @@ func (h *Handler) List(c echo.Context) error {
 		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift,
 		       s.is_disabled, s.created_at, s.updated_at,
 		       COALESCE(lr.status::text,''), lr.queued_at,
+		       (SELECT COUNT(*) FROM stack_dependencies WHERE downstream_id = s.id),
+		       (SELECT COUNT(*) FROM stack_dependencies WHERE upstream_id = s.id),
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN LATERAL (
@@ -142,6 +146,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
 			&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt,
 			&s.LastRunStatus, &s.LastRunAt,
+			&s.UpstreamCount, &s.DownstreamCount,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}

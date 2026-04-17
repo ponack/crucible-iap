@@ -144,6 +144,12 @@
 									{#if stack.is_disabled}
 										<span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">disabled</span>
 									{/if}
+									{#if stack.upstream_count > 0 || stack.downstream_count > 0}
+										<span class="text-xs text-zinc-600 font-mono"
+											title="↑{stack.upstream_count} upstream · ↓{stack.downstream_count} downstream">
+											{[stack.upstream_count > 0 ? `↑${stack.upstream_count}` : '', stack.downstream_count > 0 ? `↓${stack.downstream_count}` : ''].filter(Boolean).join(' ')}
+										</span>
+									{/if}
 								</div>
 								{#if stack.description}
 									<p class="text-zinc-500 text-xs mt-0.5">{stack.description}</p>
