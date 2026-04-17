@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 
@@ -118,6 +118,13 @@
 	let stateResources = $state<StateResource[]>([]);
 	let resourceFilter = $state('');
 
+	// Access / stack members
+	let members = $state<StackMember[]>([]);
+	let orgUsers = $state<OrgMember[]>([]);
+	let addMemberUserID = $state('');
+	let addMemberRole = $state<'viewer' | 'approver'>('viewer');
+	let addingMember = $state(false);
+
 	// State backend
 	let stateBackendProvider = $state<StateBackendProvider | ''>('');
 	let savingStateBackend = $state(false);
@@ -144,7 +151,7 @@
 
 	onMount(async () => {
 		try {
-			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes, remoteSourcesRes, allStacksRes, integrationsRes, stackVarSetsRes, allVarSetsRes, upstreamRes, downstreamRes] = await Promise.all([
+			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes, remoteSourcesRes, allStacksRes, integrationsRes, stackVarSetsRes, allVarSetsRes, upstreamRes, downstreamRes, membersRes, orgUsersRes] = await Promise.all([
 				stacks.get(stackID),
 				runs.list(stackID),
 				stacks.tokens.list(stackID),
@@ -157,7 +164,9 @@
 				varSets.forStack(stackID),
 				varSets.list(),
 				deps.upstream(stackID),
-				deps.downstream(stackID)
+				deps.downstream(stackID),
+				stackMembers.list(stackID),
+				org.members.list()
 			]);
 			stack = stackRes;
 			recentRuns = runsRes.data;
@@ -172,6 +181,8 @@
 			allVarSets = allVarSetsRes;
 			upstreamDeps = upstreamRes;
 			downstreamDeps = downstreamRes;
+			members = membersRes;
+			orgUsers = orgUsersRes;
 			selectedVCSIntegration = stackRes.vcs_integration_id ?? '';
 			selectedSecretIntegration = stackRes.secret_integration_id ?? '';
 			if (stackRes.state_backend_provider) {
@@ -547,6 +558,38 @@
 		}
 	}
 
+	async function upsertMember() {
+		if (!addMemberUserID) return;
+		addingMember = true;
+		try {
+			await stackMembers.upsert(stackID, addMemberUserID, addMemberRole);
+			members = await stackMembers.list(stackID);
+			addMemberUserID = '';
+		} catch (e) {
+			alert((e as Error).message);
+		} finally {
+			addingMember = false;
+		}
+	}
+
+	async function removeMember(userID: string) {
+		try {
+			await stackMembers.remove(stackID, userID);
+			members = members.filter((m) => m.user_id !== userID);
+		} catch (e) {
+			alert((e as Error).message);
+		}
+	}
+
+	async function updateMemberRole(userID: string, role: 'viewer' | 'approver') {
+		try {
+			await stackMembers.upsert(stackID, userID, role);
+			members = members.map((m) => m.user_id === userID ? { ...m, role } : m);
+		} catch (e) {
+			alert((e as Error).message);
+		}
+	}
+
 	async function rotateWebhookSecret() {
 		if (!confirm('Rotate the webhook secret? The old secret will stop working immediately — update your repository webhook settings before the next push.')) return;
 		rotatingWebhook = true;
@@ -696,28 +739,30 @@
 		</div>
 		<div class="flex items-center gap-2">
 			<!-- Primary run actions -->
-			<button onclick={triggerRun} disabled={triggeringRun}
-				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
-				{triggeringRun ? 'Queuing…' : 'Trigger run'}
-			</button>
-			<button
-				onclick={() => { showOverrides = !showOverrides; }}
-				title="Variable overrides for this run"
-				class="border transition-colors text-sm px-2 py-1.5 rounded-lg
-					{overrides.length > 0
-						? 'border-indigo-600 text-indigo-400 hover:border-indigo-400'
-						: 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}">
-				{overrides.length > 0 ? `Overrides (${overrides.length})` : 'Overrides'}
-			</button>
-			{#if stack.drift_detection}
-				<button onclick={triggerDrift} disabled={triggeringDrift}
-					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
-					{triggeringDrift ? 'Queuing…' : 'Drift check'}
+			{#if stack.my_stack_role !== 'viewer'}
+				<button onclick={triggerRun} disabled={triggeringRun}
+					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+					{triggeringRun ? 'Queuing…' : 'Trigger run'}
 				</button>
-			{/if}
+				<button
+					onclick={() => { showOverrides = !showOverrides; }}
+					title="Variable overrides for this run"
+					class="border transition-colors text-sm px-2 py-1.5 rounded-lg
+						{overrides.length > 0
+							? 'border-indigo-600 text-indigo-400 hover:border-indigo-400'
+							: 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}">
+					{overrides.length > 0 ? `Overrides (${overrides.length})` : 'Overrides'}
+				</button>
+				{#if stack.drift_detection}
+					<button onclick={triggerDrift} disabled={triggeringDrift}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+						{triggeringDrift ? 'Queuing…' : 'Drift check'}
+					</button>
+				{/if}
 
-			<!-- Separator -->
-			<div class="w-px h-5 bg-zinc-700 mx-1"></div>
+				<!-- Separator -->
+				<div class="w-px h-5 bg-zinc-700 mx-1"></div>
+			{/if}
 
 			<!-- Stack management -->
 			<button onclick={() => { editing = !editing; resetForm(); }}
@@ -732,7 +777,7 @@
 			{/if}
 
 			<!-- Separator before destructive actions -->
-			{#if auth.isMemberOrAbove}
+			{#if stack.my_stack_role !== 'viewer'}
 				<div class="w-px h-5 bg-zinc-700 mx-1"></div>
 				<button onclick={() => { showDestroyModal = true; destroyConfirmName = ''; }}
 					class="border border-orange-900 hover:border-orange-700 text-orange-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
@@ -1609,6 +1654,82 @@
 			{/if}
 		</form>
 	</section>
+
+	<!-- Access -->
+	{#if auth.isAdmin}
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<div>
+				<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Access</h2>
+				<p class="text-xs text-zinc-500 mt-0.5">
+					{#if stack.is_restricted}
+						Restricted — only listed members can view and interact with this stack.
+					{:else}
+						Open — all org members can trigger runs; add a member to restrict access.
+					{/if}
+				</p>
+			</div>
+		</div>
+
+		{#if members.length > 0}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">User</th>
+							<th class="text-left px-4 py-2">Role</th>
+							<th class="px-4 py-2"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each members as m (m.user_id)}
+							<tr>
+								<td class="px-4 py-2.5">
+									<span class="text-zinc-200">{m.name || m.email}</span>
+									{#if m.name}<span class="text-zinc-500 text-xs ml-1">{m.email}</span>{/if}
+								</td>
+								<td class="px-4 py-2.5">
+									<select
+										value={m.role}
+										onchange={(e) => updateMemberRole(m.user_id, (e.target as HTMLSelectElement).value as 'viewer' | 'approver')}
+										class="field-input w-auto text-xs py-1">
+										<option value="viewer">viewer</option>
+										<option value="approver">approver</option>
+									</select>
+								</td>
+								<td class="px-4 py-2.5 text-right">
+									<button onclick={() => removeMember(m.user_id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-zinc-600 text-sm">No explicit members — stack is open to all org members.</p>
+		{/if}
+
+		{#if orgUsers.some(u => !members.some(m => m.user_id === u.user_id))}
+			{@const eligible = orgUsers.filter(u => !members.some(m => m.user_id === u.user_id))}
+			<div class="flex items-center gap-2">
+				<select class="field-input w-64" bind:value={addMemberUserID}>
+					<option value="">— add a member —</option>
+					{#each eligible as u (u.user_id)}
+						<option value={u.user_id}>{u.name || u.email}</option>
+					{/each}
+				</select>
+				<select class="field-input w-32" bind:value={addMemberRole}>
+					<option value="viewer">viewer</option>
+					<option value="approver">approver</option>
+				</select>
+				<button onclick={upsertMember} disabled={!addMemberUserID || addingMember}
+					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					{addingMember ? 'Adding…' : 'Add'}
+				</button>
+			</div>
+		{/if}
+	</section>
+	{/if}
 
 	<!-- Webhooks -->
 	<section class="space-y-3">

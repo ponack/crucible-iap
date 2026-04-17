@@ -231,7 +231,7 @@
 					Delete
 				</button>
 			{/if}
-			{#if run.status === 'unconfirmed'}
+			{#if run.status === 'unconfirmed' && run.my_stack_role !== 'viewer'}
 				{#if run.type === 'destroy'}
 					<button onclick={confirm} disabled={acting !== null}
 						class="bg-orange-700 hover:bg-orange-600 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors font-medium">
@@ -248,7 +248,7 @@
 					{acting === 'discard' ? 'Discarding…' : 'Discard'}
 				</button>
 			{/if}
-			{#if ['queued','preparing','planning','applying'].includes(run.status)}
+			{#if ['queued','preparing','planning','applying'].includes(run.status) && run.my_stack_role !== 'viewer'}
 				<button onclick={cancel} disabled={acting !== null}
 					class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 					{acting === 'cancel' ? 'Canceling…' : 'Cancel'}

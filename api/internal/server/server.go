@@ -26,6 +26,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/runs"
 	"github.com/ponack/crucible-iap/internal/serviceaccounts"
 	"github.com/ponack/crucible-iap/internal/settings"
+	"github.com/ponack/crucible-iap/internal/stackmembers"
 	"github.com/ponack/crucible-iap/internal/stacks"
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
@@ -117,6 +118,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	envVarHandler := envvars.NewHandler(s.pool, v)
 	varSetHandler := varsets.NewHandler(s.pool, v)
 	depsHandler := deps.NewHandler(s.pool)
+	stackMembersHandler := stackmembers.NewHandler(s.pool)
 	satHandler := serviceaccounts.NewHandler(s.pool)
 	tmplHandler := templates.NewHandler(s.pool)
 	integrationHandler := integrations.NewHandler(s.pool, v)
@@ -261,6 +263,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stacks/:id/remote-state-sources", stackHandler.ListRemoteStateSources)
 	api.POST("/stacks/:id/remote-state-sources", stackHandler.AddRemoteStateSource, member)
 	api.DELETE("/stacks/:id/remote-state-sources/:source_id", stackHandler.RemoveRemoteStateSource, member)
+
+	// Stack-level RBAC members (admin only to manage)
+	api.GET("/stacks/:id/members", stackMembersHandler.List)
+	api.PUT("/stacks/:id/members/:userID", stackMembersHandler.Upsert, admin)
+	api.DELETE("/stacks/:id/members/:userID", stackMembersHandler.Remove, admin)
 
 	// Stack dependency graph
 	api.GET("/stacks/:id/upstream", depsHandler.ListUpstream)
