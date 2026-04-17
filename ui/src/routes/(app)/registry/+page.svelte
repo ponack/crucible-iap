@@ -92,7 +92,7 @@
 			<h1 class="text-xl font-semibold text-white">Module Registry</h1>
 			<p class="text-sm text-zinc-400 mt-0.5">Private Terraform/OpenTofu modules backed by MinIO</p>
 		</div>
-		{#if auth.isAdminOrAbove}
+		{#if auth.isAdmin}
 			<button
 				onclick={() => { showForm = !showForm; formError = null; }}
 				class="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white text-sm rounded"

@@ -80,7 +80,7 @@
 					{#if mod.published_by}by {mod.published_by}{/if}
 				</p>
 			</div>
-			{#if auth.isAdminOrAbove && !mod.yanked}
+			{#if auth.isAdmin && !mod.yanked}
 				<button onclick={yank} disabled={yanking}
 					class="px-3 py-1.5 border border-red-700 hover:bg-red-900/30 text-red-400 text-sm rounded disabled:opacity-50">
 					{yanking ? 'Yanking…' : 'Yank version'}

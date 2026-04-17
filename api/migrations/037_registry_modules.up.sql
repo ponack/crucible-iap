@@ -1,6 +1,6 @@
 CREATE TABLE registry_modules (
     id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id       UUID        NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    org_id       UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     namespace    TEXT        NOT NULL,
     name         TEXT        NOT NULL,
     provider     TEXT        NOT NULL,
