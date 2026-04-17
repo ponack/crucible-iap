@@ -27,8 +27,9 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 ### Policy and compliance
 
 - **Policy-as-code** — OPA/Rego policies evaluate in microseconds; attach multiple policies per stack
-- **Policy hooks** — `pre_plan`, `post_plan`, `pre_apply`, `trigger` (downstream stacks), `login`
+- **Policy hooks** — `pre_plan`, `post_plan`, `pre_apply`, `trigger` (downstream stacks), `login`, `approval`
 - **Deny and warn** — blocking denials halt the run; non-blocking warnings surface to the operator
+- **Approval policies** — `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and can return `require_approval: true` to gate runs behind explicit sign-off; a `deny` fails the run immediately; approved runs transition to `unconfirmed` or auto-apply directly
 - **Full audit log** — every state-mutating action recorded; append-only and tamper-resistant at the database level
 
 ### Infrastructure
