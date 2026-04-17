@@ -4,8 +4,14 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
 
 	"github.com/spf13/viper"
+)
+
+var (
+	reMemLimit = regexp.MustCompile(`^(\d+)([mMgG])$`)
 )
 
 type Config struct {
@@ -122,6 +128,10 @@ func (c *Config) ValidateServe() error {
 		return fmt.Errorf("LOCAL_AUTH_EMAIL and LOCAL_AUTH_PASSWORD are required when LOCAL_AUTH_ENABLED=true")
 	}
 
+	if err := validateRunnerLimits(c.RunnerMemoryLimit, c.RunnerCPULimit); err != nil {
+		return err
+	}
+
 	// Warn on known-default values that signal an operator forgot to customise .env.
 	for _, pair := range [][2]string{
 		{"POSTGRES_PASSWORD", c.PostgresPassword},
@@ -132,6 +142,33 @@ func (c *Config) ValidateServe() error {
 		}
 	}
 
+	return nil
+}
+
+func validateRunnerLimits(memLimit, cpuLimit string) error {
+	if memLimit != "" {
+		m := reMemLimit.FindStringSubmatch(memLimit)
+		if m == nil {
+			return fmt.Errorf("RUNNER_MEMORY_LIMIT %q is invalid — expected format: 512m or 2g", memLimit)
+		}
+		val, _ := strconv.ParseInt(m[1], 10, 64)
+		unit := m[2]
+		var mb int64
+		if unit == "g" || unit == "G" {
+			mb = val * 1024
+		} else {
+			mb = val
+		}
+		if mb < 128 {
+			return fmt.Errorf("RUNNER_MEMORY_LIMIT must be at least 128m")
+		}
+	}
+	if cpuLimit != "" {
+		f, err := strconv.ParseFloat(cpuLimit, 64)
+		if err != nil || f <= 0 {
+			return fmt.Errorf("RUNNER_CPU_LIMIT %q is invalid — expected a positive number (e.g. 1.0)", cpuLimit)
+		}
+	}
 	return nil
 }
 
