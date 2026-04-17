@@ -35,10 +35,17 @@ Crucible uses [OPA (Open Policy Agent)](https://www.openpolicyagent.org/) with R
 | `post_plan` | After plan, before confirmation | `plan` | Block dangerous changes (most common) |
 | `pre_plan` | Before plan starts | `plan` | Validate stack configuration |
 | `pre_apply` | After confirmation, before apply | `plan` | Final safety check |
+| `approval` | After plan, before apply | `approval` | Gate applies on human review |
 | `trigger` | After a run completes | `trigger` | Trigger downstream stacks |
 | `login` | On user login | `login` | Restrict which users can log in |
 
-The **rule name** is the top-level Rego rule Crucible queries — `data.crucible.<rule-name>`. Plan-type policies (`post_plan`, `pre_plan`, `pre_apply`) all use the `plan` rule; `trigger` and `login` use their own matching rule name.
+The **rule name** is the top-level Rego rule Crucible queries — `data.crucible.<rule-name>`. Plan-type policies (`post_plan`, `pre_plan`, `pre_apply`) all use the `plan` rule; `approval`, `trigger`, and `login` use their own matching rule name.
+
+### Approval flow
+
+When an `approval` policy returns `require_approval: true`, the run enters `pending_approval` status instead of `unconfirmed`. The run is held until an operator with at least the `approver` role on the stack (or an org admin) clicks **Approve** on the run detail page. Approving transitions the run to `unconfirmed` and the normal apply/confirm flow continues. Discarding cancels the run.
+
+Multiple `approval` policies can be attached to a stack. If **any** returns `require_approval: true`, the run is gated regardless of what the others return.
 
 ---
 
@@ -73,6 +80,10 @@ The most useful field is `resource_changes`:
   }
 }
 ```
+
+### Approval policies
+
+Receive the same plan JSON as plan-type policies (see above). You can inspect `resource_changes`, `configuration`, and `variables` in the same way. The input is identical to `post_plan` input — the difference is only in the expected output shape.
 
 ### Login policies
 
@@ -122,6 +133,14 @@ plan := result if {
     "deny":    deny_msgs,     # set of strings — each blocks the run
     "warn":    warn_msgs,     # set of strings — non-blocking, shown to operator
     "trigger": [],            # unused for plan policies; must be present
+  }
+}
+
+# Used by approval policies
+approval := result if {
+  result := {
+    "require_approval": true,           # bool — true gates the run on human approval
+    "reason":           "some reason",  # string — shown to the approver; may be empty
   }
 }
 
@@ -263,6 +282,66 @@ warn_msgs contains msg if {
 
 ---
 
+### Require approval before any destroy (approval policy)
+
+```rego
+package crucible
+
+import future.keywords.if
+
+approval := result if {
+  result := {
+    "require_approval": require_approval,
+    "reason":           reason,
+  }
+}
+
+deletes := [r |
+  some r in input.resource_changes
+  "delete" in r.change.actions
+]
+
+require_approval := count(deletes) > 0
+
+reason := msg if {
+  require_approval
+  msg := sprintf("%v resource(s) will be deleted — approval required", [count(deletes)])
+} else := ""
+```
+
+---
+
+### Require approval for large plans (approval policy)
+
+```rego
+package crucible
+
+import future.keywords.if
+
+THRESHOLD := 5
+
+approval := result if {
+  result := {
+    "require_approval": require_approval,
+    "reason":           reason,
+  }
+}
+
+changing := [r |
+  some r in input.resource_changes
+  not "no-op" in r.change.actions
+]
+
+require_approval := count(changing) > THRESHOLD
+
+reason := msg if {
+  require_approval
+  msg := sprintf("plan modifies %v resources (threshold: %v) — approval required", [count(changing), THRESHOLD])
+} else := ""
+```
+
+---
+
 ### Trigger a downstream stack (trigger policy)
 
 ```rego
@@ -355,6 +434,12 @@ opa eval \
   --data your-policy.rego \
   --input plan.json \
   "data.crucible.plan"
+
+# For approval policies, query the approval rule instead:
+opa eval \
+  --data your-approval-policy.rego \
+  --input plan.json \
+  "data.crucible.approval"
 ```
 
 Expected output for a passing policy:
