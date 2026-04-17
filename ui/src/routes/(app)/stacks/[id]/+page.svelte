@@ -125,6 +125,13 @@
 	let addMemberRole = $state<'viewer' | 'approver'>('viewer');
 	let addingMember = $state(false);
 
+	// Module publishing
+	let moduleNamespace = $state('');
+	let moduleName = $state('');
+	let moduleProvider = $state('aws');
+	let savingModule = $state(false);
+	let moduleSaved = $state(false);
+
 	// State backend
 	let stateBackendProvider = $state<StateBackendProvider | ''>('');
 	let savingStateBackend = $state(false);
@@ -190,6 +197,9 @@
 			}
 			notifVCSProvider = stackRes.vcs_provider ?? 'github';
 			notifVCSBaseURL = stackRes.vcs_base_url ?? '';
+			moduleNamespace = stackRes.module_namespace ?? '';
+			moduleName = stackRes.module_name ?? '';
+			moduleProvider = stackRes.module_provider ?? 'aws';
 			resetForm();
 		} catch (e) {
 			error = (e as Error).message;
@@ -496,6 +506,25 @@
 			alert((err as Error).message);
 		} finally {
 			savingIntegrations = false;
+		}
+	}
+
+	async function saveModuleConfig(e: SubmitEvent) {
+		e.preventDefault();
+		savingModule = true;
+		moduleSaved = false;
+		try {
+			stack = await stacks.update(stackID, {
+				module_namespace: moduleNamespace,
+				module_name: moduleName,
+				module_provider: moduleProvider,
+			});
+			moduleSaved = true;
+			setTimeout(() => (moduleSaved = false), 2000);
+		} catch (e) {
+			editError = (e as Error).message;
+		} finally {
+			savingModule = false;
 		}
 	}
 
@@ -1908,6 +1937,54 @@
 						{/each}
 					</tbody>
 				</table>
+			</div>
+		{/if}
+	</section>
+
+	<!-- Module publishing -->
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Module publishing</h2>
+			{#if stack.module_namespace}
+				<a href="/registry" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">View in registry →</a>
+			{/if}
+		</div>
+		<p class="text-xs text-zinc-600">When configured, tag pushes matching a semver pattern (e.g. <span class="font-mono text-zinc-500">v1.2.3</span>) will automatically publish a new module version to the private Terraform registry.</p>
+		{#if auth.isAdmin}
+			<form onsubmit={saveModuleConfig} class="border border-zinc-800 rounded-xl p-5 space-y-4">
+				<div class="grid grid-cols-3 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="mod-namespace">Namespace</label>
+						<input id="mod-namespace" class="field-input" bind:value={moduleNamespace}
+							placeholder="myorg" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="mod-name">Module name</label>
+						<input id="mod-name" class="field-input" bind:value={moduleName}
+							placeholder="vpc" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="mod-provider">Provider</label>
+						<input id="mod-provider" class="field-input" bind:value={moduleProvider}
+							placeholder="aws" />
+					</div>
+				</div>
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingModule}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						{savingModule ? 'Saving…' : moduleSaved ? 'Saved' : 'Save'}
+					</button>
+					{#if moduleNamespace || moduleName}
+						<button type="button" onclick={async () => { moduleNamespace = ''; moduleName = ''; moduleProvider = ''; stack = await stacks.update(stackID, { module_namespace: '', module_name: '', module_provider: '' }); }}
+							class="text-xs text-zinc-500 hover:text-red-400 transition-colors">
+							Clear
+						</button>
+					{/if}
+				</div>
+			</form>
+		{:else if stack.module_namespace}
+			<div class="border border-zinc-800 rounded-xl p-4 text-sm text-zinc-400">
+				Publishing as <span class="font-mono text-white">{stack.module_namespace}/{stack.module_name}/{stack.module_provider}</span>
 			</div>
 		{/if}
 	</section>

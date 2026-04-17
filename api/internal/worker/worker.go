@@ -56,6 +56,11 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		queue:    q,
 		engine:   e,
 	})
+	river.AddWorker(workers, &ModulePublishWorker{
+		pool:    pool,
+		storage: s,
+		vault:   v,
+	})
 
 	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{

@@ -79,6 +79,9 @@ type Stack struct {
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
 	UpstreamCount        int        `json:"upstream_count"`
 	DownstreamCount      int        `json:"downstream_count"`
+	ModuleNamespace      *string    `json:"module_namespace,omitempty"`
+	ModuleName          *string    `json:"module_name,omitempty"`
+	ModuleProvider      *string    `json:"module_provider,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -135,6 +138,7 @@ func (h *Handler) List(c echo.Context) error {
 		       (SELECT COUNT(*) FROM stack_dependencies WHERE upstream_id = s.id),
 		       %s AS my_stack_role,
 		       %s AS is_restricted,
+		       s.module_namespace, s.module_name, s.module_provider,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -164,6 +168,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.LastRunStatus, &s.LastRunAt,
 			&s.UpstreamCount, &s.DownstreamCount,
 			&s.MyStackRole, &s.IsRestricted,
+			&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -254,6 +259,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
 		       s.is_disabled, s.scheduled_destroy_at, s.created_at, s.updated_at,
+		       s.module_namespace, s.module_name, s.module_provider,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -270,6 +276,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
 		&s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
+		&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -294,6 +301,9 @@ type updateStackReq struct {
 	AutoRemediateDrift *bool   `json:"auto_remediate_drift"`
 	IsDisabled         *bool   `json:"is_disabled"`
 	ScheduledDestroyAt *string `json:"scheduled_destroy_at"` // RFC3339 or empty string to clear
+	ModuleNamespace    *string `json:"module_namespace"`
+	ModuleName         *string `json:"module_name"`
+	ModuleProvider     *string `json:"module_provider"`
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -317,6 +327,9 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 		{"project_root", r.ProjectRoot},
 		{"runner_image", r.RunnerImage},
 		{"drift_schedule", r.DriftSchedule},
+		{"module_namespace", r.ModuleNamespace},
+		{"module_name", r.ModuleName},
+		{"module_provider", r.ModuleProvider},
 	}
 	for _, f := range strFields {
 		if f.v != nil {

@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { registry, type RegistryModule } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { marked } from 'marked';
 
 	let mod = $state<RegistryModule | null>(null);
 	let allVersions = $state<RegistryModule[]>([]);
@@ -20,10 +21,14 @@
 		return `module "${mod.name}" {\n  source  = "${host}/${mod.namespace}/${mod.name}/${mod.provider}"\n  version = "~> ${mod.version}"\n}`;
 	});
 
+	const readmeHtml = $derived(() => {
+		if (!mod?.readme) return '';
+		return marked.parse(mod.readme) as string;
+	});
+
 	onMount(async () => {
 		try {
 			mod = await registry.get(id);
-			// Load all versions for this module
 			const all = await registry.list();
 			allVersions = all.filter(
 				(m) => m.namespace === mod!.namespace && m.name === mod!.name && m.provider === mod!.provider
@@ -78,6 +83,7 @@
 				<p class="text-sm text-zinc-500 mt-1">
 					Published {new Date(mod.published_at).toLocaleString()}
 					{#if mod.published_by}by {mod.published_by}{/if}
+					&middot; {mod.download_count} download{mod.download_count === 1 ? '' : 's'}
 				</p>
 			</div>
 			{#if auth.isAdmin && !mod.yanked}
@@ -99,11 +105,13 @@
 			<pre class="text-sm text-zinc-200 font-mono overflow-x-auto">{usageSnippet()}</pre>
 		</div>
 
-		<!-- Readme -->
+		<!-- README -->
 		{#if mod.readme}
 			<div class="bg-zinc-900 border border-zinc-700 rounded-lg p-5">
 				<h2 class="text-sm font-medium text-zinc-300 mb-3">README</h2>
-				<pre class="text-sm text-zinc-300 whitespace-pre-wrap font-mono leading-relaxed">{mod.readme}</pre>
+				<div class="prose prose-invert prose-sm max-w-none text-zinc-300">
+					{@html readmeHtml()}
+				</div>
 			</div>
 		{/if}
 
