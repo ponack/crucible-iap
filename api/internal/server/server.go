@@ -23,6 +23,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/policies"
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/registry"
 	"github.com/ponack/crucible-iap/internal/runs"
 	"github.com/ponack/crucible-iap/internal/serviceaccounts"
 	"github.com/ponack/crucible-iap/internal/settings"
@@ -108,6 +109,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	e := s.echo
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
+	registryHandler := registry.NewHandler(s.pool, store, s.cfg)
 	stackHandler := stacks.NewHandler(s.pool, v, n)
 	runHandler := runs.NewHandler(s.pool, s.cfg, q, store)
 	stateHandler := state.NewHandler(s.pool, store, v)
@@ -127,6 +129,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
 
 	// ── Public ─────────────────────────────────────────────────────────────────
+	e.GET("/.well-known/terraform.json", s.handleTerraformDiscovery)
 	e.GET("/health", s.handleHealth)
 	e.GET("/metrics", metrics.Handler())
 	e.GET("/auth/config", authHandler.GetAuthConfig)
@@ -298,6 +301,21 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/system/settings", settingsHandler.Get)
 	api.PUT("/system/settings", settingsHandler.Update, admin)
 
+	// Module registry (management API)
+	api.GET("/registry/modules", registryHandler.List)
+	api.GET("/registry/modules/:id", registryHandler.Get)
+	api.POST("/registry/modules", registryHandler.Publish, member)
+	api.DELETE("/registry/modules/:id", registryHandler.Yank, member)
+
+	// ── Terraform Module Registry Protocol v1 ─────────────────────────────────
+	regv1 := e.Group("/registry/v1/modules")
+	regv1.Use(auth.JWTMiddleware(s.cfg.SecretKey))
+	regv1.GET("/search", registryHandler.Search)
+	regv1.GET("/:namespace/:name/:provider/versions", registryHandler.Versions)
+	regv1.GET("/:namespace/:name/:provider/:version", registryHandler.GetVersion)
+	regv1.GET("/:namespace/:name/:provider/:version/download", registryHandler.Download)
+	regv1.GET("/:namespace/:name/:provider/:version/archive", registryHandler.Archive)
+
 	// ── Internal runner callbacks ──────────────────────────────────────────────
 	internal := e.Group("/api/v1/internal")
 	internal.Use(auth.RunnerAuthMiddleware(s.cfg.SecretKey))
@@ -355,6 +373,12 @@ func (s *Server) handleHealth(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *Server) handleTerraformDiscovery(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{
+		"modules.v1": s.cfg.BaseURL + "/registry/v1/modules/",
+	})
 }
 
 // version is injected at build time via -ldflags.

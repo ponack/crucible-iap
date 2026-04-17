@@ -126,8 +126,28 @@ func (c *Client) DeleteArtifacts(ctx context.Context, runID string) error {
 	return nil
 }
 
+// ── Registry modules ──────────────────────────────────────────────────────────
+
+func (c *Client) PutModule(ctx context.Context, key string, r io.Reader, size int64) error {
+	_, err := c.mc.PutObject(ctx, c.bucketArtifacts, key, r, size,
+		minio.PutObjectOptions{ContentType: "application/gzip"})
+	return err
+}
+
+func (c *Client) GetModule(ctx context.Context, key string) (*minio.Object, error) {
+	return c.mc.GetObject(ctx, c.bucketArtifacts, key, minio.GetObjectOptions{})
+}
+
+func (c *Client) DeleteModule(ctx context.Context, key string) error {
+	return c.mc.RemoveObject(ctx, c.bucketArtifacts, key, minio.RemoveObjectOptions{})
+}
+
 // ── Object key helpers ────────────────────────────────────────────────────────
 
 func stateKey(stackID string) string { return stackID + "/terraform.tfstate" }
 func planKey(runID string) string    { return "plans/" + runID + ".tfplan" }
 func logKey(runID string) string     { return "logs/" + runID + ".log" }
+
+func ModuleKey(namespace, name, provider, version string) string {
+	return fmt.Sprintf("registry/%s/%s/%s/%s.tar.gz", namespace, name, provider, version)
+}
