@@ -44,7 +44,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 - **SSO via OIDC** — Authentik (bundled optional), Okta, GitHub, Keycloak, or any OIDC provider; PKCE always enforced
 - **Local auth** — single operator account for deployments without an IdP
-- **RBAC** — viewer / member / admin roles enforced at the API layer; org invite flow with single-use tokens
+- **RBAC** — org-level viewer / member / admin roles enforced at the API layer; org invite flow with single-use tokens; **per-stack membership** — add users as `viewer` (read-only) or `approver` (can trigger runs and confirm plans); stacks without explicit members are open to all org users; restricted stacks are hidden from non-members
 - **Service account API tokens** — long-lived `ciap_…` tokens for CI pipelines and automation scripts; hashed at rest, shown once at creation, role-scoped, last-used tracked
 - **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup
 
