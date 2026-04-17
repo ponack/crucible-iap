@@ -336,6 +336,8 @@ cd api && go test -race ./...
 - [x] Pulumi support — preview → confirm → up lifecycle with built-in MinIO DIY S3 backend, TypeScript/JavaScript/Python runners, and changeSummary parsing for PR comments
 - [x] Email notifications — SMTP (STARTTLS/SMTPS/plaintext) per-stack email address; fires on plan complete, run succeeded/failed; configured in Settings → Notifications
 - [x] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
+- [x] Webhook re-delivery — re-trigger a run from any past delivery directly in the UI; replays the stored payload without requiring a new push or manual re-configuration
+- [x] Environment TTL / auto-destroy — set a scheduled destroy time on any stack; a background scheduler fires a destroy run at the deadline and clears the TTL so it only fires once; prevents dev/feature environment sprawl
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
 - [ ] Terraform module registry — private module registry backed by MinIO for internal module distribution without an external registry dependency
 - [x] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
@@ -343,7 +345,6 @@ cd api && go test -race ./...
 - [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [ ] Fine-grained RBAC — resource-level permissions (per-stack viewer/approver roles) rather than a single org-wide role
 - [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
-- [ ] Environment TTL / auto-destroy — automatically queue a destroy run after a configurable duration; prevents dev/feature environment sprawl
 - [ ] Custom run hooks — pre/post-plan and pre/post-apply scripts defined per stack or org-wide, without requiring a custom runner image
 - [ ] Context-aware approval policies — OPA gates on run properties (resource type, destroy count, estimated cost, branch) rather than a binary approve/discard
 
