@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const stackID = $derived(page.params.id as string);
@@ -97,6 +97,12 @@
 	let allVarSets = $state<VarSet[]>([]);
 	let attachingVarSet = $state('');
 
+	// Dependencies
+	let upstreamDeps = $state<StackDep[]>([]);
+	let downstreamDeps = $state<StackDep[]>([]);
+	let addingDownstream = $state('');
+	let depsError = $state<string | null>(null);
+
 	// Disable/enable
 	let togglingDisabled = $state(false);
 
@@ -136,7 +142,7 @@
 
 	onMount(async () => {
 		try {
-			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes, remoteSourcesRes, allStacksRes, integrationsRes, stackVarSetsRes, allVarSetsRes] = await Promise.all([
+			const [stackRes, runsRes, tokensRes, stackPoliciesRes, allPoliciesRes, envVarsRes, remoteSourcesRes, allStacksRes, integrationsRes, stackVarSetsRes, allVarSetsRes, upstreamRes, downstreamRes] = await Promise.all([
 				stacks.get(stackID),
 				runs.list(stackID),
 				stacks.tokens.list(stackID),
@@ -147,7 +153,9 @@
 				stacks.list(0, 200),
 				integrations.list(),
 				varSets.forStack(stackID),
-				varSets.list()
+				varSets.list(),
+				deps.upstream(stackID),
+				deps.downstream(stackID)
 			]);
 			stack = stackRes;
 			recentRuns = runsRes.data;
@@ -160,6 +168,8 @@
 			orgIntegrations = integrationsRes;
 			stackVarSets = stackVarSetsRes;
 			allVarSets = allVarSetsRes;
+			upstreamDeps = upstreamRes;
+			downstreamDeps = downstreamRes;
 			selectedVCSIntegration = stackRes.vcs_integration_id ?? '';
 			selectedSecretIntegration = stackRes.secret_integration_id ?? '';
 			if (stackRes.state_backend_provider) {
@@ -564,6 +574,40 @@
 			stackVarSets = stackVarSets.filter((s) => s.id !== vsID);
 		} catch (e) {
 			alert((e as Error).message);
+		}
+	}
+
+	async function addDownstreamDep() {
+		if (!addingDownstream) return;
+		depsError = null;
+		try {
+			await deps.addDownstream(stackID, addingDownstream);
+			downstreamDeps = await deps.downstream(stackID);
+			addingDownstream = '';
+		} catch (e) {
+			depsError = (e as Error).message;
+		}
+	}
+
+	async function removeDownstreamDep(downstreamID: string) {
+		depsError = null;
+		try {
+			await deps.removeDownstream(stackID, downstreamID);
+			downstreamDeps = downstreamDeps.filter((d) => d.id !== downstreamID);
+		} catch (e) {
+			depsError = (e as Error).message;
+		}
+	}
+
+	async function removeUpstreamDep(upstreamID: string) {
+		depsError = null;
+		try {
+			// Remove from the upstream's perspective: upstream triggers this stack,
+			// so upstream=upstreamID, downstream=stackID.
+			await deps.removeDownstream(upstreamID, stackID);
+			upstreamDeps = upstreamDeps.filter((d) => d.id !== upstreamID);
+		} catch (e) {
+			depsError = (e as Error).message;
 		}
 	}
 
@@ -1121,6 +1165,88 @@
 				</div>
 			{/if}
 		{/if}
+	</section>
+
+	<!-- Dependencies -->
+	<section class="space-y-4">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Dependencies</h2>
+		<p class="text-xs text-zinc-500">Upstream stacks trigger this stack after they apply. Downstream stacks are triggered when this stack applies.</p>
+
+		{#if depsError}
+			<p class="text-sm text-red-400">{depsError}</p>
+		{/if}
+
+		<div class="space-y-2">
+			<p class="text-xs text-zinc-500 uppercase tracking-wide">Upstream (runs before this stack)</p>
+			{#if upstreamDeps.length > 0}
+				<div class="border border-zinc-800 rounded-xl overflow-hidden">
+					<table class="w-full text-sm">
+						<tbody class="divide-y divide-zinc-800">
+							{#each upstreamDeps as dep (dep.id)}
+								<tr>
+									<td class="px-4 py-2.5">
+										<a href="/stacks/{dep.id}" class="text-zinc-200 hover:text-white transition-colors">{dep.name}</a>
+										<span class="text-zinc-600 text-xs ml-2">{dep.slug}</span>
+									</td>
+									<td class="px-4 py-2.5 text-right">
+										{#if auth.isMemberOrAbove}
+											<button onclick={() => removeUpstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-zinc-600 text-sm">No upstream stacks configured.</p>
+			{/if}
+		</div>
+
+		<div class="space-y-2">
+			<p class="text-xs text-zinc-500 uppercase tracking-wide">Downstream (triggered after this stack applies)</p>
+			{#if downstreamDeps.length > 0}
+				<div class="border border-zinc-800 rounded-xl overflow-hidden">
+					<table class="w-full text-sm">
+						<tbody class="divide-y divide-zinc-800">
+							{#each downstreamDeps as dep (dep.id)}
+								<tr>
+									<td class="px-4 py-2.5">
+										<a href="/stacks/{dep.id}" class="text-zinc-200 hover:text-white transition-colors">{dep.name}</a>
+										<span class="text-zinc-600 text-xs ml-2">{dep.slug}</span>
+									</td>
+									<td class="px-4 py-2.5 text-right">
+										{#if auth.isMemberOrAbove}
+											<button onclick={() => removeDownstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{:else}
+				<p class="text-zinc-600 text-sm">No downstream stacks configured.</p>
+			{/if}
+
+			{#if auth.isMemberOrAbove}
+				{@const eligible = allStacksList.filter(s => s.id !== stackID && !downstreamDeps.find(d => d.id === s.id) && !upstreamDeps.find(u => u.id === s.id))}
+				{#if eligible.length > 0}
+					<div class="flex items-center gap-2">
+						<select class="field-input w-56" bind:value={addingDownstream}>
+							<option value="">Add downstream stack…</option>
+							{#each eligible as s (s.id)}
+								<option value={s.id}>{s.name}</option>
+							{/each}
+						</select>
+						<button onclick={addDownstreamDep} disabled={!addingDownstream}
+							class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+							Add
+						</button>
+					</div>
+				{/if}
+			{/if}
+		</div>
 	</section>
 
 	<!-- Notifications -->
