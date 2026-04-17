@@ -161,8 +161,11 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/architecture.md](docs/architecture.md) | Component diagram, request flow, security model, DB schema |
 | [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, backup, monitoring, troubleshooting |
 | [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting |
-| [docs/policies.md](docs/policies.md) | Rego policy authoring guide with examples |
+| [docs/policies.md](docs/policies.md) | Rego policy authoring guide — all policy types, input/output shapes, examples |
+| [docs/policies/README.md](docs/policies/README.md) | Ready-to-use policy templates (no-destroy, blast radius, tags, EC2 allowlist, public access, approval gates, and more) |
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
+| [docs/guides/team-setup.md](docs/guides/team-setup.md) | Org roles, per-stack RBAC, approval policies, recommended starter policy set |
+| [docs/guides/aws.md](docs/guides/aws.md) | AWS credentials, S3 remote state backend, minimal IAM role, recommended AWS policies |
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 | [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
 | [docs/guides/pulumi.md](docs/guides/pulumi.md) | End-to-end guide: running Pulumi programs with preview → confirm → up and built-in MinIO state backend |
