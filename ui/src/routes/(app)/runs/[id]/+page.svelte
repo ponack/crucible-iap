@@ -11,7 +11,7 @@
 	let logLines = $state<string[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let acting = $state<string | null>(null); // 'confirm' | 'discard' | 'cancel'
+	let acting = $state<string | null>(null); // 'approve' | 'confirm' | 'discard' | 'cancel'
 	let policyResults = $state<RunPolicyResult[]>([]);
 
 	let logEl = $state<HTMLElement | undefined>(undefined);
@@ -63,6 +63,18 @@
 			// before [DONE] was delivered (e.g. network blip or proxy timeout).
 			runs.get(runID).then((r) => (run = r)).catch(() => {});
 		};
+	}
+
+	async function approve() {
+		acting = 'approve';
+		try {
+			await runs.approve(runID);
+			run = await runs.get(runID);
+		} catch (e) {
+			alert((e as Error).message);
+		} finally {
+			acting = null;
+		}
 	}
 
 	async function confirm() {
@@ -153,6 +165,7 @@
 		preparing: 'bg-blue-900 text-blue-300',
 		planning: 'bg-blue-900 text-blue-300',
 		unconfirmed: 'bg-yellow-900 text-yellow-300',
+		pending_approval: 'bg-purple-900 text-purple-300',
 		confirmed: 'bg-blue-900 text-blue-300',
 		applying: 'bg-blue-900 text-blue-300',
 		finished: 'bg-green-900 text-green-300',
@@ -168,6 +181,14 @@
 	<div class="p-6 text-red-400 text-sm">{error ?? 'Run not found'}</div>
 {:else}
 <div class="flex flex-col h-full">
+
+	<!-- Pending approval banner -->
+	{#if run.status === 'pending_approval'}
+		<div class="flex-shrink-0 bg-purple-950 border-b border-purple-900 px-6 py-3 flex items-center gap-3">
+			<span class="text-purple-300 text-sm font-medium">Approval required.</span>
+			<span class="text-purple-400 text-xs">A policy requires explicit sign-off before this run can proceed. Review the plan output and policy results below.</span>
+		</div>
+	{/if}
 
 	<!-- Destroy warning banner -->
 	{#if run.type === 'destroy' && run.status === 'unconfirmed'}
@@ -229,6 +250,16 @@
 				<button onclick={deleteRun}
 					class="border border-red-900 hover:border-red-700 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
 					Delete
+				</button>
+			{/if}
+			{#if run.status === 'pending_approval' && run.my_stack_role !== 'viewer'}
+				<button onclick={approve} disabled={acting !== null}
+					class="bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors font-medium">
+					{acting === 'approve' ? 'Approving…' : 'Approve'}
+				</button>
+				<button onclick={cancel} disabled={acting !== null}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+					{acting === 'cancel' ? 'Canceling…' : 'Discard'}
 				</button>
 			{/if}
 			{#if run.status === 'unconfirmed' && run.my_stack_role !== 'viewer'}

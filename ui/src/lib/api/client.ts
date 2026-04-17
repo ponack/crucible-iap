@@ -389,6 +389,7 @@ export interface Run {
 		| 'preparing'
 		| 'planning'
 		| 'unconfirmed'
+		| 'pending_approval'
 		| 'confirmed'
 		| 'applying'
 		| 'finished'
@@ -459,6 +460,7 @@ export const runs = {
 	triggerDrift: (stackID: string) =>
 		request<Run>(`/stacks/${stackID}/drift`, { method: 'POST' }),
 	confirm: (id: string) => request<null>(`/runs/${id}/confirm`, { method: 'POST' }),
+	approve: (id: string) => request<null>(`/runs/${id}/approve`, { method: 'POST' }),
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
 	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' }),
 	remove: (id: string) => request<null>(`/runs/${id}`, { method: 'DELETE' }),

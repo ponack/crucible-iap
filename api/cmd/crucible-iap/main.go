@@ -16,6 +16,8 @@ import (
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/db"
 	"github.com/ponack/crucible-iap/internal/notify"
+	"github.com/ponack/crucible-iap/internal/policies"
+	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
 	"github.com/ponack/crucible-iap/internal/server"
@@ -154,7 +156,12 @@ func runWorker() {
 	}
 	n := notify.New(pool, v, cfg.BaseURL)
 
-	d, err := worker.New(pool, cfg, r, store, v, n, q)
+	policyEngine := policy.NewEngine()
+	if err := policies.LoadEngine(context.Background(), pool, policyEngine); err != nil {
+		slog.Warn("failed to load policies into worker engine", "err", err)
+	}
+
+	d, err := worker.New(pool, cfg, r, store, v, n, q, policyEngine)
 	if err != nil {
 		slog.Error("failed to create worker dispatcher", "err", err)
 		os.Exit(1)

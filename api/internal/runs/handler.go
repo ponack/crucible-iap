@@ -416,6 +416,66 @@ func (h *Handler) Confirm(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// Approve transitions a pending_approval run to unconfirmed (or enqueues apply if auto-apply).
+// Requires approver or admin stack role.
+// POST /api/v1/runs/:id/approve
+func (h *Handler) Approve(c echo.Context) error {
+	id := c.Param("id")
+	userID, _ := c.Get("userID").(string)
+	orgID := c.Get("orgID").(string)
+
+	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
+		role, err := access.StackRoleForRun(c.Request().Context(), h.pool, id, userID, orgID)
+		if err != nil || role == "" || role == "viewer" {
+			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+		}
+	}
+
+	var r Run
+	var autoApply bool
+	err := h.pool.QueryRow(c.Request().Context(), `
+		UPDATE runs SET status = 'unconfirmed', approved_by = $2, approved_at = now()
+		WHERE id = $1 AND status = 'pending_approval'
+		RETURNING id, stack_id, type, status, var_overrides,
+		          (SELECT auto_apply FROM stacks WHERE id = stack_id)
+	`, id, userID).Scan(&r.ID, &r.StackID, &r.Type, &r.Status, &r.VarOverrides, &autoApply)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusConflict, "run cannot be approved in its current state")
+	}
+
+	// If auto-apply and not a destroy run, skip unconfirmed and directly apply.
+	if autoApply && r.Type != "destroy" {
+		if _, err := h.pool.Exec(c.Request().Context(), `
+			UPDATE runs SET status = 'confirmed' WHERE id = $1
+		`, id); err == nil {
+			var stack struct {
+				Tool        string
+				RunnerImage string
+				RepoURL     string
+				RepoBranch  string
+				ProjectRoot string
+			}
+			_ = h.pool.QueryRow(c.Request().Context(), `
+				SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
+				FROM stacks WHERE id = $1
+			`, r.StackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
+
+			_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
+				RunID: r.ID, StackID: r.StackID,
+				Tool: stack.Tool, RunnerImage: stack.RunnerImage,
+				RepoURL: stack.RepoURL, RepoBranch: stack.RepoBranch, ProjectRoot: stack.ProjectRoot,
+				RunType: "apply", APIURL: h.runnerAPIURL(c),
+				VarOverrides: r.VarOverrides,
+			})
+		}
+	}
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "run.approved", ResourceID: id, ResourceType: "run",
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
 // Discard rejects an unconfirmed run.
 func (h *Handler) Discard(c echo.Context) error {
 	id := c.Param("id")
@@ -456,7 +516,7 @@ func (h *Handler) Cancel(c echo.Context) error {
 
 	tag, err := h.pool.Exec(c.Request().Context(), `
 		UPDATE runs SET status = 'canceled'
-		WHERE id = $1 AND status IN ('queued','preparing','planning','unconfirmed','applying')
+		WHERE id = $1 AND status IN ('queued','preparing','planning','unconfirmed','pending_approval','applying')
 	`, id)
 	if err != nil || tag.RowsAffected() == 0 {
 		return echo.NewHTTPError(http.StatusConflict, "run cannot be canceled in its current state")

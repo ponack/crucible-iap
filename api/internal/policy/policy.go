@@ -20,14 +20,24 @@ const (
 	TypePreApply Type = "pre_apply"
 	TypeTrigger  Type = "trigger"
 	TypeLogin    Type = "login"
+	TypeApproval Type = "approval"
 )
 
 // Result is the output of evaluating a policy against an input.
 type Result struct {
-	Allow   bool     `json:"allow"`
-	Deny    []string `json:"deny,omitempty"`    // denial messages from the policy
-	Warn    []string `json:"warn,omitempty"`    // warnings (non-blocking)
-	Trigger []string `json:"trigger,omitempty"` // stack IDs to trigger (trigger policies)
+	Allow          bool     `json:"allow"`
+	Deny           []string `json:"deny,omitempty"`    // denial messages from the policy
+	Warn           []string `json:"warn,omitempty"`    // warnings (non-blocking)
+	Trigger        []string `json:"trigger,omitempty"` // stack IDs to trigger (trigger policies)
+	RequireApproval bool    `json:"require_approval,omitempty"` // approval policies
+}
+
+// EvalRecord is one policy's evaluation output, for persisting to run_policy_results.
+type EvalRecord struct {
+	PolicyID   string
+	PolicyName string
+	PolicyType Type
+	Result     Result
 }
 
 // Policy is a compiled, ready-to-evaluate Rego policy.
@@ -107,11 +117,52 @@ func (e *Engine) Evaluate(ctx context.Context, t Type, input map[string]any) (Re
 		merged.Deny = append(merged.Deny, r.Deny...)
 		merged.Warn = append(merged.Warn, r.Warn...)
 		merged.Trigger = append(merged.Trigger, r.Trigger...)
+		if r.RequireApproval {
+			merged.RequireApproval = true
+		}
 	}
 	if len(merged.Deny) > 0 {
 		merged.Allow = false
 	}
 	return merged, nil
+}
+
+// EvaluateByIDs evaluates only the policies whose IDs are in the given set,
+// returning both a merged result and per-policy records for persisting.
+func (e *Engine) EvaluateByIDs(ctx context.Context, ids []string, input map[string]any) (Result, []EvalRecord, error) {
+	idSet := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		idSet[id] = true
+	}
+
+	e.mu.RLock()
+	var matching []*Policy
+	for _, p := range e.policies {
+		if idSet[p.ID] {
+			matching = append(matching, p)
+		}
+	}
+	e.mu.RUnlock()
+
+	merged := Result{Allow: true}
+	records := make([]EvalRecord, 0, len(matching))
+	for _, p := range matching {
+		r, err := p.eval(ctx, input)
+		if err != nil {
+			return Result{}, nil, fmt.Errorf("evaluate policy %s: %w", p.Name, err)
+		}
+		records = append(records, EvalRecord{PolicyID: p.ID, PolicyName: p.Name, PolicyType: p.Type, Result: r})
+		merged.Deny = append(merged.Deny, r.Deny...)
+		merged.Warn = append(merged.Warn, r.Warn...)
+		merged.Trigger = append(merged.Trigger, r.Trigger...)
+		if r.RequireApproval {
+			merged.RequireApproval = true
+		}
+	}
+	if len(merged.Deny) > 0 {
+		merged.Allow = false
+	}
+	return merged, records, nil
 }
 
 func (p *Policy) eval(ctx context.Context, input map[string]any) (Result, error) {
@@ -123,38 +174,41 @@ func (p *Policy) eval(ctx context.Context, input map[string]any) (Result, error)
 		return Result{Allow: true}, nil
 	}
 
-	// Rego policies return a set; we expect deny/warn/trigger keys
 	val, ok := rs[0].Expressions[0].Value.(map[string]any)
 	if !ok {
 		return Result{Allow: true}, nil
 	}
 
-	result := Result{Allow: true}
-	if deny, ok := val["deny"].([]any); ok {
-		for _, d := range deny {
-			if s, ok := d.(string); ok {
-				result.Deny = append(result.Deny, s)
-			}
-		}
-	}
-	if warn, ok := val["warn"].([]any); ok {
-		for _, w := range warn {
-			if s, ok := w.(string); ok {
-				result.Warn = append(result.Warn, s)
-			}
-		}
-	}
-	if trigger, ok := val["trigger"].([]any); ok {
-		for _, t := range trigger {
-			if s, ok := t.(string); ok {
-				result.Trigger = append(result.Trigger, s)
-			}
-		}
+	result := Result{
+		Allow:          true,
+		Deny:           extractStrings(val, "deny"),
+		Warn:           extractStrings(val, "warn"),
+		Trigger:        extractStrings(val, "trigger"),
+		RequireApproval: extractBool(val, "require_approval"),
 	}
 	if len(result.Deny) > 0 {
 		result.Allow = false
 	}
 	return result, nil
+}
+
+func extractStrings(val map[string]any, key string) []string {
+	items, ok := val[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if s, ok := item.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func extractBool(val map[string]any, key string) bool {
+	b, ok := val[key].(bool)
+	return ok && b
 }
 
 func queryForType(t Type) string {
@@ -167,6 +221,8 @@ func queryForType(t Type) string {
 		return "data.crucible.trigger"
 	case TypeLogin:
 		return "data.crucible.login"
+	case TypeApproval:
+		return "data.crucible.approval"
 	default:
 		return "data.crucible.plan"
 	}
