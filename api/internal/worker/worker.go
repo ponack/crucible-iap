@@ -275,7 +275,10 @@ func (w *RunWorker) completeRun(ctx context.Context, log *slog.Logger, orgID str
 	case args.RunType == "proposed":
 		go w.notifier.PlanComplete(bg, args.RunID)
 		go w.maybeRemediateDrift(bg, args)
-	case args.RunType == "apply" || args.RunType == "destroy":
+	case args.RunType == "apply":
+		go w.notifier.RunFinished(bg, args.RunID, true)
+		go w.triggerDownstreamStacks(bg, orgID, args)
+	case args.RunType == "destroy":
 		go w.notifier.RunFinished(bg, args.RunID, true)
 	}
 
@@ -321,6 +324,59 @@ func (w *RunWorker) maybeRemediateDrift(ctx context.Context, args queue.RunJobAr
 		slog.Error("auto-remediate drift: failed to enqueue run", "stack_id", args.StackID, "err", err)
 	} else {
 		slog.Info("auto-remediate drift: queued tracked run", "stack_id", args.StackID, "run_id", runID)
+	}
+}
+
+// triggerDownstreamStacks enqueues a tracked run for every downstream stack that
+// has declared the just-applied stack as an upstream dependency.
+func (w *RunWorker) triggerDownstreamStacks(ctx context.Context, orgID string, args queue.RunJobArgs) {
+	type target struct {
+		stackID, tool, runnerImage, repoURL, repoBranch, projectRoot string
+		autoApply                                                    bool
+	}
+
+	rows, err := w.pool.Query(ctx, `
+		SELECT s.id, s.tool, COALESCE(s.runner_image,''), s.repo_url, s.repo_branch, s.project_root, s.auto_apply
+		FROM stack_dependencies d
+		JOIN stacks s ON s.id = d.downstream_id
+		WHERE d.upstream_id = $1 AND s.is_disabled = false AND s.org_id = $2
+	`, args.StackID, orgID)
+	if err != nil {
+		slog.Error("trigger downstream: query failed", "stack_id", args.StackID, "err", err)
+		return
+	}
+
+	var targets []target
+	for rows.Next() {
+		var t target
+		if err := rows.Scan(&t.stackID, &t.tool, &t.runnerImage, &t.repoURL, &t.repoBranch, &t.projectRoot, &t.autoApply); err != nil {
+			continue
+		}
+		targets = append(targets, t)
+	}
+	rows.Close()
+
+	for _, t := range targets {
+		var runID string
+		if err := w.pool.QueryRow(ctx, `
+			INSERT INTO runs (stack_id, type, trigger)
+			VALUES ($1, 'tracked', 'dependency')
+			RETURNING id
+		`, t.stackID).Scan(&runID); err != nil {
+			slog.Error("trigger downstream: failed to insert run", "stack_id", t.stackID, "err", err)
+			continue
+		}
+		if _, err := w.queue.EnqueueRun(ctx, queue.RunJobArgs{
+			RunID: runID, StackID: t.stackID,
+			Tool: t.tool, RunnerImage: t.runnerImage,
+			RepoURL: t.repoURL, RepoBranch: t.repoBranch, ProjectRoot: t.projectRoot,
+			RunType: "tracked", AutoApply: t.autoApply, APIURL: args.APIURL,
+		}); err != nil {
+			slog.Error("trigger downstream: failed to enqueue run", "stack_id", t.stackID, "err", err)
+		} else {
+			slog.Info("trigger downstream: queued tracked run",
+				"upstream_stack_id", args.StackID, "downstream_stack_id", t.stackID, "run_id", runID)
+		}
 	}
 }
 

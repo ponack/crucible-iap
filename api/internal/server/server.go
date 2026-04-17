@@ -13,6 +13,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
 	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/deps"
 	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/integrations"
 	"github.com/ponack/crucible-iap/internal/metrics"
@@ -115,6 +116,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	orgHandler := orgs.NewHandler(s.pool)
 	envVarHandler := envvars.NewHandler(s.pool, v)
 	varSetHandler := varsets.NewHandler(s.pool, v)
+	depsHandler := deps.NewHandler(s.pool)
 	satHandler := serviceaccounts.NewHandler(s.pool)
 	tmplHandler := templates.NewHandler(s.pool)
 	integrationHandler := integrations.NewHandler(s.pool, v)
@@ -258,6 +260,12 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stacks/:id/remote-state-sources", stackHandler.ListRemoteStateSources)
 	api.POST("/stacks/:id/remote-state-sources", stackHandler.AddRemoteStateSource, member)
 	api.DELETE("/stacks/:id/remote-state-sources/:source_id", stackHandler.RemoveRemoteStateSource, member)
+
+	// Stack dependency graph
+	api.GET("/stacks/:id/upstream", depsHandler.ListUpstream)
+	api.GET("/stacks/:id/downstream", depsHandler.ListDownstream)
+	api.PUT("/stacks/:id/downstream/:downstreamID", depsHandler.AddDownstream, member)
+	api.DELETE("/stacks/:id/downstream/:downstreamID", depsHandler.RemoveDownstream, member)
 
 	// Runs
 	api.GET("/runs", runHandler.ListAll)

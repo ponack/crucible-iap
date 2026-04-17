@@ -494,6 +494,24 @@ export interface WebhookDelivery {
 	received_at: string;
 }
 
+// ── Stack dependencies ────────────────────────────────────────────────────────
+
+export interface StackDep {
+	id: string;
+	name: string;
+	slug: string;
+	created_at: string;
+}
+
+export const deps = {
+	upstream: (stackID: string) => request<StackDep[]>(`/stacks/${stackID}/upstream`),
+	downstream: (stackID: string) => request<StackDep[]>(`/stacks/${stackID}/downstream`),
+	addDownstream: (stackID: string, downstreamID: string) =>
+		request<StackDep | null>(`/stacks/${stackID}/downstream/${downstreamID}`, { method: 'PUT' }),
+	removeDownstream: (stackID: string, downstreamID: string) =>
+		request<null>(`/stacks/${stackID}/downstream/${downstreamID}`, { method: 'DELETE' })
+};
+
 // ── Variable sets ─────────────────────────────────────────────────────────────
 
 export interface VarSet {
