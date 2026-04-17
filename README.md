@@ -343,6 +343,9 @@ cd api && go test -race ./...
 - [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [ ] Fine-grained RBAC — resource-level permissions (per-stack viewer/approver roles) rather than a single org-wide role
 - [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
+- [ ] Environment TTL / auto-destroy — automatically queue a destroy run after a configurable duration; prevents dev/feature environment sprawl
+- [ ] Custom run hooks — pre/post-plan and pre/post-apply scripts defined per stack or org-wide, without requiring a custom runner image
+- [ ] Context-aware approval policies — OPA gates on run properties (resource type, destroy count, estimated cost, branch) rather than a binary approve/discard
 
 ## License
 
