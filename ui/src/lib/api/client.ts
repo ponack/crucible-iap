@@ -103,6 +103,8 @@ export interface Stack {
 	state_backend_provider?: string;
 	is_disabled: boolean;
 	scheduled_destroy_at?: string;
+	is_restricted: boolean;    // true = stack has explicit members configured
+	my_stack_role: 'admin' | 'approver' | 'viewer';
 	last_run_status?: string;
 	last_run_at?: string;
 	upstream_count: number;
@@ -354,6 +356,28 @@ export interface StackEnvVar {
 	updated_at: string;
 }
 
+// ── Stack members (per-stack RBAC) ───────────────────────────────────────────
+
+export interface StackMember {
+	user_id: string;
+	email: string;
+	name: string;
+	role: 'viewer' | 'approver';
+	created_at: string;
+}
+
+export const stackMembers = {
+	list: (stackID: string) =>
+		request<StackMember[]>(`/stacks/${stackID}/members`),
+	upsert: (stackID: string, userID: string, role: 'viewer' | 'approver') =>
+		request<null>(`/stacks/${stackID}/members/${userID}`, {
+			method: 'PUT',
+			body: JSON.stringify({ role })
+		}),
+	remove: (stackID: string, userID: string) =>
+		request<null>(`/stacks/${stackID}/members/${userID}`, { method: 'DELETE' })
+};
+
 // ── Runs ──────────────────────────────────────────────────────────────────────
 
 export interface Run {
@@ -392,6 +416,7 @@ export interface Run {
 	started_at?: string;
 	finished_at?: string;
 	var_overrides?: string[]; // KEY=value pairs; only present on Get, not list responses
+	my_stack_role?: 'admin' | 'approver' | 'viewer'; // caller's effective level; only on Get
 }
 
 export interface RunPolicyResult {

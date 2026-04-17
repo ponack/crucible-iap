@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/access"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/pagination"
@@ -73,6 +74,7 @@ type Run struct {
 	StartedAt        *time.Time `json:"started_at,omitempty"`
 	FinishedAt       *time.Time `json:"finished_at,omitempty"`
 	VarOverrides     []string   `json:"var_overrides,omitempty"`
+	MyStackRole      string     `json:"my_stack_role,omitempty"` // "admin"|"approver"|"viewer" — caller's effective level
 }
 
 // envVarKeyRE matches valid environment variable names.
@@ -209,6 +211,17 @@ func (h *Handler) List(c echo.Context) error {
 // Create enqueues a new manual run.
 func (h *Handler) Create(c echo.Context) error {
 	stackID := c.Param("stackID")
+	userID, _ := c.Get("userID").(string)
+	orgID := c.Get("orgID").(string)
+
+	// Service accounts bypass per-stack RBAC (they carry an org-level saRole).
+	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
+		role, err := access.StackRole(c.Request().Context(), h.pool, stackID, userID, orgID)
+		if err != nil || role == "" || role == "viewer" {
+			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+		}
+	}
+
 	var req struct {
 		Type         string `json:"type"` // tracked | proposed | destroy
 		VarOverrides []struct {
@@ -271,7 +284,6 @@ func (h *Handler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue run: "+err.Error())
 	}
 
-	userID, _ := c.Get("userID").(string)
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
 		ActorID:      userID,
 		Action:       "run.created",
@@ -286,6 +298,7 @@ func (h *Handler) Create(c echo.Context) error {
 func (h *Handler) Get(c echo.Context) error {
 	id := c.Param("id")
 	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
 	var r Run
 	err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT r.id, r.stack_id, r.status, r.type, r.trigger,
@@ -296,13 +309,16 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE(ab.name,''), COALESCE(ab.email,''),
 		       r.approved_at,
 		       r.queued_at, r.started_at, r.finished_at,
-		       r.var_overrides
+		       r.var_overrides,
+		       `+access.StackRoleSQL+` AS my_stack_role
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		LEFT JOIN users tb ON tb.id = r.triggered_by
 		LEFT JOIN users ab ON ab.id = r.approved_by
+		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
+		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
 		WHERE r.id = $1 AND s.org_id = $2
-	`, id, orgID).Scan(
+	`, id, orgID, userID).Scan(
 		&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
 		&r.CommitSHA, &r.Branch, &r.CommitMessage, &r.IsDrift,
 		&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
@@ -311,7 +327,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&r.ApprovedByName, &r.ApprovedByEmail,
 		&r.ApprovedAt,
 		&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
-		&r.VarOverrides)
+		&r.VarOverrides, &r.MyStackRole)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found")
 	}
@@ -354,6 +370,14 @@ func (h *Handler) DownloadPlan(c echo.Context) error {
 func (h *Handler) Confirm(c echo.Context) error {
 	id := c.Param("id")
 	userID, _ := c.Get("userID").(string)
+	orgID := c.Get("orgID").(string)
+
+	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
+		role, err := access.StackRoleForRun(c.Request().Context(), h.pool, id, userID, orgID)
+		if err != nil || role == "" || role == "viewer" {
+			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+		}
+	}
 
 	var r Run
 	err := h.pool.QueryRow(c.Request().Context(), `
@@ -395,6 +419,16 @@ func (h *Handler) Confirm(c echo.Context) error {
 // Discard rejects an unconfirmed run.
 func (h *Handler) Discard(c echo.Context) error {
 	id := c.Param("id")
+	userID, _ := c.Get("userID").(string)
+	orgID := c.Get("orgID").(string)
+
+	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
+		role, err := access.StackRoleForRun(c.Request().Context(), h.pool, id, userID, orgID)
+		if err != nil || role == "" || role == "viewer" {
+			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+		}
+	}
+
 	tag, err := h.pool.Exec(c.Request().Context(), `
 		UPDATE runs SET status = 'discarded' WHERE id = $1 AND status = 'unconfirmed'
 	`, id)
@@ -402,7 +436,7 @@ func (h *Handler) Discard(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, "run cannot be discarded in its current state")
 	}
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
-		ActorID: c.Get("userID").(string), Action: "run.discarded", ResourceID: id, ResourceType: "run",
+		ActorID: userID, Action: "run.discarded", ResourceID: id, ResourceType: "run",
 	})
 	return c.NoContent(http.StatusNoContent)
 }
@@ -410,6 +444,16 @@ func (h *Handler) Discard(c echo.Context) error {
 // Cancel stops an in-progress run.
 func (h *Handler) Cancel(c echo.Context) error {
 	id := c.Param("id")
+	userID, _ := c.Get("userID").(string)
+	orgID := c.Get("orgID").(string)
+
+	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
+		role, err := access.StackRoleForRun(c.Request().Context(), h.pool, id, userID, orgID)
+		if err != nil || role == "" || role == "viewer" {
+			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+		}
+	}
+
 	tag, err := h.pool.Exec(c.Request().Context(), `
 		UPDATE runs SET status = 'canceled'
 		WHERE id = $1 AND status IN ('queued','preparing','planning','unconfirmed','applying')
@@ -418,7 +462,7 @@ func (h *Handler) Cancel(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, "run cannot be canceled in its current state")
 	}
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
-		ActorID: c.Get("userID").(string), Action: "run.canceled", ResourceID: id, ResourceType: "run",
+		ActorID: userID, Action: "run.canceled", ResourceID: id, ResourceType: "run",
 	})
 	return c.NoContent(http.StatusNoContent)
 }

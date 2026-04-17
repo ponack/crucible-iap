@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/access"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/pagination"
@@ -72,6 +73,8 @@ type Stack struct {
 	StateBackendProvider string     `json:"state_backend_provider,omitempty"`
 	IsDisabled           bool       `json:"is_disabled"`
 	ScheduledDestroyAt   *time.Time `json:"scheduled_destroy_at,omitempty"`
+	IsRestricted         bool       `json:"is_restricted"`          // true = stack has explicit members
+	MyStackRole          string     `json:"my_stack_role"`           // "admin" | "approver" | "viewer"
 	LastRunStatus        string     `json:"last_run_status,omitempty"`
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
 	UpstreamCount        int        `json:"upstream_count"`
@@ -90,10 +93,18 @@ type Token struct {
 
 func (h *Handler) List(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
 	p := pagination.Parse(c)
 
-	conds := []string{"s.org_id = $1"}
-	args := []any{orgID}
+	// $1 = orgID, $2 = userID — subsequent filter args start at $3.
+	// The access filter uses LEFT JOINs added to the FROM clause below; it is
+	// safe for service account tokens too (SA has no org_members row → COALESCE
+	// treats them as admin and they see all stacks).
+	conds := []string{
+		"s.org_id = $1",
+		access.AccessFilterSQL,
+	}
+	args := []any{orgID, userID}
 
 	if q := c.QueryParam("q"); q != "" {
 		n := len(args) + 1
@@ -122,8 +133,12 @@ func (h *Handler) List(c echo.Context) error {
 		       COALESCE(lr.status::text,''), lr.queued_at,
 		       (SELECT COUNT(*) FROM stack_dependencies WHERE downstream_id = s.id),
 		       (SELECT COUNT(*) FROM stack_dependencies WHERE upstream_id = s.id),
+		       %s AS my_stack_role,
+		       %s AS is_restricted,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
+		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
+		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $2
 		LEFT JOIN LATERAL (
 		    SELECT status, queued_at FROM runs
 		    WHERE stack_id = s.id
@@ -132,7 +147,7 @@ func (h *Handler) List(c echo.Context) error {
 		WHERE %s
 		ORDER BY s.created_at DESC
 		LIMIT $%d OFFSET $%d
-	`, where, nLimit, nOffset), args...)
+	`, access.StackRoleSQL, access.IsRestrictedSQL, where, nLimit, nOffset), args...)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -148,6 +163,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt,
 			&s.LastRunStatus, &s.LastRunAt,
 			&s.UpstreamCount, &s.DownstreamCount,
+			&s.MyStackRole, &s.IsRestricted,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -220,6 +236,7 @@ func (h *Handler) Create(c echo.Context) error {
 func (h *Handler) Get(c echo.Context) error {
 	id := c.Param("id")
 	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
 	var s Stack
 	var webhookSecretPtr *string
 	err := h.pool.QueryRow(c.Request().Context(), `
@@ -236,9 +253,15 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.vcs_integration_id, s.secret_integration_id,
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
-		       s.is_disabled, s.scheduled_destroy_at, s.created_at, s.updated_at
-		FROM stacks s WHERE s.id = $1 AND s.org_id = $2
-	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
+		       s.is_disabled, s.scheduled_destroy_at, s.created_at, s.updated_at,
+		       `+access.StackRoleSQL+` AS my_stack_role,
+		       `+access.IsRestrictedSQL+` AS is_restricted
+		FROM stacks s
+		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
+		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
+		WHERE s.id = $1 AND s.org_id = $2
+		  AND `+access.AccessFilterSQL+`
+	`, id, orgID, userID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
 		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL,
@@ -246,7 +269,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.NotifyEmail, &s.NotifyEvents,
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
-		&s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt)
+		&s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
+		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
