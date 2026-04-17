@@ -71,6 +71,7 @@ type Stack struct {
 	HasStateBackend      bool       `json:"has_state_backend"`
 	StateBackendProvider string     `json:"state_backend_provider,omitempty"`
 	IsDisabled           bool       `json:"is_disabled"`
+	ScheduledDestroyAt   *time.Time `json:"scheduled_destroy_at,omitempty"`
 	LastRunStatus        string     `json:"last_run_status,omitempty"`
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
 	UpstreamCount        int        `json:"upstream_count"`
@@ -235,7 +236,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.vcs_integration_id, s.secret_integration_id,
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
-		       s.is_disabled, s.created_at, s.updated_at
+		       s.is_disabled, s.scheduled_destroy_at, s.created_at, s.updated_at
 		FROM stacks s WHERE s.id = $1 AND s.org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
@@ -245,7 +246,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.NotifyEmail, &s.NotifyEvents,
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
-		&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
+		&s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -256,84 +257,109 @@ func (h *Handler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, s)
 }
 
-func (h *Handler) Update(c echo.Context) error {
-	id := c.Param("id")
-	orgID := c.Get("orgID").(string)
+type updateStackReq struct {
+	Name               *string `json:"name"`
+	Description        *string `json:"description"`
+	RepoURL            *string `json:"repo_url"`
+	RepoBranch         *string `json:"repo_branch"`
+	ProjectRoot        *string `json:"project_root"`
+	RunnerImage        *string `json:"runner_image"`
+	AutoApply          *bool   `json:"auto_apply"`
+	DriftDetection     *bool   `json:"drift_detection"`
+	DriftSchedule      *string `json:"drift_schedule"`
+	AutoRemediateDrift *bool   `json:"auto_remediate_drift"`
+	IsDisabled         *bool   `json:"is_disabled"`
+	ScheduledDestroyAt *string `json:"scheduled_destroy_at"` // RFC3339 or empty string to clear
+}
 
-	var req struct {
-		Name               *string `json:"name"`
-		Description        *string `json:"description"`
-		RepoURL            *string `json:"repo_url"`
-		RepoBranch         *string `json:"repo_branch"`
-		ProjectRoot        *string `json:"project_root"`
-		RunnerImage        *string `json:"runner_image"`
-		AutoApply          *bool   `json:"auto_apply"`
-		DriftDetection     *bool   `json:"drift_detection"`
-		DriftSchedule      *string `json:"drift_schedule"`
-		AutoRemediateDrift *bool   `json:"auto_remediate_drift"`
-		IsDisabled         *bool   `json:"is_disabled"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
-	}
-
-	// Build dynamic SET clause from non-nil fields.
-	sets := []string{"updated_at = now()"}
-	args := []any{id, orgID}
+// buildSets returns the SET column names and argument values for a PATCH query.
+// args[0] and args[1] are reserved for stack id and org_id ($1, $2).
+func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
+	sets = []string{"updated_at = now()"}
+	args = []any{nil, nil} // placeholders for id and org_id
 
 	add := func(col string, val any) {
 		args = append(args, val)
 		sets = append(sets, fmt.Sprintf("%s = $%d", col, len(args)))
 	}
-	if req.Name != nil {
-		add("name", *req.Name)
+	strFields := []struct {
+		col string
+		v   *string
+	}{
+		{"name", r.Name},
+		{"description", r.Description},
+		{"repo_url", r.RepoURL},
+		{"repo_branch", r.RepoBranch},
+		{"project_root", r.ProjectRoot},
+		{"runner_image", r.RunnerImage},
+		{"drift_schedule", r.DriftSchedule},
 	}
-	if req.Description != nil {
-		add("description", *req.Description)
+	for _, f := range strFields {
+		if f.v != nil {
+			add(f.col, *f.v)
+		}
 	}
-	if req.RepoURL != nil {
-		add("repo_url", *req.RepoURL)
+	boolFields := []struct {
+		col string
+		v   *bool
+	}{
+		{"auto_apply", r.AutoApply},
+		{"drift_detection", r.DriftDetection},
+		{"auto_remediate_drift", r.AutoRemediateDrift},
+		{"is_disabled", r.IsDisabled},
 	}
-	if req.RepoBranch != nil {
-		add("repo_branch", *req.RepoBranch)
+	for _, f := range boolFields {
+		if f.v != nil {
+			add(f.col, *f.v)
+		}
 	}
-	if req.ProjectRoot != nil {
-		add("project_root", *req.ProjectRoot)
+	if r.ScheduledDestroyAt != nil {
+		if *r.ScheduledDestroyAt == "" {
+			add("scheduled_destroy_at", nil)
+		} else {
+			t, parseErr := time.Parse(time.RFC3339, *r.ScheduledDestroyAt)
+			if parseErr != nil {
+				t, parseErr = time.Parse("2006-01-02T15:04", *r.ScheduledDestroyAt)
+			}
+			if parseErr != nil {
+				return nil, nil, fmt.Errorf("scheduled_destroy_at must be RFC3339 or YYYY-MM-DDTHH:MM")
+			}
+			add("scheduled_destroy_at", t.UTC())
+		}
 	}
-	if req.RunnerImage != nil {
-		add("runner_image", *req.RunnerImage)
+	return sets, args, nil
+}
+
+func (h *Handler) Update(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var req updateStackReq
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	if req.AutoApply != nil {
-		add("auto_apply", *req.AutoApply)
+
+	sets, args, err := req.buildSets()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	if req.DriftDetection != nil {
-		add("drift_detection", *req.DriftDetection)
-	}
-	if req.DriftSchedule != nil {
-		add("drift_schedule", *req.DriftSchedule)
-	}
-	if req.AutoRemediateDrift != nil {
-		add("auto_remediate_drift", *req.AutoRemediateDrift)
-	}
-	if req.IsDisabled != nil {
-		add("is_disabled", *req.IsDisabled)
-	}
+	args[0], args[1] = id, orgID
 
 	query := fmt.Sprintf(`
 		UPDATE stacks SET %s WHERE id = $1 AND org_id = $2
 		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
 		          COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		          COALESCE(runner_image,''), auto_apply, drift_detection,
-		          COALESCE(drift_schedule,''), auto_remediate_drift, is_disabled, created_at, updated_at
+		          COALESCE(drift_schedule,''), auto_remediate_drift, is_disabled,
+		          scheduled_destroy_at, created_at, updated_at
 	`, strings.Join(sets, ", "))
 
 	var s Stack
-	err := h.pool.QueryRow(c.Request().Context(), query, args...).
+	if err := h.pool.QueryRow(c.Request().Context(), query, args...).
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.AutoRemediateDrift, &s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
-	if err != nil {
+			&s.AutoRemediateDrift, &s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.JSON(http.StatusOK, s)

@@ -102,6 +102,7 @@ export interface Stack {
 	has_state_backend: boolean;
 	state_backend_provider?: string;
 	is_disabled: boolean;
+	scheduled_destroy_at?: string;
 	last_run_status?: string;
 	last_run_at?: string;
 	upstream_count: number;
@@ -297,7 +298,9 @@ export const stacks = {
 		rotateSecret: (stackID: string) =>
 			request<{ webhook_secret: string }>(`/stacks/${stackID}/webhook/rotate`, { method: 'POST' }),
 		deliveries: (stackID: string, offset = 0, limit = 50) =>
-			request<Paginated<WebhookDelivery>>(`/stacks/${stackID}/webhook-deliveries?offset=${offset}&limit=${limit}`)
+			request<Paginated<WebhookDelivery>>(`/stacks/${stackID}/webhook-deliveries?offset=${offset}&limit=${limit}`),
+		redeliver: (stackID: string, deliveryID: string) =>
+			request<{ run_id: string }>(`/stacks/${stackID}/webhook-deliveries/${deliveryID}/redeliver`, { method: 'POST' })
 	},
 
 	remoteState: {

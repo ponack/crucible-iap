@@ -210,6 +210,101 @@ func (h *Handler) ListDeliveries(c echo.Context) error {
 	return c.JSON(http.StatusOK, pagination.Wrap(items, p, total))
 }
 
+// Redeliver re-triggers a run from a previously stored delivery. Signature
+// verification is skipped because the caller is authenticated via JWT and the
+// payload is already stored in the database (it was verified on first delivery).
+func (h *Handler) Redeliver(c echo.Context) error {
+	stackID := c.Param("id")
+	deliveryID := c.Param("deliveryID")
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+
+	var (
+		tool        string
+		runnerImage *string
+		repoURL     string
+		repoBranch  string
+		projectRoot string
+		isDisabled  bool
+	)
+	err := h.pool.QueryRow(ctx, `
+		SELECT tool, runner_image, repo_url, repo_branch, project_root, is_disabled
+		FROM stacks WHERE id = $1 AND org_id = $2
+	`, stackID, orgID).Scan(&tool, &runnerImage, &repoURL, &repoBranch, &projectRoot, &isDisabled)
+	if err != nil {
+		return echo.ErrNotFound
+	}
+	if isDisabled {
+		return echo.NewHTTPError(http.StatusConflict, "stack is disabled")
+	}
+
+	var (
+		forge      string
+		eventType  string
+		rawPayload json.RawMessage
+	)
+	err = h.pool.QueryRow(ctx, `
+		SELECT forge, event_type, raw_payload
+		FROM webhook_deliveries WHERE id = $1 AND stack_id = $2
+	`, deliveryID, stackID).Scan(&forge, &eventType, &rawPayload)
+	if err != nil {
+		return echo.ErrNotFound
+	}
+
+	var event *webhookEvent
+	switch forge {
+	case "github", "gitea", "gogs":
+		event, err = parseGitHub(eventType, rawPayload)
+	case "gitlab":
+		event, err = parseGitLab(eventType, rawPayload)
+	default:
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "unsupported forge")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "cannot parse original payload")
+	}
+	if event == nil {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "original event type cannot trigger a run")
+	}
+
+	img := ""
+	if runnerImage != nil {
+		img = *runnerImage
+	}
+
+	var runID string
+	err = h.pool.QueryRow(ctx, `
+		INSERT INTO runs (stack_id, status, type, trigger, commit_sha, commit_message, branch, pr_number, pr_url)
+		VALUES ($1, 'queued', $2::run_type, $3::run_trigger, $4, $5, $6, $7, $8)
+		RETURNING id
+	`, stackID, event.runType, event.trigger,
+		emptyToNil(event.commitSHA), emptyToNil(event.commitMessage), emptyToNil(event.branch),
+		intToNil(event.prNumber), emptyToNil(event.prURL),
+	).Scan(&runID)
+	if err != nil {
+		return fmt.Errorf("insert run: %w", err)
+	}
+
+	apiURL := c.Scheme() + "://" + c.Request().Host
+	if _, err := h.q.EnqueueRun(ctx, queue.RunJobArgs{
+		RunID:       runID,
+		StackID:     stackID,
+		Tool:        tool,
+		RunnerImage: img,
+		RepoURL:     repoURL,
+		RepoBranch:  repoBranch,
+		ProjectRoot: projectRoot,
+		RunType:     event.runType,
+		APIURL:      apiURL,
+	}); err != nil {
+		return fmt.Errorf("enqueue run: %w", err)
+	}
+
+	h.recordDelivery(orgID, stackID, forge, eventType, "redeliver:"+deliveryID, rawPayload, "triggered", "", &runID)
+
+	return c.JSON(http.StatusCreated, map[string]string{"run_id": runID})
+}
+
 // RotateSecret generates a new webhook secret for a stack. JWT-protected.
 func (h *Handler) RotateSecret(c echo.Context) error {
 	stackID := c.Param("id")
