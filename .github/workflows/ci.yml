@@ -13,6 +13,9 @@ permissions:
   packages: write
   id-token: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   api:
     name: API (Go)
@@ -173,8 +176,6 @@ jobs:
     if: github.event_name == 'push'
     outputs:
       runner-digest: ${{ steps.build-runner.outputs.digest }}
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v5
         with:
