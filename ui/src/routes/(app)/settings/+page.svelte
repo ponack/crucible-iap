@@ -100,15 +100,6 @@
 		</div>
 	</div>
 
-	<!-- Notification settings moved to dedicated tab -->
-	<div class="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-4 flex items-center justify-between">
-		<div>
-			<p class="text-sm font-medium text-white">Notifications</p>
-			<p class="text-xs text-zinc-500 mt-0.5">Configure Slack, Gotify, ntfy, email (SMTP), and VCS defaults.</p>
-		</div>
-		<a href="/settings/notifications" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">Configure →</a>
-	</div>
-
 	<!-- Runner settings -->
 	{#if runnerSettings}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
