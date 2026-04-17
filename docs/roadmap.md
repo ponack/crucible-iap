@@ -48,9 +48,13 @@ Implemented. Pulumi runs follow the same preview → confirm → apply lifecycle
 
 Stack references for cross-stack outputs are not yet implemented — use remote state sources as a workaround.
 
-### Stack Dependency Graph
+### Stack Dependency Graph ✓
 
-First-class upstream/downstream stack relationships. After stack A applies successfully, automatically trigger a tracked run on downstream stacks. Replaces the current manual `trigger` policy hook for simple linear chains.
+Implemented. After a stack applies successfully, all configured downstream stacks automatically receive a tracked run (trigger=`dependency`). DAG cycle detection prevents loops. Respects the downstream stack's `auto_apply` flag.
+
+- Upstream/downstream counts visible on the stacks list
+- Configure via the Dependencies section on any stack detail page
+- Disabled stacks are skipped at trigger time
 
 ### Variable Sets
 
@@ -118,3 +122,15 @@ Integrate Infracost or similar to surface estimated monthly delta in the UI alon
 ### External Worker Agents
 
 Lightweight agent binary that connects to the primary instance and executes jobs locally on the agent host. Decouples runner capacity from the API host; no Docker socket on the central server required.
+
+### Environment TTL / Auto-Destroy
+
+Configurable time-to-live on stacks: automatically queue a destroy run after a set duration. Critical for ephemeral dev/feature environments that otherwise run indefinitely and rack up cloud costs. Offered by env0 and Spacelift.
+
+### Custom Run Hooks
+
+Pre/post-plan and pre/post-apply hook scripts defined per stack or at org level. Enables CMDB updates, compliance checks, and external notifications without requiring a custom runner image. Analogous to Scalr's Hook Registry and Spacelift's run hooks.
+
+### Context-Aware Approval Policies
+
+OPA-based approval policies that gate on run properties — resource type, estimated cost, plan destroy count, branch name, or requester role — rather than a simple binary approve/discard. Reduces approval fatigue while enforcing stronger governance on high-risk changes.

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { runs, type Run, type PageMeta } from '$lib/api/client';
+	import { triggerBadge } from '$lib/trigger';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -134,7 +135,10 @@
 										class="ml-1 text-xs text-blue-400 hover:text-blue-300">#{run.pr_number}</a>
 								{/if}
 							</td>
-							<td class="px-4 py-3 text-zinc-500">{run.trigger}</td>
+							<td class="px-4 py-3">
+								{@const tb = triggerBadge(run.trigger)}
+								<span class="text-xs px-1.5 py-0.5 rounded font-medium {tb.classes}">{tb.label}</span>
+							</td>
 							<td class="px-4 py-3 text-zinc-500 text-xs">{fmtDate(run.queued_at)}</td>
 						</tr>
 					{/each}

@@ -104,6 +104,8 @@ export interface Stack {
 	is_disabled: boolean;
 	last_run_status?: string;
 	last_run_at?: string;
+	upstream_count: number;
+	downstream_count: number;
 	created_at: string;
 	updated_at: string;
 }

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { stacks, runs, policies, integrations, varSets, deps, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep } from '$lib/api/client';
+	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const stackID = $derived(page.params.id as string);
@@ -1741,7 +1742,10 @@
 										<span class="text-zinc-600">—</span>
 									{/if}
 								</td>
-								<td class="px-4 py-2.5 text-zinc-500">{run.trigger}</td>
+								<td class="px-4 py-2.5">
+									{@const tb = triggerBadge(run.trigger)}
+									<span class="text-xs px-1.5 py-0.5 rounded font-medium {tb.classes}">{tb.label}</span>
+								</td>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs">{fmtDate(run.queued_at)}</td>
 							</tr>
 						{/each}
