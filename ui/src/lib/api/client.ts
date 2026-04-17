@@ -109,6 +109,9 @@ export interface Stack {
 	last_run_at?: string;
 	upstream_count: number;
 	downstream_count: number;
+	module_namespace?: string;
+	module_name?: string;
+	module_provider?: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -819,6 +822,7 @@ export interface RegistryModule {
 	yanked: boolean;
 	published_by?: string;
 	published_at: string;
+	download_count: number;
 }
 
 async function requestForm<T>(path: string, body: FormData): Promise<T> {

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,21 +44,26 @@ func (h *Handler) Receive(c echo.Context) error {
 	deliveryID := extractDeliveryID(r)
 
 	var (
-		orgID         string
-		repoBranch    string
-		webhookSecret *string
-		isDisabled    bool
-		tool          string
-		repoURL       string
-		projectRoot   string
-		runnerImage   *string
+		orgID           string
+		repoBranch      string
+		webhookSecret   *string
+		isDisabled      bool
+		tool            string
+		repoURL         string
+		projectRoot     string
+		runnerImage     *string
+		moduleNamespace *string
+		moduleName      *string
+		moduleProvider  *string
 	)
 	err := h.pool.QueryRow(ctx, `
 		SELECT org_id, repo_branch, webhook_secret, is_disabled,
-		       tool, repo_url, project_root, runner_image
+		       tool, repo_url, project_root, runner_image,
+		       module_namespace, module_name, module_provider
 		FROM stacks WHERE id = $1
 	`, stackID).Scan(&orgID, &repoBranch, &webhookSecret, &isDisabled,
-		&tool, &repoURL, &projectRoot, &runnerImage)
+		&tool, &repoURL, &projectRoot, &runnerImage,
+		&moduleNamespace, &moduleName, &moduleProvider)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -88,6 +94,12 @@ func (h *Handler) Receive(c echo.Context) error {
 	if event == nil {
 		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "unknown_event", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ignored"})
+	}
+
+	// Tag pushes: route to module auto-publish if the stack is configured for it.
+	if event.tagName != "" {
+		return h.handleTagPush(ctx, c, orgID, stackID, forge, eventType, deliveryID, payload, event,
+			moduleNamespace, moduleName, moduleProvider)
 	}
 
 	// Tracked runs only fire on the configured branch; PR runs always proceed.
@@ -398,6 +410,40 @@ type webhookEvent struct {
 	commitMessage string
 	prNumber      int    // 0 if not a PR/MR event
 	prURL         string // HTML URL of the PR/MR
+	tagName       string // set for tag pushes; mutually exclusive with branch/runType
+}
+
+var reTagSemver = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
+
+func (h *Handler) handleTagPush(
+	ctx context.Context, c echo.Context,
+	orgID, stackID, forge, eventType, deliveryID string,
+	payload json.RawMessage, event *webhookEvent,
+	ns, name, provider *string,
+) error {
+	if ns == nil || *ns == "" || name == nil || *name == "" || provider == nil || *provider == "" {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "no_module_config", nil)
+		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "module publishing not configured"})
+	}
+	version := strings.TrimPrefix(event.tagName, "v")
+	if !reTagSemver.MatchString(version) {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "tag_not_semver", nil)
+		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "tag is not semver"})
+	}
+	if err := h.q.EnqueueModulePublish(ctx, queue.ModulePublishArgs{
+		StackID:   stackID,
+		TagName:   event.tagName,
+		CommitSHA: event.commitSHA,
+		Namespace: *ns,
+		Name:      *name,
+		Provider:  *provider,
+		Version:   version,
+	}); err != nil {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "enqueue_failed", nil)
+		return fmt.Errorf("enqueue module publish: %w", err)
+	}
+	h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "triggered", "", nil)
+	return c.JSON(http.StatusAccepted, map[string]string{"status": "module_publish_queued", "version": version})
 }
 
 func parseAndVerify(r *http.Request, body []byte, secret string) (*webhookEvent, error) {
@@ -481,7 +527,8 @@ func parseGitHub(event string, body []byte) (*webhookEvent, error) {
 		}
 		branch := strings.TrimPrefix(e.Ref, "refs/heads/")
 		if branch == e.Ref {
-			return nil, nil // tag push — ignore
+			tag := strings.TrimPrefix(e.Ref, "refs/tags/")
+			return &webhookEvent{tagName: tag, commitSHA: e.HeadCommit.ID}, nil
 		}
 		return &webhookEvent{
 			trigger:       "push",
@@ -547,7 +594,12 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 		}
 		branch := strings.TrimPrefix(e.Ref, "refs/heads/")
 		if branch == e.Ref {
-			return nil, nil // tag push
+			tag := strings.TrimPrefix(e.Ref, "refs/tags/")
+			var sha string
+			if len(e.Commits) > 0 {
+				sha = e.Commits[len(e.Commits)-1].ID
+			}
+			return &webhookEvent{tagName: tag, commitSHA: sha}, nil
 		}
 		var sha, msg string
 		if len(e.Commits) > 0 {

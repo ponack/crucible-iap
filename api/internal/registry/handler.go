@@ -4,10 +4,15 @@
 package registry
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,15 +39,16 @@ func NewHandler(pool *pgxpool.Pool, store *storage.Client, cfg *config.Config) *
 // ── Response types ────────────────────────────────────────────────────────────
 
 type Module struct {
-	ID          string    `json:"id"`
-	Namespace   string    `json:"namespace"`
-	Name        string    `json:"name"`
-	Provider    string    `json:"provider"`
-	Version     string    `json:"version"`
-	Readme      string    `json:"readme,omitempty"`
-	Yanked      bool      `json:"yanked"`
-	PublishedBy string    `json:"published_by,omitempty"`
-	PublishedAt time.Time `json:"published_at"`
+	ID            string    `json:"id"`
+	Namespace     string    `json:"namespace"`
+	Name          string    `json:"name"`
+	Provider      string    `json:"provider"`
+	Version       string    `json:"version"`
+	Readme        string    `json:"readme,omitempty"`
+	Yanked        bool      `json:"yanked"`
+	PublishedBy   string    `json:"published_by,omitempty"`
+	PublishedAt   time.Time `json:"published_at"`
+	DownloadCount int64     `json:"download_count"`
 }
 
 // ── Management API ────────────────────────────────────────────────────────────
@@ -53,7 +59,8 @@ func (h *Handler) List(c echo.Context) error {
 
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT m.id, m.namespace, m.name, m.provider, m.version,
-		       m.readme, m.yanked, COALESCE(u.email,'') AS published_by, m.published_at
+		       m.readme, m.yanked, COALESCE(u.email,'') AS published_by,
+		       m.published_at, m.download_count
 		FROM registry_modules m
 		LEFT JOIN users u ON u.id = m.published_by
 		WHERE m.org_id = $1
@@ -71,7 +78,7 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var m Module
 		if err := rows.Scan(&m.ID, &m.Namespace, &m.Name, &m.Provider, &m.Version,
-			&m.Readme, &m.Yanked, &m.PublishedBy, &m.PublishedAt); err != nil {
+			&m.Readme, &m.Yanked, &m.PublishedBy, &m.PublishedAt, &m.DownloadCount); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "scan failed")
 		}
 		mods = append(mods, m)
@@ -86,12 +93,13 @@ func (h *Handler) Get(c echo.Context) error {
 	var m Module
 	err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT m.id, m.namespace, m.name, m.provider, m.version,
-		       m.readme, m.yanked, COALESCE(u.email,'') AS published_by, m.published_at
+		       m.readme, m.yanked, COALESCE(u.email,'') AS published_by,
+		       m.published_at, m.download_count
 		FROM registry_modules m
 		LEFT JOIN users u ON u.id = m.published_by
 		WHERE m.id = $1 AND m.org_id = $2
 	`, id, orgID).Scan(&m.ID, &m.Namespace, &m.Name, &m.Provider, &m.Version,
-		&m.Readme, &m.Yanked, &m.PublishedBy, &m.PublishedAt)
+		&m.Readme, &m.Yanked, &m.PublishedBy, &m.PublishedAt, &m.DownloadCount)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "module not found")
 	}
@@ -106,20 +114,25 @@ func (h *Handler) Publish(c echo.Context) error {
 	name := c.FormValue("name")
 	provider := c.FormValue("provider")
 	version := c.FormValue("version")
-	readme := c.FormValue("readme")
 
 	if err := validateModuleFields(namespace, name, provider, version); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	file, hdr, err := c.Request().FormFile("module")
+	file, _, err := c.Request().FormFile("module")
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "module file is required")
 	}
 	defer file.Close()
 
+	data, err := io.ReadAll(io.LimitReader(file, 256<<20))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to read module file")
+	}
+	readme := extractReadme(data)
+
 	key := storage.ModuleKey(namespace, name, provider, version)
-	if err := h.storage.PutModule(c.Request().Context(), key, file, hdr.Size); err != nil {
+	if err := h.storage.PutModule(c.Request().Context(), key, bytes.NewReader(data), int64(len(data))); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to store module")
 	}
 
@@ -130,10 +143,10 @@ func (h *Handler) Publish(c echo.Context) error {
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
 		ON CONFLICT (org_id, namespace, name, provider, version)
 		DO UPDATE SET storage_key=$6, readme=$7, published_by=$8, published_at=NOW(), yanked=FALSE
-		RETURNING id, namespace, name, provider, version, readme, yanked, published_at
+		RETURNING id, namespace, name, provider, version, readme, yanked, published_at, download_count
 	`, orgID, namespace, name, provider, version, key, readme, userID).Scan(
 		&m.ID, &m.Namespace, &m.Name, &m.Provider, &m.Version,
-		&m.Readme, &m.Yanked, &m.PublishedAt)
+		&m.Readme, &m.Yanked, &m.PublishedAt, &m.DownloadCount)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to record module")
 	}
@@ -262,6 +275,11 @@ func (h *Handler) Archive(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "module version not found")
 	}
 
+	_, _ = h.pool.Exec(c.Request().Context(), `
+		UPDATE registry_modules SET download_count = download_count + 1
+		WHERE org_id=$1 AND namespace=$2 AND name=$3 AND provider=$4 AND version=$5
+	`, orgID, ns, name, provider, version)
+
 	obj, err := h.storage.GetModule(c.Request().Context(), storageKey)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to fetch module archive")
@@ -339,9 +357,26 @@ func validateModuleFields(namespace, name, provider, version string) error {
 	return nil
 }
 
-// StreamReadCloser wraps an io.Reader for use where io.ReadCloser is needed.
-type StreamReadCloser struct {
-	io.Reader
+// extractReadme scans a tar.gz archive for README.md and returns its text.
+func extractReadme(data []byte) string {
+	gr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return ""
+	}
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		if strings.EqualFold(path.Base(hdr.Name), "readme.md") {
+			b, _ := io.ReadAll(io.LimitReader(tr, 512<<10))
+			return string(b)
+		}
+	}
+	return ""
 }
-
-func (StreamReadCloser) Close() error { return nil }

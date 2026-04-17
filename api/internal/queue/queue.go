@@ -75,6 +75,33 @@ func (c *Client) EnqueueRun(ctx context.Context, args RunJobArgs) (int64, error)
 	return job.Job.ID, nil
 }
 
+// EnqueueModulePublish queues a git-tag triggered module publish job.
+func (c *Client) EnqueueModulePublish(ctx context.Context, args ModulePublishArgs) error {
+	_, err := c.river.Insert(ctx, args, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue module publish: %w", err)
+	}
+	slog.Info("module publish job enqueued", "stack_id", args.StackID, "tag", args.TagName)
+	return nil
+}
+
+// ModulePublishArgs is enqueued when a tag push targets a stack with module publishing configured.
+type ModulePublishArgs struct {
+	StackID   string `json:"stack_id"`
+	TagName   string `json:"tag_name"`
+	CommitSHA string `json:"commit_sha"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	Version   string `json:"version"`
+}
+
+func (ModulePublishArgs) Kind() string { return "module_publish" }
+
+func (ModulePublishArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 3, Priority: 2, Queue: river.QueueDefault}
+}
+
 // ── Periodic jobs ─────────────────────────────────────────────────────────────
 
 // DriftCheckArgs is enqueued by the drift detection scheduler.
