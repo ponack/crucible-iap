@@ -147,7 +147,7 @@
 									{#if stack.upstream_count > 0 || stack.downstream_count > 0}
 										<span class="text-xs text-zinc-600 font-mono"
 											title="↑{stack.upstream_count} upstream · ↓{stack.downstream_count} downstream">
-											{#if stack.upstream_count > 0}↑{stack.upstream_count}{/if}{#if stack.upstream_count > 0 && stack.downstream_count > 0} {/if}{#if stack.downstream_count > 0}↓{stack.downstream_count}{/if}
+											{[stack.upstream_count > 0 ? `↑${stack.upstream_count}` : '', stack.downstream_count > 0 ? `↓${stack.downstream_count}` : ''].filter(Boolean).join(' ')}
 										</span>
 									{/if}
 								</div>

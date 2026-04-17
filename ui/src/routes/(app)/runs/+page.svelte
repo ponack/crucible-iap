@@ -112,6 +112,7 @@
 				</thead>
 				<tbody class="divide-y divide-zinc-800">
 					{#each allRuns as run (run.id)}
+						{@const tb = triggerBadge(run.trigger)}
 						<tr class="hover:bg-zinc-900/50 transition-colors">
 							<td class="px-4 py-3">
 								<a href="/runs/{run.id}" class="font-medium {statusColour[run.status] ?? 'text-zinc-400'}">
@@ -136,7 +137,6 @@
 								{/if}
 							</td>
 							<td class="px-4 py-3">
-								{@const tb = triggerBadge(run.trigger)}
 								<span class="text-xs px-1.5 py-0.5 rounded font-medium {tb.classes}">{tb.label}</span>
 							</td>
 							<td class="px-4 py-3 text-zinc-500 text-xs">{fmtDate(run.queued_at)}</td>
