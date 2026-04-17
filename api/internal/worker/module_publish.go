@@ -128,44 +128,20 @@ func downloadArchive(ctx context.Context, url, token string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 256<<20))
 }
 
+type tarEntry struct {
+	name string
+	data []byte
+	mode int64
+}
+
 // repackageModule reads a VCS tar.gz archive, strips the top-level directory
 // added by GitHub/GitLab/Gitea, optionally strips a projectRoot subdirectory,
 // and returns a clean tar.gz suitable for Terraform module use.
-// It also extracts the README.md text while iterating.
 func repackageModule(data []byte, projectRoot string) ([]byte, string, error) {
-	gr, err := gzip.NewReader(bytes.NewReader(data))
+	entries, err := readTarEntries(data)
 	if err != nil {
-		return nil, "", fmt.Errorf("gzip open: %w", err)
+		return nil, "", err
 	}
-	defer gr.Close()
-
-	tr := tar.NewReader(gr)
-
-	// Pass 1: collect all entries so we can determine the strip prefix.
-	type entry struct {
-		name string
-		data []byte
-		mode int64
-	}
-	var entries []entry
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, "", fmt.Errorf("tar read: %w", err)
-		}
-		if hdr.Typeflag != tar.TypeReg {
-			continue
-		}
-		b, err := io.ReadAll(io.LimitReader(tr, 10<<20))
-		if err != nil {
-			return nil, "", fmt.Errorf("read entry %s: %w", hdr.Name, err)
-		}
-		entries = append(entries, entry{name: hdr.Name, data: b, mode: hdr.Mode})
-	}
-
 	if len(entries) == 0 {
 		return nil, "", fmt.Errorf("archive is empty")
 	}
@@ -175,32 +151,58 @@ func repackageModule(data []byte, projectRoot string) ([]byte, string, error) {
 	if i := strings.Index(entries[0].name, "/"); i != -1 {
 		stripPrefix = entries[0].name[:i+1]
 	}
-
-	// Combine stripPrefix + projectRoot into a single prefix to strip.
 	fullPrefix := stripPrefix
 	if projectRoot != "" {
 		fullPrefix = stripPrefix + strings.Trim(projectRoot, "/") + "/"
 	}
 
+	return writeTarGz(entries, fullPrefix)
+}
+
+func readTarEntries(data []byte) ([]tarEntry, error) {
+	gr, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("gzip open: %w", err)
+	}
+	defer gr.Close()
+
+	tr := tar.NewReader(gr)
+	var entries []tarEntry
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("tar read: %w", err)
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		b, err := io.ReadAll(io.LimitReader(tr, 10<<20))
+		if err != nil {
+			return nil, fmt.Errorf("read entry %s: %w", hdr.Name, err)
+		}
+		entries = append(entries, tarEntry{name: hdr.Name, data: b, mode: hdr.Mode})
+	}
+	return entries, nil
+}
+
+func writeTarGz(entries []tarEntry, stripPrefix string) ([]byte, string, error) {
 	var readme string
 	var outBuf bytes.Buffer
 	gw := gzip.NewWriter(&outBuf)
 	tw := tar.NewWriter(gw)
 
 	for _, e := range entries {
-		stripped := strings.TrimPrefix(e.name, fullPrefix)
+		stripped := strings.TrimPrefix(e.name, stripPrefix)
 		if stripped == "" || strings.HasPrefix(stripped, "../") {
 			continue
 		}
-		base := path.Base(stripped)
-		if strings.EqualFold(base, "readme.md") && readme == "" {
+		if strings.EqualFold(path.Base(stripped), "readme.md") && readme == "" {
 			readme = string(e.data)
 		}
-		hdr := &tar.Header{
-			Name: stripped,
-			Mode: e.mode,
-			Size: int64(len(e.data)),
-		}
+		hdr := &tar.Header{Name: stripped, Mode: e.mode, Size: int64(len(e.data))}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return nil, "", err
 		}
