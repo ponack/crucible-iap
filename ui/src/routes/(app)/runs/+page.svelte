@@ -50,6 +50,7 @@
 		preparing: 'text-blue-400',
 		planning: 'text-blue-400',
 		unconfirmed: 'text-yellow-400',
+		pending_approval: 'text-purple-400',
 		confirmed: 'text-blue-400',
 		applying: 'text-blue-400',
 		finished: 'text-green-400',
@@ -68,7 +69,8 @@
 				<option value="">Any status</option>
 				<option value="queued">Queued</option>
 				<option value="planning">Planning</option>
-				<option value="unconfirmed">Needs approval</option>
+				<option value="pending_approval">Pending approval</option>
+			<option value="unconfirmed">Needs confirmation</option>
 				<option value="applying">Applying</option>
 				<option value="finished">Finished</option>
 				<option value="failed">Failed</option>

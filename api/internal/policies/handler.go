@@ -35,7 +35,13 @@ type PolicyRecord struct {
 
 // Init loads all active org policies into the engine at startup.
 func (h *Handler) Init(ctx context.Context) error {
-	rows, err := h.pool.Query(ctx, `
+	return LoadEngine(ctx, h.pool, h.engine)
+}
+
+// LoadEngine loads all active policies from DB into engine. Called at startup by both
+// the API server and the worker process.
+func LoadEngine(ctx context.Context, pool *pgxpool.Pool, engine *policy.Engine) error {
+	rows, err := pool.Query(ctx, `
 		SELECT id, name, type, body FROM policies WHERE is_active = true
 	`)
 	if err != nil {
@@ -49,7 +55,7 @@ func (h *Handler) Init(ctx context.Context) error {
 		if err := rows.Scan(&id, &name, &ptype, &body); err != nil {
 			continue
 		}
-		if err := h.engine.Load(ctx, id, name, policy.Type(ptype), body); err != nil {
+		if err := engine.Load(ctx, id, name, policy.Type(ptype), body); err != nil {
 			slog.Warn("failed to compile policy at startup", "id", id, "name", name, "err", err)
 			continue
 		}

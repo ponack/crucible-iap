@@ -685,6 +685,7 @@
 		preparing: 'text-blue-400',
 		planning: 'text-blue-400',
 		unconfirmed: 'text-yellow-400',
+		pending_approval: 'text-purple-400',
 		confirmed: 'text-blue-400',
 		applying: 'text-blue-400',
 		finished: 'text-green-400',

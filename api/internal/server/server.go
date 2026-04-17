@@ -282,6 +282,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/stacks/:stackID/drift", runHandler.TriggerDrift, member)
 	api.GET("/runs/:id", runHandler.Get)
 	api.POST("/runs/:id/confirm", runHandler.Confirm, member)
+	api.POST("/runs/:id/approve", runHandler.Approve, member)
 	api.POST("/runs/:id/discard", runHandler.Discard, member)
 	api.POST("/runs/:id/cancel", runHandler.Cancel, member)
 	api.GET("/runs/:id/logs", runHandler.Logs)
