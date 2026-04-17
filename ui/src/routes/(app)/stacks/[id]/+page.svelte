@@ -22,7 +22,8 @@
 	let editError = $state<string | null>(null);
 	let form = $state({
 		name: '', description: '', repo_url: '', repo_branch: '', project_root: '',
-		auto_apply: false, drift_detection: false, drift_schedule: '', auto_remediate_drift: false
+		auto_apply: false, drift_detection: false, drift_schedule: '', auto_remediate_drift: false,
+		scheduled_destroy_at: ''
 	});
 
 	// Token creation
@@ -211,7 +212,10 @@
 			auto_apply: stack.auto_apply,
 			drift_detection: stack.drift_detection,
 			drift_schedule: stack.drift_schedule ?? '',
-			auto_remediate_drift: stack.auto_remediate_drift
+			auto_remediate_drift: stack.auto_remediate_drift,
+			scheduled_destroy_at: stack.scheduled_destroy_at
+				? stack.scheduled_destroy_at.slice(0, 16)
+				: ''
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -851,6 +855,23 @@
 					Auto-remediate drift — automatically apply when drift is detected
 				</label>
 			{/if}
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-destroy-at">Scheduled destroy (UTC)</label>
+				<div class="flex items-center gap-2">
+					<input type="datetime-local" id="edit-destroy-at"
+						class="field-input"
+						bind:value={form.scheduled_destroy_at}
+					/>
+					{#if form.scheduled_destroy_at}
+						<button type="button"
+							onclick={() => form.scheduled_destroy_at = ''}
+							class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+							Clear
+						</button>
+					{/if}
+				</div>
+				<p class="text-xs text-zinc-600">If set, a destroy run will be triggered automatically at this time.</p>
+			</div>
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}
 					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
@@ -871,6 +892,7 @@
 			['Drift detection', stack.drift_detection ? 'Yes' : 'No'],
 			['Drift interval', stack.drift_detection ? driftScheduleLabel(stack.drift_schedule) : '—'],
 			['Auto-remediate drift', stack.drift_detection ? (stack.auto_remediate_drift ? 'Yes' : 'No') : '—'],
+			['Scheduled destroy', stack.scheduled_destroy_at ? fmtDate(stack.scheduled_destroy_at) + ' UTC' : '—'],
 			['Created', fmtDate(stack.created_at)]
 		] as [label, value]}
 			<div class="flex px-4 py-3">
@@ -1657,6 +1679,7 @@
 							<th class="text-left px-4 py-2">Event</th>
 							<th class="text-left px-4 py-2">Outcome</th>
 							<th class="text-left px-4 py-2">Detail</th>
+							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-zinc-800">
@@ -1682,6 +1705,18 @@
 									{:else}
 										<span class="text-zinc-700">—</span>
 									{/if}
+								</td>
+								<td class="px-4 py-2.5 text-xs text-right">
+									<button
+										title="Re-deliver"
+										onclick={async () => {
+											try {
+												const res = await stacks.webhook.redeliver(stackID, d.id);
+												goto('/runs/' + res.run_id);
+											} catch { /* ignore */ }
+										}}
+										class="text-zinc-500 hover:text-indigo-400 transition-colors"
+									>↺</button>
 								</td>
 							</tr>
 						{/each}

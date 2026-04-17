@@ -165,6 +165,7 @@ func runWorker() {
 
 	audit.StartPartitionMaintainer(ctx, pool)
 	worker.StartDriftScheduler(ctx, pool, cfg, q)
+	worker.StartTTLScheduler(ctx, pool, cfg, q)
 	worker.StartRetentionScheduler(ctx, pool, cfg, store)
 
 	slog.Info("starting crucible-iap worker",

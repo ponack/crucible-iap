@@ -200,6 +200,9 @@
 		if (a === 'run.confirmed')  return { bg: 'bg-green-900',  fg: 'text-green-400',  symbol: '✓' };
 		if (a === 'run.discarded' || a === 'run.canceled')
 			return { bg: 'bg-zinc-800', fg: 'text-zinc-500', symbol: '×' };
+		if (a === 'run.preparing')  return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '⚙' };
+		if (a === 'run.planning')   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '≡' };
+		if (a === 'run.applying')   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '▶' };
 		if (a.startsWith('run.'))   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '▶' };
 		if (a.startsWith('stack.')) return { bg: 'bg-indigo-900', fg: 'text-indigo-400', symbol: 'S' };
 		if (a.startsWith('policy.'))return { bg: 'bg-violet-900', fg: 'text-violet-400', symbol: 'P' };

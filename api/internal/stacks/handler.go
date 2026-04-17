@@ -71,6 +71,7 @@ type Stack struct {
 	HasStateBackend      bool       `json:"has_state_backend"`
 	StateBackendProvider string     `json:"state_backend_provider,omitempty"`
 	IsDisabled           bool       `json:"is_disabled"`
+	ScheduledDestroyAt   *time.Time `json:"scheduled_destroy_at,omitempty"`
 	LastRunStatus        string     `json:"last_run_status,omitempty"`
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
 	UpstreamCount        int        `json:"upstream_count"`
@@ -235,7 +236,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.vcs_integration_id, s.secret_integration_id,
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
-		       s.is_disabled, s.created_at, s.updated_at
+		       s.is_disabled, s.scheduled_destroy_at, s.created_at, s.updated_at
 		FROM stacks s WHERE s.id = $1 AND s.org_id = $2
 	`, id, orgID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
@@ -245,7 +246,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.NotifyEmail, &s.NotifyEvents,
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
-		&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
+		&s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -261,17 +262,18 @@ func (h *Handler) Update(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 
 	var req struct {
-		Name               *string `json:"name"`
-		Description        *string `json:"description"`
-		RepoURL            *string `json:"repo_url"`
-		RepoBranch         *string `json:"repo_branch"`
-		ProjectRoot        *string `json:"project_root"`
-		RunnerImage        *string `json:"runner_image"`
-		AutoApply          *bool   `json:"auto_apply"`
-		DriftDetection     *bool   `json:"drift_detection"`
-		DriftSchedule      *string `json:"drift_schedule"`
-		AutoRemediateDrift *bool   `json:"auto_remediate_drift"`
-		IsDisabled         *bool   `json:"is_disabled"`
+		Name                 *string `json:"name"`
+		Description          *string `json:"description"`
+		RepoURL              *string `json:"repo_url"`
+		RepoBranch           *string `json:"repo_branch"`
+		ProjectRoot          *string `json:"project_root"`
+		RunnerImage          *string `json:"runner_image"`
+		AutoApply            *bool   `json:"auto_apply"`
+		DriftDetection       *bool   `json:"drift_detection"`
+		DriftSchedule        *string `json:"drift_schedule"`
+		AutoRemediateDrift   *bool   `json:"auto_remediate_drift"`
+		IsDisabled           *bool   `json:"is_disabled"`
+		ScheduledDestroyAt   *string `json:"scheduled_destroy_at"` // RFC3339 or empty string to clear
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -318,13 +320,29 @@ func (h *Handler) Update(c echo.Context) error {
 	if req.IsDisabled != nil {
 		add("is_disabled", *req.IsDisabled)
 	}
+	if req.ScheduledDestroyAt != nil {
+		if *req.ScheduledDestroyAt == "" {
+			add("scheduled_destroy_at", nil)
+		} else {
+			t, err := time.Parse(time.RFC3339, *req.ScheduledDestroyAt)
+			if err != nil {
+				// Also accept datetime-local format (no timezone — treated as UTC).
+				t, err = time.Parse("2006-01-02T15:04", *req.ScheduledDestroyAt)
+				if err != nil {
+					return echo.NewHTTPError(http.StatusBadRequest, "scheduled_destroy_at must be RFC3339 or YYYY-MM-DDTHH:MM")
+				}
+			}
+			add("scheduled_destroy_at", t.UTC())
+		}
+	}
 
 	query := fmt.Sprintf(`
 		UPDATE stacks SET %s WHERE id = $1 AND org_id = $2
 		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
 		          COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		          COALESCE(runner_image,''), auto_apply, drift_detection,
-		          COALESCE(drift_schedule,''), auto_remediate_drift, is_disabled, created_at, updated_at
+		          COALESCE(drift_schedule,''), auto_remediate_drift, is_disabled,
+		          scheduled_destroy_at, created_at, updated_at
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -332,7 +350,7 @@ func (h *Handler) Update(c echo.Context) error {
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.AutoRemediateDrift, &s.IsDisabled, &s.CreatedAt, &s.UpdatedAt)
+			&s.AutoRemediateDrift, &s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
