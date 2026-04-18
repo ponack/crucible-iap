@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"io"
 	"net/http"
+	"path"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
@@ -135,6 +137,67 @@ func (h *Handler) DownloadPlanInternal(c echo.Context) error {
 
 	c.Response().Header().Set("Content-Disposition", `attachment; filename="plan.tfplan"`)
 	return c.Blob(http.StatusOK, "application/octet-stream", data)
+}
+
+// parseCacheKey extracts and sanitizes the wildcard *key route param.
+func parseCacheKey(c echo.Context) (string, error) {
+	key := strings.TrimPrefix(c.Param("key"), "/")
+	if key == "" || strings.Contains(key, "..") {
+		return "", echo.NewHTTPError(http.StatusBadRequest, "invalid cache key")
+	}
+	return key, nil
+}
+
+// ListProviderCache returns the list of provider keys available in the cache,
+// filtered by the optional ?platform= query parameter (e.g. linux_amd64).
+func (h *Handler) ListProviderCache(c echo.Context) error {
+	platform := c.QueryParam("platform")
+	keys, err := h.storage.ListProviderCache(c.Request().Context(), platform)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to list provider cache")
+	}
+	if keys == nil {
+		keys = []string{}
+	}
+	return c.JSON(http.StatusOK, map[string][]string{"keys": keys})
+}
+
+// GetProviderCache streams a cached provider binary to the runner.
+// The key is the path relative to TF_PLUGIN_CACHE_DIR, e.g.
+// registry.terraform.io/hashicorp/aws/5.0.0/linux_amd64/terraform-provider-aws_v5.0.0_x5
+func (h *Handler) GetProviderCache(c echo.Context) error {
+	key, err := parseCacheKey(c)
+	if err != nil {
+		return err
+	}
+	obj, err := h.storage.GetProviderCache(c.Request().Context(), key)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "provider not in cache")
+	}
+	defer obj.Close()
+	filename := path.Base(key)
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	return c.Stream(http.StatusOK, "application/octet-stream", obj)
+}
+
+// PutProviderCache stores a provider binary uploaded by the runner.
+// The runner checks existence before uploading, so duplicates are rare.
+func (h *Handler) PutProviderCache(c echo.Context) error {
+	key, err := parseCacheKey(c)
+	if err != nil {
+		return err
+	}
+	const maxSize = 600 * 1024 * 1024
+	size := c.Request().ContentLength
+	if size > maxSize {
+		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "provider binary exceeds 600 MB limit")
+	}
+	// LimitReader guards against chunked uploads where ContentLength is -1.
+	body := io.LimitReader(c.Request().Body, maxSize)
+	if err := h.storage.PutProviderCache(c.Request().Context(), key, body, size); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to store provider binary")
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 // UploadPlan receives the binary plan artifact from the runner and stores it in MinIO.

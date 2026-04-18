@@ -47,6 +47,71 @@ upload_plan() {
     fi
 }
 
+# ── Provider cache (OpenTofu / Terraform) ────────────────────────────────────
+# Providers are stored in MinIO keyed by their path relative to TF_PLUGIN_CACHE_DIR.
+# Each run restores cached providers before init (so init skips registry downloads)
+# and uploads any newly-downloaded providers after init.
+
+PROVIDER_CACHE_DIR="/workspace/.provider-cache"
+# Keys fetched during restore are reused by save to avoid a second round-trip.
+_PROVIDER_CACHE_KEYS=""
+
+restore_provider_cache() {
+    log "restoring provider cache"
+    mkdir -p "${PROVIDER_CACHE_DIR}"
+
+    local platform
+    platform="$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+
+    _PROVIDER_CACHE_KEYS=$(curl -sf \
+        -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+        "${CRUCIBLE_API_URL}/api/v1/internal/provider-cache?platform=${platform}" \
+        | jq -r '.keys[]') || { log "warn: could not fetch provider cache list — skipping restore"; return 0; }
+
+    local count=0
+    while IFS= read -r key; do
+        local dest="${PROVIDER_CACHE_DIR}/${key}"
+        if [[ ! -f "$dest" ]]; then
+            mkdir -p "$(dirname "$dest")"
+            if curl -sf \
+                -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+                "${CRUCIBLE_API_URL}/api/v1/internal/provider-cache/${key}" \
+                -o "$dest"; then
+                chmod +x "$dest"
+                count=$(( count + 1 ))
+            else
+                log "warn: failed to download provider ${key} — will download from registry"
+                rm -f "$dest"
+            fi
+        fi
+    done <<< "${_PROVIDER_CACHE_KEYS}"
+
+    log "provider cache: restored ${count} provider(s) from cache"
+}
+
+save_provider_cache() {
+    [[ -d "${PROVIDER_CACHE_DIR}" ]] || return 0
+    log "updating provider cache"
+
+    local count=0
+    while IFS= read -r file; do
+        local key="${file#"${PROVIDER_CACHE_DIR}"/}"
+        if ! grep -qxF "$key" <<< "${_PROVIDER_CACHE_KEYS}"; then
+            if curl -sf -X PUT \
+                -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@${file}" \
+                "${CRUCIBLE_API_URL}/api/v1/internal/provider-cache/${key}"; then
+                count=$(( count + 1 ))
+            else
+                log "warn: failed to cache provider ${key}"
+            fi
+        fi
+    done < <(find "${PROVIDER_CACHE_DIR}" -type f)
+
+    log "provider cache: uploaded ${count} new provider(s)"
+}
+
 # ── OpenTofu / Terraform shared logic ────────────────────────────────────────
 run_tf_generic() {
     local bin="$1"
@@ -79,8 +144,13 @@ run_tf_generic() {
         *)       log "state backend returned ${state_check} — continuing (empty state is normal for first run)" ;;
     esac
 
+    export TF_PLUGIN_CACHE_DIR="${PROVIDER_CACHE_DIR}"
+    restore_provider_cache
+
     log "initialising"
     ${bin} init -no-color
+
+    save_provider_cache
 
     case "${CRUCIBLE_RUN_TYPE}" in
         destroy)
