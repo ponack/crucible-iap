@@ -112,6 +112,10 @@ export interface Stack {
 	module_namespace?: string;
 	module_name?: string;
 	module_provider?: string;
+	pre_plan_hook?: string;
+	post_plan_hook?: string;
+	pre_apply_hook?: string;
+	post_apply_hook?: string;
 	created_at: string;
 	updated_at: string;
 }

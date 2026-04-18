@@ -433,7 +433,7 @@ cd api && go test -race ./...
 - [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [x] Fine-grained RBAC — per-stack viewer/approver roles in addition to the org-wide admin/member/viewer hierarchy; restricted stacks hidden from non-members
 - [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
-- [ ] Custom run hooks — pre/post-plan and pre/post-apply scripts defined per stack or org-wide, without requiring a custom runner image
+- [x] Custom run hooks — per-stack pre/post-plan and pre/post-apply bash scripts; configured in the stack settings UI, injected as env vars, executed inside the runner container; a non-zero exit fails the run
 - [x] Context-aware approval policies — OPA `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and returns `require_approval: true` to gate runs behind explicit sign-off; `deny` fails the run immediately
 - [x] Startup config validation — `RUNNER_MEMORY_LIMIT` and `RUNNER_CPU_LIMIT` validated at boot; server refuses to start on invalid values rather than silently running containers unbounded
 - [x] OIDC workload identity federation — Crucible acts as its own OIDC identity provider; each run receives a short-lived signed JWT; configure per-stack to exchange it for temporary AWS, GCP, or Azure credentials — no static cloud secrets in Crucible

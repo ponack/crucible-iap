@@ -23,7 +23,8 @@
 	let form = $state({
 		name: '', description: '', repo_url: '', repo_branch: '', project_root: '',
 		auto_apply: false, drift_detection: false, drift_schedule: '', auto_remediate_drift: false,
-		scheduled_destroy_at: ''
+		scheduled_destroy_at: '',
+		pre_plan_hook: '', post_plan_hook: '', pre_apply_hook: '', post_apply_hook: ''
 	});
 
 	// Token creation
@@ -265,7 +266,11 @@
 			auto_remediate_drift: stack.auto_remediate_drift,
 			scheduled_destroy_at: stack.scheduled_destroy_at
 				? stack.scheduled_destroy_at.slice(0, 16)
-				: ''
+				: '',
+			pre_plan_hook: stack.pre_plan_hook ?? '',
+			post_plan_hook: stack.post_plan_hook ?? '',
+			pre_apply_hook: stack.pre_apply_hook ?? '',
+			post_apply_hook: stack.post_apply_hook ?? ''
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -1020,6 +1025,32 @@
 					{/if}
 				</div>
 				<p class="text-xs text-zinc-600">If set, a destroy run will be triggered automatically at this time.</p>
+			</div>
+			<div class="space-y-3">
+				<p class="field-label">Lifecycle hooks <span class="font-normal text-zinc-500">(bash scripts — leave blank to skip)</span></p>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label font-normal text-zinc-400" for="edit-pre-plan">Pre-plan</label>
+						<textarea id="edit-pre-plan" class="field-input font-mono text-xs h-24 resize-y"
+							placeholder="#!/usr/bin/env bash&#10;echo 'before plan'" bind:value={form.pre_plan_hook}></textarea>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label font-normal text-zinc-400" for="edit-post-plan">Post-plan</label>
+						<textarea id="edit-post-plan" class="field-input font-mono text-xs h-24 resize-y"
+							placeholder="#!/usr/bin/env bash&#10;echo 'after plan'" bind:value={form.post_plan_hook}></textarea>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label font-normal text-zinc-400" for="edit-pre-apply">Pre-apply</label>
+						<textarea id="edit-pre-apply" class="field-input font-mono text-xs h-24 resize-y"
+							placeholder="#!/usr/bin/env bash&#10;echo 'before apply'" bind:value={form.pre_apply_hook}></textarea>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label font-normal text-zinc-400" for="edit-post-apply">Post-apply</label>
+						<textarea id="edit-post-apply" class="field-input font-mono text-xs h-24 resize-y"
+							placeholder="#!/usr/bin/env bash&#10;echo 'after apply'" bind:value={form.post_apply_hook}></textarea>
+					</div>
+				</div>
+				<p class="text-xs text-zinc-600">Hooks run inside the runner container with full access to stack env vars. A non-zero exit fails the run.</p>
 			</div>
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}
