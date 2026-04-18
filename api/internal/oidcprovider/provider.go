@@ -46,6 +46,9 @@ type TokenClaims struct {
 // LoadOrCreate loads the ECDSA P-256 signing key from the database (encrypted by
 // the vault) or generates and stores a new one on first call.
 func LoadOrCreate(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, issuer string) (*Provider, error) {
+	// Ensure the singleton row exists (guards against restored DBs missing the seed).
+	_, _ = pool.Exec(ctx, `INSERT INTO system_settings DEFAULT VALUES ON CONFLICT DO NOTHING`)
+
 	var enc []byte
 	err := pool.QueryRow(ctx,
 		`SELECT oidc_signing_key_enc FROM system_settings LIMIT 1`,

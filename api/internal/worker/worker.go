@@ -633,24 +633,23 @@ func (w *pgNotifyWriter) Write(p []byte) (int, error) {
 // the OIDC-related fields on spec. Non-fatal: caller logs and continues without OIDC.
 func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args queue.RunJobArgs, spec *runner.JobSpec) error {
 	var (
-		provider                    string
-		awsRoleARN                  *string
-		awsSessionSecs              *int
-		gcpAudience, gcpSA          *string
-		azureTenant, azureClient    *string
-		azureSubscription           *string
-		audienceOverride            *string
+		provider                 string
+		awsRoleARN               *string
+		gcpAudience, gcpSA       *string
+		azureTenant, azureClient *string
+		azureSubscription        *string
+		audienceOverride         *string
 	)
 	err := w.pool.QueryRow(ctx, `
 		SELECT provider,
-		       aws_role_arn, aws_session_duration_secs,
+		       aws_role_arn,
 		       gcp_workload_identity_audience, gcp_service_account_email,
 		       azure_tenant_id, azure_client_id, azure_subscription_id,
 		       audience_override
 		FROM stack_cloud_oidc WHERE stack_id = $1
 	`, args.StackID).Scan(
 		&provider,
-		&awsRoleARN, &awsSessionSecs,
+		&awsRoleARN,
 		&gcpAudience, &gcpSA,
 		&azureTenant, &azureClient, &azureSubscription,
 		&audienceOverride,
@@ -691,9 +690,6 @@ func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args que
 	spec.OIDCProvider = provider
 	if awsRoleARN != nil {
 		spec.AWSOIDCRoleARN = *awsRoleARN
-	}
-	if awsSessionSecs != nil {
-		spec.AWSOIDCSessionDurationSecs = *awsSessionSecs
 	}
 	if gcpAudience != nil {
 		spec.GCPOIDCAudience = *gcpAudience

@@ -54,8 +54,7 @@ type JobSpec struct {
 	OIDCToken    string // signed JWT issued by oidcprovider
 	OIDCProvider string // "aws" | "gcp" | "azure"
 	// AWS
-	AWSOIDCRoleARN             string
-	AWSOIDCSessionDurationSecs int
+	AWSOIDCRoleARN string
 	// GCP
 	GCPOIDCAudience            string
 	GCPOIDCServiceAccountEmail string
@@ -376,15 +375,10 @@ func oidcEnv(spec JobSpec) []string {
 	}
 	switch spec.OIDCProvider {
 	case "aws":
-		dur := spec.AWSOIDCSessionDurationSecs
-		if dur <= 0 {
-			dur = 3600
-		}
 		return []string{
 			"AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/oidc-token",
 			"AWS_ROLE_ARN=" + spec.AWSOIDCRoleARN,
 			fmt.Sprintf("AWS_ROLE_SESSION_NAME=crucible-%s", spec.RunID[:8]),
-			fmt.Sprintf("AWS_WEB_IDENTITY_TOKEN_FILE_DURATION=%d", dur),
 		}
 	case "gcp":
 		return []string{
@@ -421,7 +415,7 @@ func injectOIDCFiles(ctx context.Context, docker *client.Client, containerID str
 	for name, data := range files {
 		hdr := &tar.Header{
 			Name: name,
-			Mode: 0400,
+			Mode: 0444,
 			Size: int64(len(data)),
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
