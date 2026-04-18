@@ -14,6 +14,15 @@
 	let smtp = $state({ smtp_host: '', smtp_port: 587, smtp_username: '', smtp_password: '', smtp_from: '', smtp_tls: true });
 	let vcs = $state({ default_vcs_provider: 'github', default_vcs_base_url: '' });
 
+	type TestResult = { ok: boolean; msg: string } | null;
+
+	let testingSlack = $state(false);
+	let slackTestResult = $state<TestResult>(null);
+	let testingGotify = $state(false);
+	let gotifyTestResult = $state<TestResult>(null);
+	let testingNtfy = $state(false);
+	let ntfyTestResult = $state<TestResult>(null);
+
 	// SMTP test
 	let smtpTestAddr = $state('');
 	let testingSmtp = $state(false);
@@ -87,6 +96,27 @@
 		await saveSection(vcs);
 	}
 
+	async function runTest(
+		setTesting: (v: boolean) => void,
+		setResult: (v: TestResult) => void,
+		fn: () => Promise<void>
+	) {
+		setTesting(true);
+		setResult(null);
+		try {
+			await fn();
+			setResult({ ok: true, msg: 'Test message sent successfully.' });
+		} catch (err) {
+			setResult({ ok: false, msg: (err as Error).message });
+		} finally {
+			setTesting(false);
+		}
+	}
+
+	const testSlack = () => runTest((v) => (testingSlack = v), (v) => (slackTestResult = v), system.notifications.testSlack);
+	const testGotify = () => runTest((v) => (testingGotify = v), (v) => (gotifyTestResult = v), system.notifications.testGotify);
+	const testNtfy = () => runTest((v) => (testingNtfy = v), (v) => (ntfyTestResult = v), system.notifications.testNtfy);
+
 	async function testSmtp(e: SubmitEvent) {
 		e.preventDefault();
 		if (!smtpTestAddr.trim()) return;
@@ -140,18 +170,29 @@
 					autocomplete="new-password" />
 				<p class="text-xs text-zinc-600">New stacks inherit this webhook. Leave blank to require per-stack configuration.</p>
 			</div>
-			<button type="submit" disabled={saving}
-				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
-				{saving ? 'Saving…' : 'Save'}
-			</button>
+			<div class="flex items-center gap-2">
+				<button type="submit" disabled={saving}
+					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					{saving ? 'Saving…' : 'Save'}
+				</button>
+				<button type="button" onclick={testSlack} disabled={testingSlack || !settings?.default_slack_webhook}
+					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					{testingSlack ? 'Sending…' : 'Send test'}
+				</button>
+				{#if slackTestResult}
+					<span class="text-xs {slackTestResult.ok ? 'text-green-400' : 'text-red-400'}">{slackTestResult.msg}</span>
+				{/if}
+			</div>
 		</form>
 	</div>
 
 	<!-- Gotify -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
-			<div class="w-7 h-7 rounded bg-zinc-700 flex items-center justify-center shrink-0">
-				<svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg>
+			<div class="w-7 h-7 rounded bg-[#0ca678] flex items-center justify-center shrink-0">
+				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+					<path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-9 11l2-4H9l4-7v5h3l-5 6z"/>
+				</svg>
 			</div>
 			<div>
 				<p class="text-sm font-medium text-white">Gotify</p>
@@ -174,17 +215,30 @@
 						autocomplete="new-password" />
 				</div>
 			</div>
-			<button type="submit" disabled={saving}
-				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
-				{saving ? 'Saving…' : 'Save'}
-			</button>
+			<div class="flex items-center gap-2">
+				<button type="submit" disabled={saving}
+					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					{saving ? 'Saving…' : 'Save'}
+				</button>
+				<button type="button" onclick={testGotify} disabled={testingGotify || !settings?.default_gotify_url}
+					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					{testingGotify ? 'Sending…' : 'Send test'}
+				</button>
+				{#if gotifyTestResult}
+					<span class="text-xs {gotifyTestResult.ok ? 'text-green-400' : 'text-red-400'}">{gotifyTestResult.msg}</span>
+				{/if}
+			</div>
 		</form>
 	</div>
 
 	<!-- ntfy -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
-			<div class="w-7 h-7 rounded bg-zinc-700 flex items-center justify-center shrink-0 text-xs font-bold text-white">n</div>
+			<div class="w-7 h-7 rounded bg-[#317f6e] flex items-center justify-center shrink-0">
+				<svg class="w-4 h-4" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+					<path d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 0 0 2 2zm6-6V11c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/>
+				</svg>
+			</div>
 			<div>
 				<p class="text-sm font-medium text-white">ntfy</p>
 				<p class="text-xs text-zinc-500">Topic-based push notifications</p>
@@ -208,10 +262,19 @@
 						autocomplete="new-password" />
 				</div>
 			</div>
-			<button type="submit" disabled={saving}
-				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
-				{saving ? 'Saving…' : 'Save'}
-			</button>
+			<div class="flex items-center gap-2">
+				<button type="submit" disabled={saving}
+					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					{saving ? 'Saving…' : 'Save'}
+				</button>
+				<button type="button" onclick={testNtfy} disabled={testingNtfy || !settings?.default_ntfy_url}
+					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					{testingNtfy ? 'Sending…' : 'Send test'}
+				</button>
+				{#if ntfyTestResult}
+					<span class="text-xs {ntfyTestResult.ok ? 'text-green-400' : 'text-red-400'}">{ntfyTestResult.msg}</span>
+				{/if}
+			</div>
 		</form>
 	</div>
 

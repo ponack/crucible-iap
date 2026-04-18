@@ -15,6 +15,13 @@ import (
 	"github.com/ponack/crucible-iap/internal/config"
 )
 
+// OrgNotifier is satisfied by *notify.Notifier; defined here to avoid an import cycle.
+type OrgNotifier interface {
+	TestOrgSlack(ctx context.Context) error
+	TestOrgGotify(ctx context.Context) error
+	TestOrgNtfy(ctx context.Context) error
+}
+
 var memoryLimitRe = regexp.MustCompile(`^(\d+)([mMgG])$`)
 
 // validateMemoryLimit accepts values like "512m", "2g". Allowed range: 128 MB – 64 GB.
@@ -74,12 +81,13 @@ type Settings struct {
 }
 
 type Handler struct {
-	pool *pgxpool.Pool
-	cfg  *config.Config
+	pool     *pgxpool.Pool
+	cfg      *config.Config
+	notifier OrgNotifier
 }
 
-func NewHandler(pool *pgxpool.Pool, cfg *config.Config) *Handler {
-	return &Handler{pool: pool, cfg: cfg}
+func NewHandler(pool *pgxpool.Pool, cfg *config.Config, n OrgNotifier) *Handler {
+	return &Handler{pool: pool, cfg: cfg, notifier: n}
 }
 
 // Get returns the current system settings, falling back to env-config defaults.
@@ -273,4 +281,26 @@ func LoadSMTP(ctx context.Context, pool *pgxpool.Pool) (host string, port int, u
 		FROM system_settings WHERE id = true
 	`).Scan(&host, &port, &username, &password, &from, &useTLS)
 	return
+}
+
+func (h *Handler) testOrg(c echo.Context, fn func() error) error {
+	if h.notifier == nil {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "notifier not configured")
+	}
+	if err := fn(); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *Handler) TestOrgSlack(c echo.Context) error {
+	return h.testOrg(c, func() error { return h.notifier.TestOrgSlack(c.Request().Context()) })
+}
+
+func (h *Handler) TestOrgGotify(c echo.Context) error {
+	return h.testOrg(c, func() error { return h.notifier.TestOrgGotify(c.Request().Context()) })
+}
+
+func (h *Handler) TestOrgNtfy(c echo.Context) error {
+	return h.testOrg(c, func() error { return h.notifier.TestOrgNtfy(c.Request().Context()) })
 }
