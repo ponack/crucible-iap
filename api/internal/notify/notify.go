@@ -317,25 +317,8 @@ func (n *Notifier) TestSlack(ctx context.Context, stackID string) error {
 	if webhookURL == "" {
 		return fmt.Errorf("failed to decrypt Slack webhook")
 	}
-
-	payload := map[string]string{
-		"text": fmt.Sprintf("✅ *%s* — Crucible test notification. Your Slack webhook is working correctly.", stackName),
-	}
-	b, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("slack request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("slack returned HTTP %d — check webhook URL", resp.StatusCode)
-	}
-	return nil
+	return n.slackPostErr(ctx, webhookURL,
+		fmt.Sprintf("✅ *%s* — Crucible test notification. Your Slack webhook is working correctly.", stackName))
 }
 
 // TestGotify sends a test Gotify message to verify the config is working.
@@ -381,6 +364,51 @@ func (n *Notifier) TestNtfy(ctx context.Context, stackID string) error {
 	return n.ntfyPost(ctx, ntfyURL, token,
 		"Crucible test notification",
 		fmt.Sprintf("%s — your ntfy integration is working correctly.", stackName),
+		"default")
+}
+
+// TestOrgSlack sends a test message to the org-level Slack webhook in system_settings.
+func (n *Notifier) TestOrgSlack(ctx context.Context) error {
+	var webhookURL string
+	err := n.pool.QueryRow(ctx,
+		`SELECT COALESCE(default_slack_webhook,'') FROM system_settings WHERE id = true`,
+	).Scan(&webhookURL)
+	if err != nil || webhookURL == "" {
+		return fmt.Errorf("no Slack webhook configured")
+	}
+	return n.slackPostErr(ctx, webhookURL,
+		"✅ *Crucible IAP* — Org-level test notification. Your Slack webhook is working correctly.")
+}
+
+// TestOrgGotify sends a test message to the org-level Gotify config in system_settings.
+func (n *Notifier) TestOrgGotify(ctx context.Context) error {
+	var gotifyURL, gotifyToken string
+	err := n.pool.QueryRow(ctx,
+		`SELECT COALESCE(default_gotify_url,''), COALESCE(default_gotify_token,'') FROM system_settings WHERE id = true`,
+	).Scan(&gotifyURL, &gotifyToken)
+	if err != nil || gotifyURL == "" {
+		return fmt.Errorf("no Gotify URL configured")
+	}
+	if gotifyToken == "" {
+		return fmt.Errorf("no Gotify token configured")
+	}
+	return n.gotifyPost(ctx, gotifyURL, gotifyToken,
+		"Crucible test notification",
+		"Org-level Gotify integration is working correctly.")
+}
+
+// TestOrgNtfy sends a test message to the org-level ntfy config in system_settings.
+func (n *Notifier) TestOrgNtfy(ctx context.Context) error {
+	var ntfyURL, ntfyToken string
+	err := n.pool.QueryRow(ctx,
+		`SELECT COALESCE(default_ntfy_url,''), COALESCE(default_ntfy_token,'') FROM system_settings WHERE id = true`,
+	).Scan(&ntfyURL, &ntfyToken)
+	if err != nil || ntfyURL == "" {
+		return fmt.Errorf("no ntfy URL configured")
+	}
+	return n.ntfyPost(ctx, ntfyURL, ntfyToken,
+		"Crucible test notification",
+		"Org-level ntfy integration is working correctly.",
 		"default")
 }
 
@@ -522,20 +550,29 @@ func (n *Notifier) gitPostComment(ctx context.Context, baseURL, owner, repo stri
 
 // ── Slack ─────────────────────────────────────────────────────────────────────
 
-func (n *Notifier) slackPost(ctx context.Context, webhookURL, text string) {
+func (n *Notifier) slackPostErr(ctx context.Context, webhookURL, text string) error {
 	payload := map[string]string{"text": text}
 	b, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
 	if err != nil {
-		return
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := n.client.Do(req)
 	if err != nil {
-		slog.Warn("notify: slack post failed", "err", err)
-		return
+		return fmt.Errorf("slack request failed: %w", err)
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("slack returned HTTP %d — check webhook URL", resp.StatusCode)
+	}
+	return nil
+}
+
+func (n *Notifier) slackPost(ctx context.Context, webhookURL, text string) {
+	if err := n.slackPostErr(ctx, webhookURL, text); err != nil {
+		slog.Warn("notify: slack post failed", "err", err)
+	}
 }
 
 // ── Gotify ────────────────────────────────────────────────────────────────────

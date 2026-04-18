@@ -115,7 +115,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	runHandler := runs.NewHandler(s.pool, s.cfg, q, store)
 	stateHandler := state.NewHandler(s.pool, store, v)
 	auditHandler := audit.NewHandler(s.pool)
-	settingsHandler := settings.NewHandler(s.pool, s.cfg)
+	settingsHandler := settings.NewHandler(s.pool, s.cfg, n)
 	webhookHandler := webhooks.NewHandler(s.pool, q)
 	orgHandler := orgs.NewHandler(s.pool)
 	envVarHandler := envvars.NewHandler(s.pool, v)
@@ -312,6 +312,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// System settings
 	api.GET("/system/settings", settingsHandler.Get)
 	api.PUT("/system/settings", settingsHandler.Update, admin)
+	api.POST("/system/notifications/test-slack", settingsHandler.TestOrgSlack, admin)
+	api.POST("/system/notifications/test-gotify", settingsHandler.TestOrgGotify, admin)
+	api.POST("/system/notifications/test-ntfy", settingsHandler.TestOrgNtfy, admin)
 
 	// Module registry (management API)
 	api.GET("/registry/modules", registryHandler.List)
