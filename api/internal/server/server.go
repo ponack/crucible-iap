@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"golang.org/x/time/rate"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
 	"github.com/ponack/crucible-iap/internal/config"
@@ -138,17 +139,22 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	e.GET("/metrics", metrics.Handler())
 	e.GET("/auth/config", authHandler.GetAuthConfig)
 
-	// Tight rate limit on local (password) login only — the actual credential-stuffing target.
-	// SSO redirects, callbacks, refresh, and logout don't accept passwords so they use the
-	// global limiter; applying the tight limit to them causes spurious 429s during normal use
-	// (SSO flow alone consumes 2 hits: /auth/login + /auth/callback).
-	localAuthRL := middleware.RateLimiter(middleware.NewRateLimiterMemoryStoreWithConfig(
-		middleware.RateLimiterMemoryStoreConfig{Rate: 10.0 / 60, Burst: 5},
-	))
+	newRL := func(rps rate.Limit, burst int) echo.MiddlewareFunc {
+		return middleware.RateLimiter(middleware.NewRateLimiterMemoryStoreWithConfig(
+			middleware.RateLimiterMemoryStoreConfig{Rate: rps, Burst: burst, ExpiresIn: 3 * time.Minute},
+		))
+	}
+	// Tight per-IP limit on local (password) login — the primary credential-stuffing target.
+	localAuthRL := newRL(10.0/60, 5)
+	// Moderate per-IP limit on token refresh and OAuth callback — these exchange
+	// bearer tokens / OAuth codes, so brute-force is a real concern at 200 req/s.
+	// /auth/login is excluded: it only issues an IdP redirect, two of which occur
+	// per SSO flow, making a tight limit a source of spurious 429s.
+	authTokenRL := newRL(20.0/60, 5)
 	e.GET("/auth/login", authHandler.Login)
-	e.GET("/auth/callback", authHandler.Callback)
+	e.GET("/auth/callback", authHandler.Callback, authTokenRL)
 	e.POST("/auth/local", authHandler.LocalLogin, localAuthRL)
-	e.POST("/auth/refresh", authHandler.Refresh)
+	e.POST("/auth/refresh", authHandler.Refresh, authTokenRL)
 	e.POST("/auth/logout", authHandler.Logout)
 	e.GET("/api/v1/invites/:token", orgHandler.GetInvite)
 
