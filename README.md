@@ -55,7 +55,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **Monitoring page** — Grafana panels embedded directly in the Crucible UI at `/monitoring`; all five dashboard panels (HTTP request rate, error rate, latency p50/p95/p99, run completions, queue depth) rendered inline with a 30 s auto-refresh; link to the full Grafana dashboard for admin use
 - **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; Grafana served at `{BASE_URL}/grafana`
 - **Push notifications** — per-stack Slack webhooks, Gotify, ntfy, and email (SMTP) event subscriptions: plan complete, run succeeded, run failed; configurable defaults in Settings → Notifications with one-click test delivery; per-stack overrides on the stack detail page
-- **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) for debugging missed or skipped events
+- **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) with the full stored payload; click any delivery in the UI to inspect the raw JSON body for debugging missed or skipped events
 - **Structured health endpoint** — `/health` reports DB status, version, and uptime
 - **Automatic migrations** — schema migrations run on startup; `migrate` subcommand available for manual control
 
@@ -64,6 +64,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **Terraform module registry** — private module registry backed by MinIO; implements the full Terraform Module Registry Protocol v1 so modules can be sourced as `source = "crucible.example.com/org/name/provider"`; publish via UI upload or git-tag auto-publish (push a semver tag on a stack with module config and Crucible downloads the archive, extracts the README, and publishes automatically); download count tracked per version; README rendered as markdown in the UI; authenticate via service account token in `~/.terraformrc`
 - **Stack templates** — save a stack configuration as a reusable template (tool, repo, branch, project root, policies, auto-apply, drift settings); new stacks can be pre-filled from a template in one click
 - **Provider caching** — Terraform/OpenTofu provider binaries cached in MinIO after first download; subsequent runs restore from cache before `init` so registry round-trips are eliminated; transparent to existing stacks
+- **Custom run hooks** — per-stack bash scripts executed at pre-plan, post-plan, pre-apply, and post-apply lifecycle points inside the runner container; configured in the stack settings UI; non-zero exit fails the run
 - **Single `docker compose up`** — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
 - **Separated API and Worker** — the HTTP API server and the Docker job runner run as distinct containers; the API has no Docker socket, the worker has no public ports
 - **Zero-config TLS** — Let's Encrypt via Caddy; bring your own cert or reverse proxy with the `external-proxy` profile
