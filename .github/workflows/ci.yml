@@ -38,6 +38,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-go@v6
@@ -76,7 +77,7 @@ jobs:
         run: go build ./cmd/crucible-iap
 
       - name: Commit go.sum if changed
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref_type == 'branch'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update go.sum"
@@ -89,6 +90,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          ref: ${{ github.head_ref || github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@v5
@@ -117,7 +119,7 @@ jobs:
         run: pnpm build
 
       - name: Commit lockfile if changed
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref_type == 'branch'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: update pnpm-lock.yaml"
@@ -128,6 +130,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-go@v6
         with:
@@ -145,7 +150,7 @@ jobs:
         run: gofmt -w api/
 
       - name: Commit gofmt changes
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && github.ref_type == 'branch'
         uses: stefanzweifel/git-auto-commit-action@v7
         with:
           commit_message: "chore: gofmt"
