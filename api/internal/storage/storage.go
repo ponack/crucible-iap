@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -142,11 +143,48 @@ func (c *Client) DeleteModule(ctx context.Context, key string) error {
 	return c.mc.RemoveObject(ctx, c.bucketArtifacts, key, minio.RemoveObjectOptions{})
 }
 
+// ── Provider cache ────────────────────────────────────────────────────────────
+
+// ListProviderCache returns the relative provider keys stored in the cache,
+// optionally filtered by platform (e.g. "linux_amd64"). An empty platform
+// returns all keys.
+func (c *Client) ListProviderCache(ctx context.Context, platform string) ([]string, error) {
+	var keys []string
+	for obj := range c.mc.ListObjects(ctx, c.bucketArtifacts, minio.ListObjectsOptions{
+		Prefix:    "provider-cache/",
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			return nil, obj.Err
+		}
+		rel := obj.Key[len("provider-cache/"):]
+		if platform == "" || strings.Contains(rel, "/"+platform+"/") {
+			keys = append(keys, rel)
+		}
+	}
+	return keys, nil
+}
+
+// GetProviderCache streams a cached provider binary. The returned object must
+// be closed by the caller.
+func (c *Client) GetProviderCache(ctx context.Context, key string) (*minio.Object, error) {
+	return c.mc.GetObject(ctx, c.bucketArtifacts, providerCacheKey(key), minio.GetObjectOptions{})
+}
+
+// PutProviderCache stores a provider binary. size may be -1 if unknown
+// (MinIO will use multipart upload automatically).
+func (c *Client) PutProviderCache(ctx context.Context, key string, r io.Reader, size int64) error {
+	_, err := c.mc.PutObject(ctx, c.bucketArtifacts, providerCacheKey(key), r, size,
+		minio.PutObjectOptions{ContentType: "application/octet-stream"})
+	return err
+}
+
 // ── Object key helpers ────────────────────────────────────────────────────────
 
-func stateKey(stackID string) string { return stackID + "/terraform.tfstate" }
-func planKey(runID string) string    { return "plans/" + runID + ".tfplan" }
-func logKey(runID string) string     { return "logs/" + runID + ".log" }
+func stateKey(stackID string) string        { return stackID + "/terraform.tfstate" }
+func planKey(runID string) string           { return "plans/" + runID + ".tfplan" }
+func logKey(runID string) string            { return "logs/" + runID + ".log" }
+func providerCacheKey(relPath string) string { return "provider-cache/" + relPath }
 
 func ModuleKey(namespace, name, provider, version string) string {
 	return fmt.Sprintf("registry/%s/%s/%s/%s.tar.gz", namespace, name, provider, version)
