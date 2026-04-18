@@ -54,7 +54,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 - **Monitoring page** — Grafana panels embedded directly in the Crucible UI at `/monitoring`; all five dashboard panels (HTTP request rate, error rate, latency p50/p95/p99, run completions, queue depth) rendered inline with a 30 s auto-refresh; link to the full Grafana dashboard for admin use
 - **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; Grafana served at `{BASE_URL}/grafana`
-- **Push notifications** — per-stack Slack webhooks, Gotify, ntfy, and email (SMTP) event subscriptions: plan complete, run succeeded, run failed; configurable defaults in Settings → Notifications; per-stack overrides on the stack detail page
+- **Push notifications** — per-stack Slack webhooks, Gotify, ntfy, and email (SMTP) event subscriptions: plan complete, run succeeded, run failed; configurable defaults in Settings → Notifications with one-click test delivery; per-stack overrides on the stack detail page
 - **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) for debugging missed or skipped events
 - **Structured health endpoint** — `/health` reports DB status, version, and uptime
 - **Automatic migrations** — schema migrations run on startup; `migrate` subcommand available for manual control
@@ -436,6 +436,8 @@ cd api && go test -race ./...
 - [x] Context-aware approval policies — OPA `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and returns `require_approval: true` to gate runs behind explicit sign-off; `deny` fails the run immediately
 - [x] Startup config validation — `RUNNER_MEMORY_LIMIT` and `RUNNER_CPU_LIMIT` validated at boot; server refuses to start on invalid values rather than silently running containers unbounded
 - [x] OIDC workload identity federation — Crucible acts as its own OIDC identity provider; each run receives a short-lived signed JWT; configure per-stack to exchange it for temporary AWS, GCP, or Azure credentials — no static cloud secrets in Crucible
+- [x] Notification test buttons — one-click test delivery for org-level Slack, Gotify, and ntfy endpoints directly from Settings → Notifications; confirms credentials are wired correctly without waiting for a run
+- [x] Per-stack RBAC on remote state links — configuring a cross-stack `terraform_remote_state` link now requires at least approver role on the source stack; prevents org members from granting access to state they cannot manage
 
 ## License
 
