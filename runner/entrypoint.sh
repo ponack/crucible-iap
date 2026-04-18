@@ -112,6 +112,18 @@ save_provider_cache() {
     log "provider cache: uploaded ${count} new provider(s)"
 }
 
+# ── Lifecycle hooks ───────────────────────────────────────────────────────────
+# Executes an optional hook script injected as an env var by the dispatcher.
+# The script runs in a bash subshell so it inherits all exported env vars but
+# cannot modify the runner's shell state.
+run_hook() {
+    local name="$1"
+    local script="${2:-}"
+    [[ -n "${script}" ]] || return 0
+    log "running ${name} hook"
+    bash -c "${script}" || fail "${name} hook exited with error"
+}
+
 # ── OpenTofu / Terraform shared logic ────────────────────────────────────────
 run_tf_generic() {
     local bin="$1"
@@ -156,12 +168,11 @@ run_tf_generic() {
         destroy)
             log "planning destroy"
             report_status "planning"
+            run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
             ${bin} plan -no-color -destroy -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
-            if [[ "${CRUCIBLE_RUN_TYPE}" == "destroy" ]]; then
-                # Destroy runs always require explicit confirmation — never auto-apply.
-                log "plan complete — awaiting confirmation before destroy"
-            fi
+            run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
+            log "plan complete — awaiting confirmation before destroy"
             ;;
 
         apply)
@@ -173,23 +184,29 @@ run_tf_generic() {
                 -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
                 -o /workspace/plan.tfplan \
                 || fail "failed to download plan artifact"
+            run_hook "pre_apply" "${CRUCIBLE_HOOK_PRE_APPLY:-}"
             ${bin} apply -no-color /workspace/plan.tfplan
+            run_hook "post_apply" "${CRUCIBLE_HOOK_POST_APPLY:-}"
             ;;
 
         proposed)
             # Plan only — no apply, no confirmation needed.
             log "running plan (proposed)"
             report_status "planning"
+            run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
             ${bin} plan -no-color -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
+            run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             ;;
 
         tracked|*)
             # Default: plan, upload, then wait for human confirmation.
             log "running plan"
             report_status "planning"
+            run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
             ${bin} plan -no-color -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
+            run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             log "plan complete — awaiting confirmation"
             ;;
     esac

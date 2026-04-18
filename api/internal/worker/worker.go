@@ -233,8 +233,34 @@ func (w *RunWorker) loadRunEnv(ctx context.Context, log *slog.Logger, stackID, a
 	if err != nil {
 		log.Warn("failed to load remote state sources", "err", err)
 	}
-	// Merge order: external secrets → variable sets → remote state → stack env vars (last wins).
-	return vcsToken, append(append(append(storeEnv, varSetEnv...), remoteStateEnv...), builtinEnv...)
+	hookEnv := w.loadHookEnv(ctx, log, stackID)
+	// Merge order: external secrets → variable sets → remote state → stack env vars → hooks (last wins).
+	return vcsToken, append(append(append(append(storeEnv, varSetEnv...), remoteStateEnv...), builtinEnv...), hookEnv...)
+}
+
+// loadHookEnv queries the stack's lifecycle hook scripts and returns them as
+// CRUCIBLE_HOOK_* env vars for the runner entrypoint to execute.
+func (w *RunWorker) loadHookEnv(ctx context.Context, log *slog.Logger, stackID string) []string {
+	var prePlan, postPlan, preApply, postApply *string
+	if err := w.pool.QueryRow(ctx, `
+		SELECT pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook
+		FROM stacks WHERE id = $1
+	`, stackID).Scan(&prePlan, &postPlan, &preApply, &postApply); err != nil {
+		log.Warn("failed to load stack hooks", "err", err)
+		return nil
+	}
+	var env []string
+	for _, pair := range []struct{ key string; val *string }{
+		{"CRUCIBLE_HOOK_PRE_PLAN", prePlan},
+		{"CRUCIBLE_HOOK_POST_PLAN", postPlan},
+		{"CRUCIBLE_HOOK_PRE_APPLY", preApply},
+		{"CRUCIBLE_HOOK_POST_APPLY", postApply},
+	} {
+		if pair.val != nil && *pair.val != "" {
+			env = append(env, pair.key+"="+*pair.val)
+		}
+	}
+	return env
 }
 
 // resolveRunnerLimits returns effective resource limits, preferring DB settings

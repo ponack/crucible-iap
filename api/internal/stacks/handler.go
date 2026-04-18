@@ -82,6 +82,10 @@ type Stack struct {
 	ModuleNamespace      *string    `json:"module_namespace,omitempty"`
 	ModuleName          *string    `json:"module_name,omitempty"`
 	ModuleProvider      *string    `json:"module_provider,omitempty"`
+	PrePlanHook         *string    `json:"pre_plan_hook,omitempty"`
+	PostPlanHook        *string    `json:"post_plan_hook,omitempty"`
+	PreApplyHook        *string    `json:"pre_apply_hook,omitempty"`
+	PostApplyHook       *string    `json:"post_apply_hook,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -260,6 +264,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
 		       s.is_disabled, s.scheduled_destroy_at, s.created_at, s.updated_at,
 		       s.module_namespace, s.module_name, s.module_provider,
+		       s.pre_plan_hook, s.post_plan_hook, s.pre_apply_hook, s.post_apply_hook,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -277,6 +282,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.HasStateBackend, &s.StateBackendProvider,
 		&s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
 		&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
+		&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -304,6 +310,10 @@ type updateStackReq struct {
 	ModuleNamespace    *string `json:"module_namespace"`
 	ModuleName         *string `json:"module_name"`
 	ModuleProvider     *string `json:"module_provider"`
+	PrePlanHook        *string `json:"pre_plan_hook"`
+	PostPlanHook       *string `json:"post_plan_hook"`
+	PreApplyHook       *string `json:"pre_apply_hook"`
+	PostApplyHook      *string `json:"post_apply_hook"`
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -330,6 +340,10 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 		{"module_namespace", r.ModuleNamespace},
 		{"module_name", r.ModuleName},
 		{"module_provider", r.ModuleProvider},
+		{"pre_plan_hook", r.PrePlanHook},
+		{"post_plan_hook", r.PostPlanHook},
+		{"pre_apply_hook", r.PreApplyHook},
+		{"post_apply_hook", r.PostApplyHook},
 	}
 	for _, f := range strFields {
 		if f.v != nil {
@@ -388,7 +402,8 @@ func (h *Handler) Update(c echo.Context) error {
 		          COALESCE(tool_version,''), repo_url, repo_branch, project_root,
 		          COALESCE(runner_image,''), auto_apply, drift_detection,
 		          COALESCE(drift_schedule,''), auto_remediate_drift, is_disabled,
-		          scheduled_destroy_at, created_at, updated_at
+		          scheduled_destroy_at, created_at, updated_at,
+		          pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -396,7 +411,8 @@ func (h *Handler) Update(c echo.Context) error {
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
-			&s.AutoRemediateDrift, &s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			&s.AutoRemediateDrift, &s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
+			&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.JSON(http.StatusOK, s)
