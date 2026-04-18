@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/access"
 	"github.com/ponack/crucible-iap/internal/audit"
 )
 
@@ -81,18 +82,6 @@ func (h *Handler) AddRemoteStateSource(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "a stack cannot reference its own state")
 	}
 
-	// Verify caller has at least member role in this org. The route middleware
-	// already enforces this, but we check explicitly here because this handler
-	// creates a token on the source stack — an operation that should require
-	// write access. When per-stack RBAC is added, this is the right place to
-	// check access to the source stack specifically.
-	var callerRole string
-	if err := h.pool.QueryRow(c.Request().Context(),
-		`SELECT role FROM organization_members WHERE org_id = $1 AND user_id = $2`,
-		orgID, userID).Scan(&callerRole); err != nil || (callerRole != "member" && callerRole != "admin") {
-		return echo.NewHTTPError(http.StatusForbidden, "member role required to configure remote state")
-	}
-
 	// Verify both stacks belong to this org.
 	var depExists, srcExists bool
 	h.pool.QueryRow(c.Request().Context(),
@@ -103,6 +92,13 @@ func (h *Handler) AddRemoteStateSource(c echo.Context) error {
 		req.SourceStackID, orgID).Scan(&srcExists)
 	if !depExists || !srcExists {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	// Require at least approver role on the source stack. A viewer or unlisted
+	// user on a restricted stack cannot grant another stack access to its state.
+	srcRole, err := access.StackRole(c.Request().Context(), h.pool, req.SourceStackID, userID, orgID)
+	if err != nil || srcRole == "" || srcRole == "viewer" {
+		return echo.NewHTTPError(http.StatusForbidden, "approver or admin role on source stack required")
 	}
 
 	// Check the relationship doesn't already exist.
