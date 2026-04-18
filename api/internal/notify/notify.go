@@ -64,6 +64,10 @@ type runData struct {
 	ntfyTokenEnc    []byte
 	notifyEmail     string
 	notifyEvents    []string
+	// org-level plain-text fallbacks (set by applyOrgDefaults when stack fields empty)
+	orgGotifyToken  string
+	orgNtfyToken    string
+	orgSlackWebhook string
 }
 
 func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
@@ -94,7 +98,79 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.notifyEmail,
 		&d.notifyEvents,
 	)
-	return &d, err
+	if err != nil {
+		return nil, err
+	}
+	n.applyOrgDefaults(ctx, &d)
+	return &d, nil
+}
+
+// applyOrgDefaults fills in org-level notification credentials from system_settings
+// for any field the stack has not configured. Org-level tokens are stored as plain
+// text (no vault encryption), so they are handled separately from stack tokens.
+// If the stack has no notify_events list, defaults to all three event types.
+func (n *Notifier) applyOrgDefaults(ctx context.Context, d *runData) {
+	needsGotify := d.gotifyURL == ""
+	needsNtfy := d.ntfyURL == ""
+	needsSlack := len(d.slackWebhookEnc) == 0
+	needsEvents := len(d.notifyEvents) == 0
+
+	if !needsGotify && !needsNtfy && !needsSlack && !needsEvents {
+		return
+	}
+
+	var defGotifyURL, defGotifyToken string
+	var defNtfyURL, defNtfyToken string
+	var defSlackWebhook string
+	_ = n.pool.QueryRow(ctx, `
+		SELECT COALESCE(default_gotify_url,''), COALESCE(default_gotify_token,''),
+		       COALESCE(default_ntfy_url,''),   COALESCE(default_ntfy_token,''),
+		       COALESCE(default_slack_webhook,'')
+		FROM system_settings LIMIT 1
+	`).Scan(&defGotifyURL, &defGotifyToken, &defNtfyURL, &defNtfyToken, &defSlackWebhook)
+
+	if needsGotify && defGotifyURL != "" {
+		d.gotifyURL = defGotifyURL
+		// Store plain-text org token directly; gotifyPost reads gotifyTokenEnc via
+		// decryptStr, so we pre-populate a sentinel and override at call sites via
+		// d.orgGotifyToken instead of re-encrypting. Simpler: store as plaintext field.
+		d.orgGotifyToken = defGotifyToken
+	}
+	if needsNtfy && defNtfyURL != "" {
+		d.ntfyURL = defNtfyURL
+		d.orgNtfyToken = defNtfyToken
+	}
+	if needsSlack && defSlackWebhook != "" {
+		d.orgSlackWebhook = defSlackWebhook
+	}
+	if needsEvents {
+		d.notifyEvents = []string{"plan_complete", "run_finished", "run_failed"}
+	}
+}
+
+// gotifyToken returns the effective Gotify token for d: stack-encrypted if present,
+// org plain-text fallback otherwise.
+func (n *Notifier) gotifyToken(d *runData) string {
+	if len(d.gotifyTokenEnc) > 0 {
+		return n.decryptStr(d.stackID, d.gotifyTokenEnc)
+	}
+	return d.orgGotifyToken
+}
+
+// ntfyToken returns the effective ntfy token (may be empty for open servers).
+func (n *Notifier) ntfyToken(d *runData) string {
+	if len(d.ntfyTokenEnc) > 0 {
+		return n.decryptStr(d.stackID, d.ntfyTokenEnc)
+	}
+	return d.orgNtfyToken
+}
+
+// slackWebhook returns the effective Slack webhook URL.
+func (n *Notifier) slackWebhook(d *runData) string {
+	if len(d.slackWebhookEnc) > 0 {
+		return n.decryptStr(d.stackID, d.slackWebhookEnc)
+	}
+	return d.orgSlackWebhook
 }
 
 func (n *Notifier) decryptStr(stackID string, enc []byte) string {
@@ -142,18 +218,16 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 	}
 
 	if contains(d.notifyEvents, "plan_complete") {
-		slackURL := n.decryptStr(d.stackID, d.slackWebhookEnc)
-		if slackURL != "" {
+		if slackURL := n.slackWebhook(d); slackURL != "" {
 			n.slackPost(ctx, slackURL, n.planSlackMessage(d))
 		}
 		if d.gotifyURL != "" {
-			gotifyToken := n.decryptStr(d.stackID, d.gotifyTokenEnc)
-			if gotifyToken != "" {
-				n.gotifyPost(ctx, d.gotifyURL, gotifyToken, d.stackName+" — plan ready", n.planGotifyMessage(d))
+			if tok := n.gotifyToken(d); tok != "" {
+				n.gotifyPost(ctx, d.gotifyURL, tok, d.stackName+" — plan ready", n.planGotifyMessage(d))
 			}
 		}
 		if d.ntfyURL != "" {
-			n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
+			n.ntfyPost(ctx, d.ntfyURL, n.ntfyToken(d),
 				d.stackName+" — plan ready", n.planNtfyMessage(d), "warning")
 		}
 		if d.notifyEmail != "" {
@@ -197,13 +271,12 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 func (n *Notifier) sendRunPushNotifications(ctx context.Context, d *runData, success bool) {
 	title := runTitle(d.stackName, success)
 
-	slackURL := n.decryptStr(d.stackID, d.slackWebhookEnc)
-	if slackURL != "" {
+	if slackURL := n.slackWebhook(d); slackURL != "" {
 		n.slackPost(ctx, slackURL, n.runSlackMessage(d, success))
 	}
 	if d.gotifyURL != "" {
-		if gotifyToken := n.decryptStr(d.stackID, d.gotifyTokenEnc); gotifyToken != "" {
-			n.gotifyPost(ctx, d.gotifyURL, gotifyToken, title, n.runGotifyMessage(d, success))
+		if tok := n.gotifyToken(d); tok != "" {
+			n.gotifyPost(ctx, d.gotifyURL, tok, title, n.runGotifyMessage(d, success))
 		}
 	}
 	if d.ntfyURL != "" {
@@ -211,8 +284,7 @@ func (n *Notifier) sendRunPushNotifications(ctx context.Context, d *runData, suc
 		if !success {
 			priority = "high"
 		}
-		n.ntfyPost(ctx, d.ntfyURL, n.decryptStr(d.stackID, d.ntfyTokenEnc),
-			title, n.runNtfyMessage(d, success), priority)
+		n.ntfyPost(ctx, d.ntfyURL, n.ntfyToken(d), title, n.runNtfyMessage(d, success), priority)
 	}
 	if d.notifyEmail != "" {
 		n.sendEmailNotification(ctx, d.notifyEmail, title, n.runEmailBody(d, success))
