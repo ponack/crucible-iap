@@ -48,7 +48,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **Local auth** — single operator account for deployments without an IdP
 - **RBAC** — org-level viewer / member / admin roles enforced at the API layer; org invite flow with single-use tokens; **per-stack membership** — add users as `viewer` (read-only) or `approver` (can trigger runs and confirm plans); stacks without explicit members are open to all org users; restricted stacks are hidden from non-members
 - **Service account API tokens** — long-lived `ciap_…` tokens for CI pipelines and automation scripts; hashed at rest, shown once at creation, role-scoped, last-used tracked
-- **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup
+- **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup; per-IP rate limits on all auth endpoints (tight on password login, moderate on token exchange and OAuth callback); service account token brute-force lockout (20 failures / 5 min per IP)
 
 ### Observability and operations
 
@@ -438,6 +438,7 @@ cd api && go test -race ./...
 - [x] OIDC workload identity federation — Crucible acts as its own OIDC identity provider; each run receives a short-lived signed JWT; configure per-stack to exchange it for temporary AWS, GCP, or Azure credentials — no static cloud secrets in Crucible
 - [x] Notification test buttons — one-click test delivery for org-level Slack, Gotify, and ntfy endpoints directly from Settings → Notifications; confirms credentials are wired correctly without waiting for a run
 - [x] Per-stack RBAC on remote state links — configuring a cross-stack `terraform_remote_state` link now requires at least approver role on the source stack; prevents org members from granting access to state they cannot manage
+- [x] Auth endpoint rate hardening — per-IP rate limits tightened on `/auth/callback` (OAuth code exchange) and `/auth/refresh` (token renewal); service account tokens lock out after 20 failures per 5-minute window per IP
 
 ## License
 
