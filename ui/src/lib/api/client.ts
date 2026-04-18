@@ -808,6 +808,11 @@ export const system = {
 		update: (data: Partial<Omit<SystemSettings, 'updated_at'>>) =>
 			request<SystemSettings>('/system/settings', { method: 'PUT', body: JSON.stringify(data) })
 	},
+	notifications: {
+		testSlack: () => request<void>('/system/notifications/test-slack', { method: 'POST' }),
+		testGotify: () => request<void>('/system/notifications/test-gotify', { method: 'POST' }),
+		testNtfy: () => request<void>('/system/notifications/test-ntfy', { method: 'POST' }),
+	},
 };
 
 // ── Module Registry ───────────────────────────────────────────────────────────
