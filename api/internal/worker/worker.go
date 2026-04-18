@@ -20,6 +20,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/notify"
+	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
@@ -44,17 +45,18 @@ type Dispatcher struct {
 	river    *river.Client[pgx.Tx]
 }
 
-func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault, n *notify.Notifier, q *queue.Client, e *policy.Engine) (*Dispatcher, error) {
+func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault, n *notify.Notifier, q *queue.Client, e *policy.Engine, oidc *oidcprovider.Provider) (*Dispatcher, error) {
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &RunWorker{
-		pool:     pool,
-		cfg:      cfg,
-		runner:   r,
-		storage:  s,
-		vault:    v,
-		notifier: n,
-		queue:    q,
-		engine:   e,
+		pool:         pool,
+		cfg:          cfg,
+		runner:       r,
+		storage:      s,
+		vault:        v,
+		notifier:     n,
+		queue:        q,
+		engine:       e,
+		oidcProvider: oidc,
 	})
 	river.AddWorker(workers, &ModulePublishWorker{
 		pool:    pool,
@@ -106,14 +108,15 @@ func RunLogChannel(runID string) string {
 // RunWorker processes a single infrastructure run job.
 type RunWorker struct {
 	river.WorkerDefaults[queue.RunJobArgs]
-	pool     *pgxpool.Pool
-	cfg      *config.Config
-	runner   *runner.Runner
-	storage  *storage.Client
-	vault    *vault.Vault
-	notifier *notify.Notifier
-	queue    *queue.Client
-	engine   *policy.Engine
+	pool         *pgxpool.Pool
+	cfg          *config.Config
+	runner       *runner.Runner
+	storage      *storage.Client
+	vault        *vault.Vault
+	notifier     *notify.Notifier
+	queue        *queue.Client
+	engine       *policy.Engine
+	oidcProvider *oidcprovider.Provider
 }
 
 func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) error {
@@ -178,6 +181,11 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		MinioSecretKey:   w.cfg.MinioSecretKey,
 		MinioBucketState: w.cfg.MinioBucketState,
 		MinioUseSSL:      w.cfg.MinioUseSSL,
+	}
+	if w.oidcProvider != nil {
+		if err := w.loadOIDCSpec(ctx, log, args, &spec); err != nil {
+			log.Warn("OIDC federation unavailable for this run", "err", err)
+		}
 	}
 
 	runErr := w.runner.Execute(ctx, spec, logWriter)
@@ -619,4 +627,102 @@ func (w *pgNotifyWriter) Write(p []byte) (int, error) {
 		}
 	}
 	return len(p), nil
+}
+
+// loadOIDCSpec fetches the stack's cloud OIDC config, issues a JWT, and populates
+// the OIDC-related fields on spec. Non-fatal: caller logs and continues without OIDC.
+func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args queue.RunJobArgs, spec *runner.JobSpec) error {
+	var (
+		provider                    string
+		awsRoleARN                  *string
+		awsSessionSecs              *int
+		gcpAudience, gcpSA          *string
+		azureTenant, azureClient    *string
+		azureSubscription           *string
+		audienceOverride            *string
+	)
+	err := w.pool.QueryRow(ctx, `
+		SELECT provider,
+		       aws_role_arn, aws_session_duration_secs,
+		       gcp_workload_identity_audience, gcp_service_account_email,
+		       azure_tenant_id, azure_client_id, azure_subscription_id,
+		       audience_override
+		FROM stack_cloud_oidc WHERE stack_id = $1
+	`, args.StackID).Scan(
+		&provider,
+		&awsRoleARN, &awsSessionSecs,
+		&gcpAudience, &gcpSA,
+		&azureTenant, &azureClient, &azureSubscription,
+		&audienceOverride,
+	)
+	if err != nil {
+		return nil // no OIDC config — not an error
+	}
+
+	audience := defaultAudience(provider, w.oidcProvider.Issuer())
+	if audienceOverride != nil && *audienceOverride != "" {
+		audience = *audienceOverride
+	}
+
+	var stackSlug string
+	_ = w.pool.QueryRow(ctx, `SELECT slug FROM stacks WHERE id = $1`, args.StackID).Scan(&stackSlug)
+
+	var orgID string
+	_ = w.pool.QueryRow(ctx, `SELECT org_id FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID)
+
+	claims := oidcprovider.TokenClaims{
+		StackID:   args.StackID,
+		StackSlug: stackSlug,
+		OrgID:     orgID,
+		RunID:     args.RunID,
+		RunType:   args.RunType,
+		Branch:    args.RepoBranch,
+		Trigger:   "run",
+	}
+	claims.Audience = []string{audience}
+	claims.Subject = "stack:" + stackSlug
+
+	token, err := w.oidcProvider.IssueToken(claims, time.Hour)
+	if err != nil {
+		return fmt.Errorf("issue OIDC token: %w", err)
+	}
+
+	spec.OIDCToken = token
+	spec.OIDCProvider = provider
+	if awsRoleARN != nil {
+		spec.AWSOIDCRoleARN = *awsRoleARN
+	}
+	if awsSessionSecs != nil {
+		spec.AWSOIDCSessionDurationSecs = *awsSessionSecs
+	}
+	if gcpAudience != nil {
+		spec.GCPOIDCAudience = *gcpAudience
+	}
+	if gcpSA != nil {
+		spec.GCPOIDCServiceAccountEmail = *gcpSA
+	}
+	if azureTenant != nil {
+		spec.AzureOIDCTenantID = *azureTenant
+	}
+	if azureClient != nil {
+		spec.AzureOIDCClientID = *azureClient
+	}
+	if azureSubscription != nil {
+		spec.AzureOIDCSubscriptionID = *azureSubscription
+	}
+
+	log.Info("OIDC federation enabled", "provider", provider, "stack_slug", stackSlug)
+	return nil
+}
+
+func defaultAudience(provider, issuer string) string {
+	switch provider {
+	case "aws":
+		return "sts.amazonaws.com"
+	case "gcp":
+		return issuer
+	case "azure":
+		return "api://AzureADTokenExchange"
+	}
+	return issuer
 }

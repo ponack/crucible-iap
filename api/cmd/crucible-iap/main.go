@@ -16,6 +16,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/db"
 	"github.com/ponack/crucible-iap/internal/notify"
+	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/policies"
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
@@ -97,7 +98,13 @@ func runServe() {
 	}
 	n := notify.New(pool, v, cfg.BaseURL)
 
-	srv := server.New(cfg, pool, store, q, v, n)
+	oidc, err := oidcprovider.LoadOrCreate(context.Background(), pool, v, cfg.BaseURL)
+	if err != nil {
+		slog.Error("failed to initialise OIDC provider", "err", err)
+		os.Exit(1)
+	}
+
+	srv := server.New(cfg, pool, store, q, v, n, oidc)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -156,12 +163,18 @@ func runWorker() {
 	}
 	n := notify.New(pool, v, cfg.BaseURL)
 
+	oidc, err := oidcprovider.LoadOrCreate(context.Background(), pool, v, cfg.BaseURL)
+	if err != nil {
+		slog.Error("failed to initialise OIDC provider", "err", err)
+		os.Exit(1)
+	}
+
 	policyEngine := policy.NewEngine()
 	if err := policies.LoadEngine(context.Background(), pool, policyEngine); err != nil {
 		slog.Warn("failed to load policies into worker engine", "err", err)
 	}
 
-	d, err := worker.New(pool, cfg, r, store, v, n, q, policyEngine)
+	d, err := worker.New(pool, cfg, r, store, v, n, q, policyEngine, oidc)
 	if err != nil {
 		slog.Error("failed to create worker dispatcher", "err", err)
 		os.Exit(1)

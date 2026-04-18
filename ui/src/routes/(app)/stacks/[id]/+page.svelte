@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 
@@ -132,6 +132,20 @@
 	let savingModule = $state(false);
 	let moduleSaved = $state(false);
 
+	// Cloud OIDC workload identity federation
+	let oidcConfig = $state<CloudOIDCConfig | null>(null);
+	let oidcProvider = $state<'aws' | 'gcp' | 'azure'>('aws');
+	let oidcAWSRoleARN = $state('');
+	let oidcGCPAudience = $state('');
+	let oidcGCPSA = $state('');
+	let oidcAzureTenant = $state('');
+	let oidcAzureClient = $state('');
+	let oidcAzureSubscription = $state('');
+	let oidcAudienceOverride = $state('');
+	let savingOIDC = $state(false);
+	let oidcSaved = $state(false);
+	let oidcError = $state<string | null>(null);
+
 	// State backend
 	let stateBackendProvider = $state<StateBackendProvider | ''>('');
 	let savingStateBackend = $state(false);
@@ -201,6 +215,21 @@
 			moduleName = stackRes.module_name ?? '';
 			moduleProvider = stackRes.module_provider ?? 'aws';
 			resetForm();
+
+			// Load OIDC config independently — 404 is expected when not configured.
+			try {
+				oidcConfig = await cloudOIDC.get(stackID);
+				oidcProvider = oidcConfig.provider;
+				oidcAWSRoleARN = oidcConfig.aws_role_arn ?? '';
+				oidcGCPAudience = oidcConfig.gcp_workload_identity_audience ?? '';
+				oidcGCPSA = oidcConfig.gcp_service_account_email ?? '';
+				oidcAzureTenant = oidcConfig.azure_tenant_id ?? '';
+				oidcAzureClient = oidcConfig.azure_client_id ?? '';
+				oidcAzureSubscription = oidcConfig.azure_subscription_id ?? '';
+				oidcAudienceOverride = oidcConfig.audience_override ?? '';
+			} catch {
+				oidcConfig = null;
+			}
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -525,6 +554,51 @@
 			editError = (e as Error).message;
 		} finally {
 			savingModule = false;
+		}
+	}
+
+	async function saveOIDC(e: SubmitEvent) {
+		e.preventDefault();
+		savingOIDC = true;
+		oidcSaved = false;
+		oidcError = null;
+		try {
+			const body: Partial<CloudOIDCConfig> = { provider: oidcProvider };
+			if (oidcProvider === 'aws') {
+				body.aws_role_arn = oidcAWSRoleARN;
+			} else if (oidcProvider === 'gcp') {
+				body.gcp_workload_identity_audience = oidcGCPAudience;
+				body.gcp_service_account_email = oidcGCPSA;
+			} else if (oidcProvider === 'azure') {
+				body.azure_tenant_id = oidcAzureTenant;
+				body.azure_client_id = oidcAzureClient;
+				body.azure_subscription_id = oidcAzureSubscription;
+			}
+			if (oidcAudienceOverride) body.audience_override = oidcAudienceOverride;
+			oidcConfig = await cloudOIDC.upsert(stackID, body);
+			oidcSaved = true;
+			setTimeout(() => (oidcSaved = false), 2000);
+		} catch (err) {
+			oidcError = (err as Error).message;
+		} finally {
+			savingOIDC = false;
+		}
+	}
+
+	async function deleteOIDC() {
+		if (!confirm('Remove cloud OIDC federation config? Runs will no longer receive OIDC tokens.')) return;
+		try {
+			await cloudOIDC.delete(stackID);
+			oidcConfig = null;
+			oidcAWSRoleARN = '';
+			oidcGCPAudience = '';
+			oidcGCPSA = '';
+			oidcAzureTenant = '';
+			oidcAzureClient = '';
+			oidcAzureSubscription = '';
+			oidcAudienceOverride = '';
+		} catch (err) {
+			alert((err as Error).message);
 		}
 	}
 
@@ -1987,6 +2061,84 @@
 				Publishing as <span class="font-mono text-white">{stack.module_namespace}/{stack.module_name}/{stack.module_provider}</span>
 			</div>
 		{/if}
+	</section>
+
+	<!-- Cloud OIDC workload identity federation -->
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Cloud OIDC federation</h2>
+			{#if oidcConfig}
+				<button onclick={deleteOIDC} class="text-xs text-red-500 hover:text-red-300 transition-colors">Remove</button>
+			{/if}
+		</div>
+		<p class="text-xs text-zinc-600">Exchange a short-lived OIDC token for cloud credentials on every run — no static secrets stored in Crucible.</p>
+		<form onsubmit={saveOIDC} class="border border-zinc-800 rounded-xl p-5 space-y-4">
+			{#if oidcError}
+				<p class="text-red-400 text-sm">{oidcError}</p>
+			{/if}
+			<div class="space-y-1.5">
+				<label class="field-label" for="oidc-provider">Cloud provider</label>
+				<select id="oidc-provider" class="field-input" bind:value={oidcProvider}>
+					<option value="aws">AWS</option>
+					<option value="gcp">Google Cloud</option>
+					<option value="azure">Azure</option>
+				</select>
+			</div>
+
+			{#if oidcProvider === 'aws'}
+				<div class="space-y-1.5">
+					<label class="field-label" for="oidc-aws-role">IAM Role ARN</label>
+					<input id="oidc-aws-role" class="field-input font-mono" bind:value={oidcAWSRoleARN}
+						placeholder="arn:aws:iam::123456789:role/crucible-runner" />
+					<p class="text-xs text-zinc-600">The role must trust the Crucible OIDC provider as a web identity federation source.</p>
+				</div>
+			{:else if oidcProvider === 'gcp'}
+				<div class="space-y-1.5">
+					<label class="field-label" for="oidc-gcp-audience">Workload identity audience</label>
+					<input id="oidc-gcp-audience" class="field-input font-mono" bind:value={oidcGCPAudience}
+						placeholder="//iam.googleapis.com/projects/PROJECT/locations/global/workloadIdentityPools/POOL/providers/PROVIDER" />
+				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="oidc-gcp-sa">Service account email</label>
+					<input id="oidc-gcp-sa" class="field-input font-mono" bind:value={oidcGCPSA}
+						placeholder="runner@my-project.iam.gserviceaccount.com" />
+				</div>
+			{:else if oidcProvider === 'azure'}
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-az-tenant">Tenant ID</label>
+						<input id="oidc-az-tenant" class="field-input font-mono" bind:value={oidcAzureTenant} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-az-client">Client (App) ID</label>
+						<input id="oidc-az-client" class="field-input font-mono" bind:value={oidcAzureClient} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-az-sub">Subscription ID</label>
+						<input id="oidc-az-sub" class="field-input font-mono" bind:value={oidcAzureSubscription} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+					</div>
+				</div>
+			{/if}
+
+			<details class="text-xs">
+				<summary class="text-zinc-500 cursor-pointer select-none hover:text-zinc-300">Advanced</summary>
+				<div class="mt-3 space-y-1.5">
+					<label class="field-label" for="oidc-audience-override">Audience override</label>
+					<input id="oidc-audience-override" class="field-input font-mono" bind:value={oidcAudienceOverride}
+						placeholder="Leave empty to use cloud-provider default" />
+				</div>
+			</details>
+
+			<div class="flex items-center gap-3">
+				<button type="submit" disabled={savingOIDC}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+					{savingOIDC ? 'Saving…' : oidcSaved ? 'Saved' : oidcConfig ? 'Update' : 'Enable'}
+				</button>
+				{#if oidcConfig}
+					<span class="text-xs text-emerald-500">Enabled · {oidcConfig.provider.toUpperCase()}</span>
+				{/if}
+			</div>
+		</form>
 	</section>
 
 	<!-- State backend / tokens -->

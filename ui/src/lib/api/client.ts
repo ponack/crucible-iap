@@ -844,3 +844,30 @@ export const registry = {
 	publish: (form: FormData) => requestForm<RegistryModule>('/registry/modules', form),
 	yank: (id: string) => request<null>(`/registry/modules/${id}`, { method: 'DELETE' }),
 };
+
+// ── Cloud OIDC workload identity federation ───────────────────────────────────
+
+export interface CloudOIDCConfig {
+	stack_id: string;
+	provider: 'aws' | 'gcp' | 'azure';
+	aws_role_arn?: string;
+	aws_session_duration_secs?: number;
+	gcp_workload_identity_audience?: string;
+	gcp_service_account_email?: string;
+	azure_tenant_id?: string;
+	azure_client_id?: string;
+	azure_subscription_id?: string;
+	audience_override?: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export const cloudOIDC = {
+	get: (stackID: string) => request<CloudOIDCConfig>(`/stacks/${stackID}/cloud-oidc`),
+	upsert: (stackID: string, cfg: Partial<CloudOIDCConfig>) =>
+		request<CloudOIDCConfig>(`/stacks/${stackID}/cloud-oidc`, {
+			method: 'PUT',
+			body: JSON.stringify(cfg)
+		}),
+	delete: (stackID: string) => request<null>(`/stacks/${stackID}/cloud-oidc`, { method: 'DELETE' })
+};
