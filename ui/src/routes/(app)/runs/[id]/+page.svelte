@@ -213,6 +213,13 @@
 			</div>
 			<div class="flex items-center gap-4 text-xs text-zinc-500">
 				<span>Type: <span class="text-zinc-300">{run.type}</span></span>
+				{#if run.plan_add !== undefined || run.plan_change !== undefined || run.plan_destroy !== undefined}
+					<span class="flex items-center gap-1.5 font-mono">
+						<span class="text-green-400">+{run.plan_add ?? 0}</span>
+						<span class="text-yellow-400">~{run.plan_change ?? 0}</span>
+						<span class="text-red-400">-{run.plan_destroy ?? 0}</span>
+					</span>
+				{/if}
 				<span>Trigger: <span class="text-zinc-300">{run.trigger}</span></span>
 				{#if run.triggered_by_name}
 					<span>By: <span class="text-zinc-300">{run.triggered_by_name}</span></span>

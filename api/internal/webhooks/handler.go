@@ -222,6 +222,26 @@ func (h *Handler) ListDeliveries(c echo.Context) error {
 	return c.JSON(http.StatusOK, pagination.Wrap(items, p, total))
 }
 
+// GetDeliveryPayload returns the stored raw JSON payload for a single delivery.
+// Used by the UI to show the inbound webhook body for debugging.
+func (h *Handler) GetDeliveryPayload(c echo.Context) error {
+	stackID := c.Param("id")
+	deliveryID := c.Param("deliveryID")
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+
+	var payload json.RawMessage
+	if err := h.pool.QueryRow(ctx, `
+		SELECT raw_payload FROM webhook_deliveries
+		WHERE id = $1 AND stack_id = $2
+		  AND EXISTS (SELECT 1 FROM stacks WHERE id = $2 AND org_id = $3)
+	`, deliveryID, stackID, orgID).Scan(&payload); err != nil {
+		return echo.ErrNotFound
+	}
+
+	return c.JSON(http.StatusOK, map[string]json.RawMessage{"payload": payload})
+}
+
 // Redeliver re-triggers a run from a previously stored delivery. Signature
 // verification is skipped because the caller is authenticated via JWT and the
 // payload is already stored in the database (it was verified on first delivery).
