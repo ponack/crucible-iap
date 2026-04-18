@@ -63,6 +63,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 - **Terraform module registry** — private module registry backed by MinIO; implements the full Terraform Module Registry Protocol v1 so modules can be sourced as `source = "crucible.example.com/org/name/provider"`; publish via UI upload or git-tag auto-publish (push a semver tag on a stack with module config and Crucible downloads the archive, extracts the README, and publishes automatically); download count tracked per version; README rendered as markdown in the UI; authenticate via service account token in `~/.terraformrc`
 - **Stack templates** — save a stack configuration as a reusable template (tool, repo, branch, project root, policies, auto-apply, drift settings); new stacks can be pre-filled from a template in one click
+- **Provider caching** — Terraform/OpenTofu provider binaries cached in MinIO after first download; subsequent runs restore from cache before `init` so registry round-trips are eliminated; transparent to existing stacks
 - **Single `docker compose up`** — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
 - **Separated API and Worker** — the HTTP API server and the Docker job runner run as distinct containers; the API has no Docker socket, the worker has no public ports
 - **Zero-config TLS** — Let's Encrypt via Caddy; bring your own cert or reverse proxy with the `external-proxy` profile
@@ -425,7 +426,7 @@ cd api && go test -race ./...
 - [x] Webhook delivery log — record of incoming webhook payloads and whether they triggered a run, to debug missed or skipped events
 - [x] Webhook re-delivery — re-trigger a run from any past delivery directly in the UI; replays the stored payload without requiring a new push or manual re-configuration
 - [x] Environment TTL / auto-destroy — set a scheduled destroy time on any stack; a background scheduler fires a destroy run at the deadline and clears the TTL so it only fires once; prevents dev/feature environment sprawl
-- [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
+- [x] Terraform provider caching — provider binaries cached in MinIO after first download; subsequent runs restore from cache before `terraform init` so registry downloads are skipped; platform-filtered (linux_amd64 / linux_arm64); cache miss is non-fatal (falls back to registry automatically)
 - [x] Terraform module registry — private module registry backed by MinIO; implements the Terraform Module Registry Protocol v1 (`/.well-known/terraform.json` discovery, versions, download, archive, search); publish via UI upload or git-tag auto-publish; README auto-extracted from archive and rendered as markdown; download count tracked; yank individual versions; service account tokens authenticate the Terraform CLI via `~/.terraformrc`
 - [x] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
 - [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
