@@ -94,6 +94,8 @@
 	let newWebhookSecret = $state<string | null>(null);
 	let webhookDeliveries = $state<WebhookDelivery[]>([]);
 	let loadingDeliveries = $state(false);
+	let expandedDeliveryID = $state<string | null>(null);
+	let deliveryPayloads = $state<Record<string, unknown>>({});
 
 	// Variable sets
 	let stackVarSets = $state<StackVarSetRef[]>([]);
@@ -236,6 +238,9 @@
 		} finally {
 			loading = false;
 		}
+
+		// Restore webhook secret for this session (cleared on tab close).
+		newWebhookSecret = sessionStorage.getItem(`webhook_secret_${stackID}`);
 
 		// Load webhook deliveries independently so a failure doesn't block the page.
 		loadingDeliveries = true;
@@ -705,10 +710,26 @@
 		try {
 			const res = await stacks.webhook.rotateSecret(stackID);
 			newWebhookSecret = res.webhook_secret;
+			sessionStorage.setItem(`webhook_secret_${stackID}`, res.webhook_secret);
 		} catch (e) {
 			alert((e as Error).message);
 		} finally {
 			rotatingWebhook = false;
+		}
+	}
+
+	async function toggleDeliveryPayload(deliveryID: string) {
+		if (expandedDeliveryID === deliveryID) {
+			expandedDeliveryID = null;
+			return;
+		}
+		expandedDeliveryID = deliveryID;
+		if (deliveryPayloads[deliveryID] !== undefined) return;
+		try {
+			const res = await stacks.webhook.deliveryPayload(stackID, deliveryID);
+			deliveryPayloads = { ...deliveryPayloads, [deliveryID]: res.payload };
+		} catch {
+			deliveryPayloads = { ...deliveryPayloads, [deliveryID]: null };
 		}
 	}
 
@@ -810,6 +831,8 @@
 		return driftScheduleOptions.find((o) => o.value === (val ?? ''))?.label ?? val ?? '—';
 	}
 </script>
+
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && editing) { editing = false; } }} />
 
 {#if loading}
 	<div class="p-6 text-zinc-500 text-sm">Loading…</div>
@@ -1081,6 +1104,26 @@
 			</div>
 		{/each}
 	</div>
+
+	<!-- Lifecycle hooks (read-only — edit via the edit form above) -->
+	{#if stack.pre_plan_hook || stack.post_plan_hook || stack.pre_apply_hook || stack.post_apply_hook}
+	<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="bg-zinc-900 px-4 py-2 text-xs text-zinc-500 uppercase tracking-wide font-medium">Lifecycle hooks</div>
+		{#each [
+			['Pre-plan', stack.pre_plan_hook],
+			['Post-plan', stack.post_plan_hook],
+			['Pre-apply', stack.pre_apply_hook],
+			['Post-apply', stack.post_apply_hook],
+		] as [label, script]}
+			{#if script}
+			<div class="border-t border-zinc-800 px-4 py-3 space-y-1">
+				<span class="text-xs text-zinc-500">{label}</span>
+				<pre class="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all leading-relaxed">{script}</pre>
+			</div>
+			{/if}
+		{/each}
+	</div>
+	{/if}
 
 	<!-- Resource explorer -->
 	<section class="space-y-3">
@@ -1901,10 +1944,10 @@
 								Copy
 							</button>
 						</div>
-						<button onclick={() => (newWebhookSecret = null)} class="text-xs text-yellow-600 hover:text-yellow-400">Dismiss</button>
+						<button onclick={() => { newWebhookSecret = null; sessionStorage.removeItem(`webhook_secret_${stackID}`); }} class="text-xs text-yellow-600 hover:text-yellow-400">Dismiss</button>
 					</div>
 				{:else}
-					<p class="text-xs text-zinc-600 italic">Kept secret. Rotate to generate a new one.</p>
+					<p class="text-xs text-zinc-600 italic">Kept secret — shown only when first generated or rotated.</p>
 				{/if}
 			</div>
 		</div>
@@ -1940,7 +1983,7 @@
 					</thead>
 					<tbody class="divide-y divide-zinc-800">
 						{#each webhookDeliveries as d (d.id)}
-							<tr class="hover:bg-zinc-900/50 transition-colors">
+							<tr class="hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick={() => toggleDeliveryPayload(d.id)}>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(d.received_at)}</td>
 								<td class="px-4 py-2.5 text-zinc-400 text-xs capitalize">{d.forge}</td>
 								<td class="px-4 py-2.5 text-zinc-400 text-xs">{d.event_type}</td>
@@ -1955,17 +1998,19 @@
 								</td>
 								<td class="px-4 py-2.5 text-xs">
 									{#if d.run_id}
-										<a href="/runs/{d.run_id}" class="text-indigo-400 hover:text-indigo-300">run →</a>
+										<a href="/runs/{d.run_id}" class="text-indigo-400 hover:text-indigo-300" onclick={(e) => e.stopPropagation()}>run →</a>
 									{:else if d.skip_reason}
 										<span class="text-zinc-600">{d.skip_reason.replace(/_/g, ' ')}</span>
 									{:else}
 										<span class="text-zinc-700">—</span>
 									{/if}
 								</td>
-								<td class="px-4 py-2.5 text-xs text-right">
+								<td class="px-4 py-2.5 text-xs text-right flex items-center justify-end gap-3">
+									<span class="text-zinc-600">{expandedDeliveryID === d.id ? '▲' : '▼'}</span>
 									<button
 										title="Re-deliver"
-										onclick={async () => {
+										onclick={async (e) => {
+											e.stopPropagation();
 											try {
 												const res = await stacks.webhook.redeliver(stackID, d.id);
 												goto('/runs/' + res.run_id);
@@ -1975,6 +2020,19 @@
 									>↺</button>
 								</td>
 							</tr>
+							{#if expandedDeliveryID === d.id}
+							<tr class="bg-zinc-950">
+								<td colspan="6" class="px-4 py-3">
+									{#if deliveryPayloads[d.id] === undefined}
+										<span class="text-zinc-600 text-xs">Loading payload…</span>
+									{:else if deliveryPayloads[d.id] === null}
+										<span class="text-zinc-600 text-xs">Payload unavailable.</span>
+									{:else}
+										<pre class="text-xs text-zinc-300 font-mono whitespace-pre-wrap break-all max-h-64 overflow-y-auto leading-relaxed">{JSON.stringify(deliveryPayloads[d.id], null, 2)}</pre>
+									{/if}
+								</td>
+							</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>

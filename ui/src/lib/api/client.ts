@@ -308,6 +308,8 @@ export const stacks = {
 			request<{ webhook_secret: string }>(`/stacks/${stackID}/webhook/rotate`, { method: 'POST' }),
 		deliveries: (stackID: string, offset = 0, limit = 50) =>
 			request<Paginated<WebhookDelivery>>(`/stacks/${stackID}/webhook-deliveries?offset=${offset}&limit=${limit}`),
+		deliveryPayload: (stackID: string, deliveryID: string) =>
+			request<{ payload: unknown }>(`/stacks/${stackID}/webhook-deliveries/${deliveryID}/payload`),
 		redeliver: (stackID: string, deliveryID: string) =>
 			request<{ run_id: string }>(`/stacks/${stackID}/webhook-deliveries/${deliveryID}/redeliver`, { method: 'POST' })
 	},

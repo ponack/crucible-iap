@@ -225,6 +225,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// Webhook secret rotation, delivery log, and re-delivery
 	api.POST("/stacks/:id/webhook/rotate", webhookHandler.RotateSecret, member)
 	api.GET("/stacks/:id/webhook-deliveries", webhookHandler.ListDeliveries)
+	api.GET("/stacks/:id/webhook-deliveries/:deliveryID/payload", webhookHandler.GetDeliveryPayload)
 	api.POST("/stacks/:id/webhook-deliveries/:deliveryID/redeliver", webhookHandler.Redeliver, member)
 
 	// Stack notification config (VCS token, Slack webhook, event list)
