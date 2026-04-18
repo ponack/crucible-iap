@@ -37,6 +37,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **Multi-tool** — OpenTofu, Terraform, Ansible, and Pulumi in the same platform
 - **Flexible state storage** — built-in Terraform/OpenTofu HTTP backend backed by MinIO (zero config); or override per-stack with Amazon S3 / S3-compatible (built-in Sig v4), Google Cloud Storage (RSA-SHA256 JWT), or Azure Blob Storage (SharedKeyLite) — credentials encrypted at rest
 - **Ephemeral job runners** — each run in a fresh Docker container: read-only rootfs, `--cap-drop ALL`, tmpfs workspace, per-job scoped JWT — container is gone when the job ends; runner image digest-pinned and cosign-signed on every release; manual runs support per-run variable overrides (highest env precedence, not persisted to stack config)
+- **OIDC workload identity federation** — Crucible acts as its own OIDC identity provider (ECDSA P-256, vault-encrypted key, RFC 7638 JWKS); each run receives a short-lived signed JWT scoped to the stack and run; configure per-stack to exchange the token for temporary AWS, GCP, or Azure credentials — no static cloud secrets stored in Crucible
 - **Stack env vars** — AES-256-GCM encrypted at rest with per-stack HKDF-derived keys salted with a deployment-unique secret; injected into runners at job time, never logged or returned by the API
 - **Variable sets** — named collections of env vars defined once and attached to multiple stacks; values are write-only, encrypted with the same AES-256-GCM vault; injection order: external secrets → variable sets → stack env vars (stack wins on collision)
 - **External secret stores** — pull secrets from AWS Secrets Manager (built-in Sig v4, no SDK), HashiCorp Vault KV v2 (token or AppRole), Bitwarden Secrets Manager (AES-256-CBC E2E decryption), or Vaultwarden / self-hosted Bitwarden (PBKDF2-SHA256 / Argon2id master key derivation + AES-CBC vault crypto); merged with built-in env vars, built-in takes precedence on collision
@@ -348,11 +349,12 @@ cd api && go test -race ./...
 - [x] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
 - [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
 - [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
-- [ ] Fine-grained RBAC — resource-level permissions (per-stack viewer/approver roles) rather than a single org-wide role
+- [x] Fine-grained RBAC — per-stack viewer/approver roles in addition to the org-wide admin/member/viewer hierarchy; restricted stacks hidden from non-members
 - [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
 - [ ] Custom run hooks — pre/post-plan and pre/post-apply scripts defined per stack or org-wide, without requiring a custom runner image
 - [x] Context-aware approval policies — OPA `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and returns `require_approval: true` to gate runs behind explicit sign-off; `deny` fails the run immediately
 - [x] Startup config validation — `RUNNER_MEMORY_LIMIT` and `RUNNER_CPU_LIMIT` validated at boot; server refuses to start on invalid values rather than silently running containers unbounded
+- [x] OIDC workload identity federation — Crucible acts as its own OIDC identity provider; each run receives a short-lived signed JWT; configure per-stack to exchange it for temporary AWS, GCP, or Azure credentials — no static cloud secrets in Crucible
 
 ## License
 
