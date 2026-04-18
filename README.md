@@ -60,7 +60,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 ### Deployment
 
-- **Terraform module registry** — private module registry backed by MinIO; implements the full Terraform Module Registry Protocol v1 so modules can be sourced as `source = "crucible.example.com/org/name/provider"`; publish via UI, authenticate via service account token in `~/.terraformrc`
+- **Terraform module registry** — private module registry backed by MinIO; implements the full Terraform Module Registry Protocol v1 so modules can be sourced as `source = "crucible.example.com/org/name/provider"`; publish via UI upload or git-tag auto-publish (push a semver tag on a stack with module config and Crucible downloads the archive, extracts the README, and publishes automatically); download count tracked per version; README rendered as markdown in the UI; authenticate via service account token in `~/.terraformrc`
 - **Stack templates** — save a stack configuration as a reusable template (tool, repo, branch, project root, policies, auto-apply, drift settings); new stacks can be pre-filled from a template in one click
 - **Single `docker compose up`** — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
 - **Separated API and Worker** — the HTTP API server and the Docker job runner run as distinct containers; the API has no Docker socket, the worker has no public ports
@@ -344,14 +344,15 @@ cd api && go test -race ./...
 - [x] Webhook re-delivery — re-trigger a run from any past delivery directly in the UI; replays the stored payload without requiring a new push or manual re-configuration
 - [x] Environment TTL / auto-destroy — set a scheduled destroy time on any stack; a background scheduler fires a destroy run at the deadline and clears the TTL so it only fires once; prevents dev/feature environment sprawl
 - [ ] Terraform provider caching — vendor provider plugins into MinIO so repeated runs skip registry downloads
-- [x] Terraform module registry — private module registry backed by MinIO; implements the Terraform Module Registry Protocol v1 (`/.well-known/terraform.json` discovery, versions, download, archive, search); publish via UI or API, yank individual versions; service account tokens authenticate the Terraform CLI via `~/.terraformrc`
+- [x] Terraform module registry — private module registry backed by MinIO; implements the Terraform Module Registry Protocol v1 (`/.well-known/terraform.json` discovery, versions, download, archive, search); publish via UI upload or git-tag auto-publish; README auto-extracted from archive and rendered as markdown; download count tracked; yank individual versions; service account tokens authenticate the Terraform CLI via `~/.terraformrc`
 - [x] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
 - [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
 - [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [ ] Fine-grained RBAC — resource-level permissions (per-stack viewer/approver roles) rather than a single org-wide role
 - [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
 - [ ] Custom run hooks — pre/post-plan and pre/post-apply scripts defined per stack or org-wide, without requiring a custom runner image
-- [ ] Context-aware approval policies — OPA gates on run properties (resource type, destroy count, estimated cost, branch) rather than a binary approve/discard
+- [x] Context-aware approval policies — OPA `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and returns `require_approval: true` to gate runs behind explicit sign-off; `deny` fails the run immediately
+- [x] Startup config validation — `RUNNER_MEMORY_LIMIT` and `RUNNER_CPU_LIMIT` validated at boot; server refuses to start on invalid values rather than silently running containers unbounded
 
 ## License
 
