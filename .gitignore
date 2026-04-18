@@ -7,6 +7,7 @@
 # Go
 api/bin/
 api/tmp/
+api/crucible-iap
 *.exe
 *.test
 *.out
