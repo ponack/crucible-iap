@@ -240,6 +240,87 @@ terraform {
 
 Stack tokens are managed in the UI (Settings → Tokens) or via the API. State is stored in MinIO with full version history.
 
+## Cloud OIDC workload identity federation
+
+Crucible acts as its own OIDC identity provider. On every run, it mints a short-lived signed JWT and injects it into the runner container. Each cloud provider can be configured to exchange that token for temporary credentials — no static cloud secrets stored in Crucible.
+
+**OIDC issuer:** `CRUCIBLE_BASE_URL` (must be publicly reachable so cloud providers can fetch the JWKS)
+
+**Discovery endpoint:** `https://crucible.example.com/.well-known/openid-configuration`
+
+**JWKS endpoint:** `https://crucible.example.com/.well-known/jwks.json`
+
+Configure federation on the stack detail page → **Cloud OIDC federation**.
+
+### AWS
+
+1. In IAM → **Identity providers** → **Add provider**
+   - Provider type: **OpenID Connect**
+   - Provider URL: `https://crucible.example.com`
+   - Audience: `sts.amazonaws.com`
+2. Create an IAM role with a trust policy:
+
+   ```json
+   {
+     "Effect": "Allow",
+     "Principal": { "Federated": "arn:aws:iam::<ACCOUNT>:oidc-provider/crucible.example.com" },
+     "Action": "sts:AssumeRoleWithWebIdentity",
+     "Condition": {
+       "StringLike": {
+         "crucible.example.com:sub": "stack:<your-stack-slug>"
+       }
+     }
+   }
+   ```
+
+3. On the stack: set **Cloud provider** to `AWS`, paste the **IAM Role ARN**.
+
+The runner receives `AWS_WEB_IDENTITY_TOKEN_FILE` and `AWS_ROLE_ARN` — the AWS SDK picks these up automatically.
+
+### Google Cloud
+
+1. In IAM → **Workload Identity Federation** → **Create pool**, then **Add provider**
+   - Provider type: **OpenID Connect**
+   - Issuer URL: `https://crucible.example.com`
+   - Audience: leave as-is or customise
+2. Grant the pool permission to impersonate a service account:
+
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding runner@PROJECT.iam.gserviceaccount.com \
+     --role=roles/iam.workloadIdentityUser \
+     --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.sub/stack:<your-stack-slug>"
+   ```
+
+3. On the stack: set **Cloud provider** to `GCP`, paste the **Workload identity audience** and **Service account email**.
+
+The runner receives a GCP External Account credential config at `GOOGLE_APPLICATION_CREDENTIALS` — the GCP SDK picks this up automatically.
+
+### Azure
+
+1. In Entra ID → **App registrations** → your app → **Certificates & secrets** → **Federated credentials** → **Add credential**
+   - Scenario: **Other issuer**
+   - Issuer: `https://crucible.example.com`
+   - Subject identifier: `stack:<your-stack-slug>`
+   - Audience: `api://AzureADTokenExchange`
+2. Assign the app the necessary Azure RBAC roles on your subscription/resource group.
+3. On the stack: set **Cloud provider** to `Azure`, paste **Tenant ID**, **Client (App) ID**, and **Subscription ID**.
+
+The runner receives `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` — the Azure SDK picks these up automatically.
+
+### JWT claims reference
+
+| Claim | Value |
+| ----- | ----- |
+| `iss` | Crucible base URL |
+| `sub` | `stack:<slug>` |
+| `aud` | Cloud-specific (see above) or custom audience override |
+| `stack_id` | Stack UUID |
+| `stack_slug` | Stack slug |
+| `org_id` | Org UUID |
+| `run_id` | Run UUID |
+| `run_type` | `tracked` / `proposed` / `destroy` / `apply` |
+| `branch` | Repository branch |
+
 ## Policy-as-code
 
 Attach OPA/Rego policies to stacks to enforce guardrails before runs are allowed to apply:
