@@ -4,7 +4,10 @@
 package runner
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -45,6 +48,20 @@ type JobSpec struct {
 	MinioSecretKey   string
 	MinioBucketState string
 	MinioUseSSL      bool
+
+	// OIDC workload identity federation — if set, an OIDC JWT is injected into
+	// /tmp inside the container and cloud-specific env vars are added.
+	OIDCToken    string // signed JWT issued by oidcprovider
+	OIDCProvider string // "aws" | "gcp" | "azure"
+	// AWS
+	AWSOIDCRoleARN string
+	// GCP
+	GCPOIDCAudience            string
+	GCPOIDCServiceAccountEmail string
+	// Azure
+	AzureOIDCTenantID       string
+	AzureOIDCClientID       string
+	AzureOIDCSubscriptionID string
 }
 
 type Runner struct {
@@ -161,6 +178,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		)
 	}
 	env = append(env, spec.ExtraEnv...)
+	env = append(env, oidcEnv(spec)...)
 
 	containerID, err := r.createContainer(ctx, spec, image, containerName, env, logWriter)
 	if err != nil {
@@ -170,6 +188,14 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		_ = r.docker.ContainerRemove(context.Background(), containerID,
 			container.RemoveOptions{Force: true})
 	}()
+
+	if spec.OIDCToken != "" {
+		if err := injectOIDCFiles(ctx, r.docker, containerID, spec); err != nil {
+			logline(logWriter, "ERROR: failed to inject OIDC token: %v", err)
+			return fmt.Errorf("inject OIDC files: %w", err)
+		}
+		logline(logWriter, "oidc_provider=%s token injected into /tmp", spec.OIDCProvider)
+	}
 
 	if err := r.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
 		logline(logWriter, "ERROR: failed to start container: %v", err)
@@ -339,4 +365,85 @@ func parseCPU(s string) int64 {
 		return int64(1e9)
 	}
 	return int64(f * 1e9)
+}
+
+// oidcEnv returns cloud-provider-specific env vars for workload identity federation.
+// Returns nil when OIDCToken is empty (no federation configured).
+func oidcEnv(spec JobSpec) []string {
+	if spec.OIDCToken == "" {
+		return nil
+	}
+	switch spec.OIDCProvider {
+	case "aws":
+		return []string{
+			"AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/oidc-token",
+			"AWS_ROLE_ARN=" + spec.AWSOIDCRoleARN,
+			fmt.Sprintf("AWS_ROLE_SESSION_NAME=crucible-%s", spec.RunID[:8]),
+		}
+	case "gcp":
+		return []string{
+			"GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-credentials.json",
+		}
+	case "azure":
+		return []string{
+			"AZURE_FEDERATED_TOKEN_FILE=/tmp/oidc-token",
+			"AZURE_CLIENT_ID=" + spec.AzureOIDCClientID,
+			"AZURE_TENANT_ID=" + spec.AzureOIDCTenantID,
+			"AZURE_SUBSCRIPTION_ID=" + spec.AzureOIDCSubscriptionID,
+		}
+	}
+	return nil
+}
+
+// injectOIDCFiles copies the OIDC token (and optional GCP credential config)
+// into /tmp inside the container via CopyToContainer. Must be called after
+// createContainer and before ContainerStart.
+func injectOIDCFiles(ctx context.Context, docker *client.Client, containerID string, spec JobSpec) error {
+	files := map[string][]byte{
+		"oidc-token": []byte(spec.OIDCToken),
+	}
+	if spec.OIDCProvider == "gcp" {
+		credJSON, err := buildGCPCredentials(spec)
+		if err != nil {
+			return err
+		}
+		files["gcp-credentials.json"] = credJSON
+	}
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for name, data := range files {
+		hdr := &tar.Header{
+			Name: name,
+			Mode: 0444,
+			Size: int64(len(data)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if _, err := tw.Write(data); err != nil {
+			return err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+
+	return docker.CopyToContainer(ctx, containerID, "/tmp", &buf, container.CopyToContainerOptions{})
+}
+
+// buildGCPCredentials generates the workload identity credential config JSON
+// that tells the GCP SDK how to exchange the OIDC token for a GCP access token.
+func buildGCPCredentials(spec JobSpec) ([]byte, error) {
+	cred := map[string]any{
+		"type":                              "external_account",
+		"audience":                          spec.GCPOIDCAudience,
+		"subject_token_type":                "urn:ietf:params:oauth:token-type:jwt",
+		"token_url":                         "https://sts.googleapis.com/v1/token",
+		"service_account_impersonation_url": fmt.Sprintf("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken", spec.GCPOIDCServiceAccountEmail),
+		"credential_source": map[string]any{
+			"file": "/tmp/oidc-token",
+		},
+	}
+	return json.Marshal(cred)
 }

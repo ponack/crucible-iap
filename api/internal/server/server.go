@@ -32,6 +32,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/templates"
+	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/updater"
 	"github.com/ponack/crucible-iap/internal/varsets"
 	"github.com/ponack/crucible-iap/internal/vault"
@@ -49,7 +50,7 @@ type Server struct {
 	startTime     time.Time
 }
 
-func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, v *vault.Vault, n *notify.Notifier) *Server {
+func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue.Client, v *vault.Vault, n *notify.Notifier, oidc *oidcprovider.Provider) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
@@ -101,11 +102,11 @@ func New(cfg *config.Config, pool *pgxpool.Pool, store *storage.Client, q *queue
 		updater:       updater.New(version),
 		startTime:     time.Now(),
 	}
-	s.registerRoutes(store, q, policyHandler, v, n)
+	s.registerRoutes(store, q, policyHandler, v, n, oidc)
 	return s
 }
 
-func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHandler *policies.Handler, v *vault.Vault, n *notify.Notifier) {
+func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHandler *policies.Handler, v *vault.Vault, n *notify.Notifier, oidc *oidcprovider.Provider) {
 	e := s.echo
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
@@ -131,6 +132,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// ── Public ─────────────────────────────────────────────────────────────────
 	e.GET("/.well-known/terraform.json", s.handleTerraformDiscovery)
 	e.GET("/health", s.handleHealth)
+	if oidc != nil {
+		oidc.RegisterRoutes(e)
+	}
 	e.GET("/metrics", metrics.Handler())
 	e.GET("/auth/config", authHandler.GetAuthConfig)
 
@@ -271,6 +275,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stacks/:id/members", stackMembersHandler.List)
 	api.PUT("/stacks/:id/members/:userID", stackMembersHandler.Upsert, admin)
 	api.DELETE("/stacks/:id/members/:userID", stackMembersHandler.Remove, admin)
+
+	// Cloud OIDC workload identity federation
+	api.GET("/stacks/:id/cloud-oidc", stackHandler.GetOIDC)
+	api.PUT("/stacks/:id/cloud-oidc", stackHandler.UpsertOIDC, member)
+	api.DELETE("/stacks/:id/cloud-oidc", stackHandler.DeleteOIDC, member)
 
 	// Stack dependency graph
 	api.GET("/stacks/:id/upstream", depsHandler.ListUpstream)
