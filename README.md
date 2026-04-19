@@ -445,3 +445,7 @@ cd api && go test -race ./...
 ## License
 
 [AGPL-3.0-or-later](LICENSE) — free to self-host forever. Commercial licenses available for proprietary or SaaS use.
+
+---
+
+Built by [Forged in Feathers Technology](https://www.forgedinfeatherstechnology.com) · [Crucible IAP product page](https://www.forgedinfeatherstechnology.com/crucible-iap)
