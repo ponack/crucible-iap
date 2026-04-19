@@ -836,10 +836,17 @@ export interface RegistryModule {
 	download_count: number;
 }
 
-async function requestForm<T>(path: string, body: FormData): Promise<T> {
+async function requestForm<T>(path: string, body: FormData, retry = true): Promise<T> {
 	const headers: Record<string, string> = {};
 	if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
 	const res = await fetch('/api/v1' + path, { method: 'POST', headers, body });
+	if (res.status === 401 && retry && auth.refreshToken) {
+		const refreshed = await tryRefresh();
+		if (refreshed) return requestForm<T>(path, body, false);
+		auth.clear();
+		window.location.href = '/login';
+		throw new Error('Unauthorized');
+	}
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({ error: res.statusText }));
 		throw new Error((err as { error?: string }).error ?? 'Request failed');
