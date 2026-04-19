@@ -1004,7 +1004,7 @@
 			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-repo">Repository URL</label>
-				<input id="edit-repo" class="field-input font-mono text-sm" bind:value={form.repo_url} placeholder="https://github.com/org/repo.git" required />
+				<input id="edit-repo" class="field-input font-mono text-sm" bind:value={form.repo_url} placeholder="https://github.com/org/repo" required />
 			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-root">Project root</label>

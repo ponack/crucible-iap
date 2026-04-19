@@ -131,7 +131,7 @@
 			<div class="space-y-1.5">
 				<label class="field-label" for="repo_url">Repo URL</label>
 				<input id="repo_url" class="field-input font-mono text-sm" bind:value={form.repo_url} required
-					placeholder="https://github.com/org/infra.git" />
+					placeholder="https://github.com/org/infra" />
 			</div>
 
 			<div class="grid grid-cols-2 gap-4">
