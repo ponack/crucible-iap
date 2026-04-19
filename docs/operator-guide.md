@@ -134,6 +134,37 @@ The following are managed via **Settings → Runner** and **Settings → Retenti
 | Memory / CPU limit      | `2g` / `1.0`   | Resource caps per runner container                                                                                   |
 | Artifact retention days | `0` (forever)  | Plan files and run logs older than this are deleted daily. Set a value (e.g. `90`) to prevent unbounded MinIO growth |
 
+### Provider caching
+
+Crucible caches OpenTofu/Terraform provider binaries in MinIO under the `provider-cache/` prefix. Before each run, the worker checks for a cached copy of each provider and restores it to the runner workspace. After a successful `init`, any newly downloaded providers are uploaded back to the cache.
+
+This is transparent to stacks — no configuration is required. The first run for a given provider version downloads from the registry; subsequent runs skip the download entirely. On slow registries or air-gapped environments the speedup is significant.
+
+Cached providers are keyed by `provider-cache/<hostname>/<namespace>/<type>/<version>/<os>_<arch>/`. Entries are never automatically evicted — delete objects from MinIO manually if you need to force a fresh download.
+
+### Custom run hooks
+
+Each stack supports four optional bash lifecycle hooks, configured in **Stacks** → *stack name* → **Edit** → **Run hooks**:
+
+| Hook | Runs |
+| --- | --- |
+| Pre-plan | Before `tofu plan` |
+| Post-plan | After plan, before the artifact is uploaded |
+| Pre-apply | Before `tofu apply` (after user confirmation) |
+| Post-apply | After `tofu apply` completes successfully |
+
+Hooks are stored as text in the database and injected into the runner container as environment variables (`CRUCIBLE_HOOK_PRE_PLAN`, `CRUCIBLE_HOOK_POST_PLAN`, `CRUCIBLE_HOOK_PRE_APPLY`, `CRUCIBLE_HOOK_POST_APPLY`). The entrypoint executes them with `bash -c`. A non-zero exit code fails the run and logs the error.
+
+Hooks run with the same environment as the rest of the run (all stack env vars, cloud credentials, OIDC tokens). Use them for things like notifying external systems, validating prerequisites, or running custom linters.
+
+### Org-level Cloud OIDC default
+
+**Settings → General → Cloud OIDC Default** lets you configure a single OIDC federation identity that all stacks inherit. Supported providers: AWS, GCP, Azure.
+
+When a run starts, the worker checks for a per-stack Cloud OIDC configuration first. If none is set, it falls back to the org default. Per-stack configuration always takes precedence.
+
+This is useful when all (or most) of your stacks deploy to the same cloud account — configure the role ARN once in Settings and skip per-stack OIDC setup entirely. Stacks that need a different role can override it with their own configuration.
+
 ---
 
 ## Upgrading

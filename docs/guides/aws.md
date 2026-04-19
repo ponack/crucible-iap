@@ -23,7 +23,7 @@ Crucible does not manage cloud credentials directly — it passes environment va
 | `AWS_SECRET_ACCESS_KEY` | Your IAM user secret access key |
 | `AWS_DEFAULT_REGION` | e.g. `eu-west-1` |
 
-### Option 2 — IAM role via OIDC (recommended)
+### Option 2 — IAM role assumption from instance profile
 
 If your Crucible instance runs on AWS (EC2, ECS, or EKS), you can attach an IAM role directly to the compute and use role assumption — no long-lived keys needed.
 
@@ -50,6 +50,52 @@ Then in your stack's environment variables:
 | `TF_VAR_role_arn` | `arn:aws:iam::123456789012:role/crucible-deploy` |
 
 OpenTofu reads `TF_VAR_*` variables automatically, so no extra wiring is needed.
+
+### Option 3 — OIDC federation via Crucible (recommended, keyless)
+
+Crucible acts as an OIDC identity provider. The worker mints a short-lived OIDC token for each run and presents it to AWS STS `AssumeRoleWithWebIdentity` — no static credentials or instance profile required. This works regardless of where Crucible is hosted.
+
+#### Per-stack configuration
+
+Open **Stacks** → *stack name* → **Edit** → **Cloud OIDC** and set:
+
+| Field | Value |
+| --- | --- |
+| Provider | `aws` |
+| Role ARN | `arn:aws:iam::123456789012:role/crucible-deploy` |
+| Session duration | e.g. `3600` (seconds) |
+
+The worker injects `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` for the assumed role. No provider changes needed in your Terraform code.
+
+#### Org-level default
+
+If all (or most) stacks deploy to the same AWS account, configure the role once in **Settings → General → Cloud OIDC Default** instead of repeating it per stack. Stacks without a per-stack Cloud OIDC config inherit the org default automatically. Per-stack always wins if both are set.
+
+#### IAM trust policy for OIDC federation
+
+Create an IAM OIDC provider for your Crucible instance, then use this trust policy on the role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::123456789012:oidc-provider/crucible.example.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "crucible.example.com:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+```
+
+Replace `crucible.example.com` with your `CRUCIBLE_BASE_URL` hostname and `123456789012` with your AWS account ID.
 
 ---
 
