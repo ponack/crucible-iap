@@ -77,7 +77,17 @@ type Settings struct {
 	SMTPFrom              string    `json:"smtp_from"`
 	SMTPTLS               bool      `json:"smtp_tls"`
 	ArtifactRetentionDays int       `json:"artifact_retention_days"`
-	UpdatedAt             time.Time `json:"updated_at"`
+	// Org-level OIDC federation defaults — used when a stack has no per-stack config.
+	OIDCProvider              string `json:"oidc_provider,omitempty"`
+	OIDCAWSRoleARN            string `json:"oidc_aws_role_arn,omitempty"`
+	OIDCAWSSessionDurationSecs int   `json:"oidc_aws_session_duration_secs,omitempty"`
+	OIDCGCPAudience           string `json:"oidc_gcp_audience,omitempty"`
+	OIDCGCPServiceAccountEmail string `json:"oidc_gcp_service_account_email,omitempty"`
+	OIDCAzureTenantID         string `json:"oidc_azure_tenant_id,omitempty"`
+	OIDCAzureClientID         string `json:"oidc_azure_client_id,omitempty"`
+	OIDCAzureSubscriptionID   string `json:"oidc_azure_subscription_id,omitempty"`
+	OIDCAudienceOverride      string `json:"oidc_audience_override,omitempty"`
+	UpdatedAt                 time.Time `json:"updated_at"`
 }
 
 type Handler struct {
@@ -144,6 +154,15 @@ func validateSettingsUpdate(req *struct {
 	SMTPFrom              *string `json:"smtp_from"`
 	SMTPTLS               *bool   `json:"smtp_tls"`
 	ArtifactRetentionDays *int    `json:"artifact_retention_days"`
+	OIDCProvider               *string `json:"oidc_provider"`
+	OIDCAWSRoleARN             *string `json:"oidc_aws_role_arn"`
+	OIDCAWSSessionDurationSecs *int    `json:"oidc_aws_session_duration_secs"`
+	OIDCGCPAudience            *string `json:"oidc_gcp_audience"`
+	OIDCGCPServiceAccountEmail *string `json:"oidc_gcp_service_account_email"`
+	OIDCAzureTenantID          *string `json:"oidc_azure_tenant_id"`
+	OIDCAzureClientID          *string `json:"oidc_azure_client_id"`
+	OIDCAzureSubscriptionID    *string `json:"oidc_azure_subscription_id"`
+	OIDCAudienceOverride       *string `json:"oidc_audience_override"`
 }) error {
 	if err := validateRunnerFields(req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
 		req.ArtifactRetentionDays, req.RunnerMemoryLimit, req.RunnerCPULimit); err != nil {
@@ -156,6 +175,12 @@ func validateSettingsUpdate(req *struct {
 		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}
 		if !valid[*req.DefaultVCSProvider] {
 			return fmt.Errorf("default_vcs_provider must be github, gitlab, or gitea")
+		}
+	}
+	if req.OIDCProvider != nil && *req.OIDCProvider != "" {
+		valid := map[string]bool{"aws": true, "gcp": true, "azure": true}
+		if !valid[*req.OIDCProvider] {
+			return fmt.Errorf("oidc_provider must be aws, gcp, or azure")
 		}
 	}
 	return nil
@@ -183,6 +208,15 @@ func (h *Handler) Update(c echo.Context) error {
 		SMTPFrom              *string `json:"smtp_from"`
 		SMTPTLS               *bool   `json:"smtp_tls"`
 		ArtifactRetentionDays *int    `json:"artifact_retention_days"`
+		OIDCProvider               *string `json:"oidc_provider"`
+		OIDCAWSRoleARN             *string `json:"oidc_aws_role_arn"`
+		OIDCAWSSessionDurationSecs *int    `json:"oidc_aws_session_duration_secs"`
+		OIDCGCPAudience            *string `json:"oidc_gcp_audience"`
+		OIDCGCPServiceAccountEmail *string `json:"oidc_gcp_service_account_email"`
+		OIDCAzureTenantID          *string `json:"oidc_azure_tenant_id"`
+		OIDCAzureClientID          *string `json:"oidc_azure_client_id"`
+		OIDCAzureSubscriptionID    *string `json:"oidc_azure_subscription_id"`
+		OIDCAudienceOverride       *string `json:"oidc_audience_override"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -193,33 +227,46 @@ func (h *Handler) Update(c echo.Context) error {
 
 	_, err := h.pool.Exec(c.Request().Context(), `
 		UPDATE system_settings SET
-			runner_default_image      = COALESCE($1,  runner_default_image),
-			runner_max_concurrent     = COALESCE($2,  runner_max_concurrent),
-			runner_job_timeout_mins   = COALESCE($3,  runner_job_timeout_mins),
-			runner_memory_limit       = COALESCE($4,  runner_memory_limit),
-			runner_cpu_limit          = COALESCE($5,  runner_cpu_limit),
-			default_slack_webhook     = COALESCE($6,  default_slack_webhook),
-			default_vcs_provider      = COALESCE($7,  default_vcs_provider),
-			default_vcs_base_url      = COALESCE($8,  default_vcs_base_url),
-			default_gotify_url        = COALESCE($9,  default_gotify_url),
-			default_gotify_token      = COALESCE($10, default_gotify_token),
-			default_ntfy_url          = COALESCE($11, default_ntfy_url),
-			default_ntfy_token        = COALESCE($12, default_ntfy_token),
-			smtp_host                 = COALESCE($13, smtp_host),
-			smtp_port                 = COALESCE($14, smtp_port),
-			smtp_username             = COALESCE($15, smtp_username),
-			smtp_password             = COALESCE($16, smtp_password),
-			smtp_from                 = COALESCE($17, smtp_from),
-			smtp_tls                  = COALESCE($18, smtp_tls),
-			artifact_retention_days   = COALESCE($19, artifact_retention_days),
-			updated_at                = now()
+			runner_default_image             = COALESCE($1,  runner_default_image),
+			runner_max_concurrent            = COALESCE($2,  runner_max_concurrent),
+			runner_job_timeout_mins          = COALESCE($3,  runner_job_timeout_mins),
+			runner_memory_limit              = COALESCE($4,  runner_memory_limit),
+			runner_cpu_limit                 = COALESCE($5,  runner_cpu_limit),
+			default_slack_webhook            = COALESCE($6,  default_slack_webhook),
+			default_vcs_provider             = COALESCE($7,  default_vcs_provider),
+			default_vcs_base_url             = COALESCE($8,  default_vcs_base_url),
+			default_gotify_url               = COALESCE($9,  default_gotify_url),
+			default_gotify_token             = COALESCE($10, default_gotify_token),
+			default_ntfy_url                 = COALESCE($11, default_ntfy_url),
+			default_ntfy_token               = COALESCE($12, default_ntfy_token),
+			smtp_host                        = COALESCE($13, smtp_host),
+			smtp_port                        = COALESCE($14, smtp_port),
+			smtp_username                    = COALESCE($15, smtp_username),
+			smtp_password                    = COALESCE($16, smtp_password),
+			smtp_from                        = COALESCE($17, smtp_from),
+			smtp_tls                         = COALESCE($18, smtp_tls),
+			artifact_retention_days          = COALESCE($19, artifact_retention_days),
+			oidc_provider                    = COALESCE($20, oidc_provider),
+			oidc_aws_role_arn                = COALESCE($21, oidc_aws_role_arn),
+			oidc_aws_session_duration_secs   = COALESCE($22, oidc_aws_session_duration_secs),
+			oidc_gcp_audience                = COALESCE($23, oidc_gcp_audience),
+			oidc_gcp_service_account_email   = COALESCE($24, oidc_gcp_service_account_email),
+			oidc_azure_tenant_id             = COALESCE($25, oidc_azure_tenant_id),
+			oidc_azure_client_id             = COALESCE($26, oidc_azure_client_id),
+			oidc_azure_subscription_id       = COALESCE($27, oidc_azure_subscription_id),
+			oidc_audience_override           = COALESCE($28, oidc_audience_override),
+			updated_at                       = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
 		req.RunnerMemoryLimit, req.RunnerCPULimit,
 		req.DefaultSlackWebhook, req.DefaultVCSProvider, req.DefaultVCSBaseURL,
 		req.DefaultGotifyURL, req.DefaultGotifyToken, req.DefaultNtfyURL, req.DefaultNtfyToken,
 		req.SMTPHost, req.SMTPPort, req.SMTPUsername, req.SMTPPassword, req.SMTPFrom, req.SMTPTLS,
-		req.ArtifactRetentionDays)
+		req.ArtifactRetentionDays,
+		req.OIDCProvider, req.OIDCAWSRoleARN, req.OIDCAWSSessionDurationSecs,
+		req.OIDCGCPAudience, req.OIDCGCPServiceAccountEmail,
+		req.OIDCAzureTenantID, req.OIDCAzureClientID, req.OIDCAzureSubscriptionID,
+		req.OIDCAudienceOverride)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -247,14 +294,25 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(smtp_host, ''), COALESCE(smtp_port, 587),
 		       COALESCE(smtp_username, ''), COALESCE(smtp_from, ''),
 		       COALESCE(smtp_tls, true),
-		       COALESCE(artifact_retention_days, 0), updated_at
+		       COALESCE(artifact_retention_days, 0),
+		       COALESCE(oidc_provider, ''), COALESCE(oidc_aws_role_arn, ''),
+		       COALESCE(oidc_aws_session_duration_secs, 0),
+		       COALESCE(oidc_gcp_audience, ''), COALESCE(oidc_gcp_service_account_email, ''),
+		       COALESCE(oidc_azure_tenant_id, ''), COALESCE(oidc_azure_client_id, ''),
+		       COALESCE(oidc_azure_subscription_id, ''), COALESCE(oidc_audience_override, ''),
+		       updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
 		&s.RunnerMemoryLimit, &s.RunnerCPULimit,
 		&s.DefaultSlackWebhook, &s.DefaultVCSProvider, &s.DefaultVCSBaseURL,
 		&s.DefaultGotifyURL, &s.DefaultGotifyToken, &s.DefaultNtfyURL, &s.DefaultNtfyToken,
 		&s.SMTPHost, &s.SMTPPort, &s.SMTPUsername, &s.SMTPFrom, &s.SMTPTLS,
-		&s.ArtifactRetentionDays, &s.UpdatedAt)
+		&s.ArtifactRetentionDays,
+		&s.OIDCProvider, &s.OIDCAWSRoleARN, &s.OIDCAWSSessionDurationSecs,
+		&s.OIDCGCPAudience, &s.OIDCGCPServiceAccountEmail,
+		&s.OIDCAzureTenantID, &s.OIDCAzureClientID, &s.OIDCAzureSubscriptionID,
+		&s.OIDCAudienceOverride,
+		&s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
 		return &Settings{

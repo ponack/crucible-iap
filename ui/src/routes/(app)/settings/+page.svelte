@@ -19,6 +19,18 @@
 	let retentionSaved = $state(false);
 	let retentionError = $state<string | null>(null);
 
+	// Org OIDC default
+	let oidcForm = $state({
+		oidc_provider: '',
+		oidc_aws_role_arn: '', oidc_aws_session_duration_secs: 3600,
+		oidc_gcp_audience: '', oidc_gcp_service_account_email: '',
+		oidc_azure_tenant_id: '', oidc_azure_client_id: '', oidc_azure_subscription_id: '',
+		oidc_audience_override: ''
+	});
+	let savingOIDC = $state(false);
+	let oidcSaved = $state(false);
+	let oidcError = $state<string | null>(null);
+
 	onMount(async () => {
 		system.health().then((h) => (health = h)).catch(() => {});
 		system.settings.get().then((s) => {
@@ -31,6 +43,17 @@
 				runner_cpu_limit: s.runner_cpu_limit
 			};
 			retentionForm = { artifact_retention_days: s.artifact_retention_days ?? 0 };
+			oidcForm = {
+				oidc_provider: s.oidc_provider ?? '',
+				oidc_aws_role_arn: s.oidc_aws_role_arn ?? '',
+				oidc_aws_session_duration_secs: s.oidc_aws_session_duration_secs ?? 3600,
+				oidc_gcp_audience: s.oidc_gcp_audience ?? '',
+				oidc_gcp_service_account_email: s.oidc_gcp_service_account_email ?? '',
+				oidc_azure_tenant_id: s.oidc_azure_tenant_id ?? '',
+				oidc_azure_client_id: s.oidc_azure_client_id ?? '',
+				oidc_azure_subscription_id: s.oidc_azure_subscription_id ?? '',
+				oidc_audience_override: s.oidc_audience_override ?? ''
+			};
 		}).catch(() => {});
 		loading = false;
 	});
@@ -48,6 +71,22 @@
 			runnerError = (err as Error).message;
 		} finally {
 			savingRunner = false;
+		}
+	}
+
+	async function saveOIDC(e: SubmitEvent) {
+		e.preventDefault();
+		savingOIDC = true;
+		oidcSaved = false;
+		oidcError = null;
+		try {
+			await system.settings.update(oidcForm);
+			oidcSaved = true;
+			setTimeout(() => (oidcSaved = false), 3000);
+		} catch (err) {
+			oidcError = (err as Error).message;
+		} finally {
+			savingOIDC = false;
 		}
 	}
 
@@ -185,6 +224,101 @@
 				</div>
 			</form>
 		</div>
+	{/if}
+
+	<!-- Org OIDC default -->
+	{#if runnerSettings}
+	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
+		<div class="px-6 py-4 border-b border-zinc-800">
+			<p class="text-xs text-zinc-500 uppercase tracking-widest">Cloud OIDC default</p>
+			<p class="text-xs text-zinc-600 mt-1">Applied to any stack that has no per-stack OIDC federation configured. Stacks with their own OIDC config are unaffected.</p>
+		</div>
+		<form onsubmit={saveOIDC} class="px-6 py-5 space-y-4">
+			{#if oidcError}
+				<div class="bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">{oidcError}</div>
+			{/if}
+			<div class="space-y-1.5">
+				<label class="field-label" for="oidc-provider">Cloud provider</label>
+				<select id="oidc-provider" class="field-input" bind:value={oidcForm.oidc_provider}>
+					<option value="">Disabled (no org default)</option>
+					<option value="aws">AWS</option>
+					<option value="gcp">GCP</option>
+					<option value="azure">Azure</option>
+				</select>
+			</div>
+
+			{#if oidcForm.oidc_provider === 'aws'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-aws-role">IAM Role ARN</label>
+						<input id="oidc-aws-role" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_aws_role_arn}
+							placeholder="arn:aws:iam::123456789012:role/crucible-runner" />
+						<p class="text-xs text-zinc-600">Trust policy should use <code class="text-zinc-400">sts:AssumeRoleWithWebIdentity</code> and can condition on the <code class="text-zinc-400">sub</code> claim (<code class="text-zinc-400">stack:my-slug</code>) to scope per stack.</p>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-aws-duration">Session duration (seconds)</label>
+						<input id="oidc-aws-duration" type="number" min="900" max="43200" class="field-input w-36"
+							bind:value={oidcForm.oidc_aws_session_duration_secs} placeholder="3600" />
+					</div>
+				</div>
+			{:else if oidcForm.oidc_provider === 'gcp'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-gcp-audience">Workload identity audience</label>
+						<input id="oidc-gcp-audience" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_gcp_audience}
+							placeholder="//iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL/providers/PROVIDER" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-gcp-sa">Service account email</label>
+						<input id="oidc-gcp-sa" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_gcp_service_account_email}
+							placeholder="crucible@my-project.iam.gserviceaccount.com" />
+					</div>
+				</div>
+			{:else if oidcForm.oidc_provider === 'azure'}
+				<div class="space-y-4">
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-azure-tenant">Tenant ID</label>
+							<input id="oidc-azure-tenant" class="field-input font-mono text-sm"
+								bind:value={oidcForm.oidc_azure_tenant_id} placeholder="xxxxxxxx-xxxx-…" />
+						</div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-azure-client">Client ID (app registration)</label>
+							<input id="oidc-azure-client" class="field-input font-mono text-sm"
+								bind:value={oidcForm.oidc_azure_client_id} placeholder="xxxxxxxx-xxxx-…" />
+						</div>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-azure-sub">Subscription ID</label>
+						<input id="oidc-azure-sub" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_azure_subscription_id} placeholder="xxxxxxxx-xxxx-…" />
+					</div>
+				</div>
+			{/if}
+
+			{#if oidcForm.oidc_provider}
+				<div class="space-y-1.5">
+					<label class="field-label" for="oidc-audience-override">Audience override <span class="font-normal text-zinc-500">(optional)</span></label>
+					<input id="oidc-audience-override" class="field-input font-mono text-sm"
+						bind:value={oidcForm.oidc_audience_override}
+						placeholder="Leave blank to use provider default" />
+				</div>
+			{/if}
+
+			<div class="flex items-center gap-3">
+				<button type="submit" disabled={savingOIDC}
+					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					{savingOIDC ? 'Saving…' : 'Save OIDC default'}
+				</button>
+				{#if oidcSaved}
+					<span class="text-xs text-green-400">Saved.</span>
+				{/if}
+			</div>
+		</form>
+	</div>
 	{/if}
 
 	<!-- Instance info -->

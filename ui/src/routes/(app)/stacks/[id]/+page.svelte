@@ -2161,6 +2161,9 @@
 			{/if}
 		</div>
 		<p class="text-xs text-zinc-600">Exchange a short-lived OIDC token for cloud credentials on every run — no static secrets stored in Crucible.</p>
+		{#if !oidcConfig}
+			<p class="text-xs text-indigo-400/70">No per-stack config — the org-level OIDC default from Settings will be used if one is configured.</p>
+		{/if}
 		<form onsubmit={saveOIDC} class="border border-zinc-800 rounded-xl p-5 space-y-4">
 			{#if oidcError}
 				<p class="text-red-400 text-sm">{oidcError}</p>
