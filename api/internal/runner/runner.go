@@ -236,10 +236,10 @@ func (r *Runner) createContainer(ctx context.Context, spec JobSpec, img, contain
 			// prevents provider binaries from being executed after download.
 			Tmpfs: map[string]string{
 				// Ephemeral workspace: repo clone, provider cache, plan artifact.
-				"/workspace": "size=536870912,mode=0777,exec",
+				"/workspace": "size=2147483648,mode=0777,exec",
 				// Staging area for provider zip downloads before extraction.
 				// OpenTofu writes here before moving binaries into /workspace.
-				"/tmp": "size=268435456,mode=0777,exec",
+				"/tmp": "size=536870912,mode=0777,exec",
 			},
 			// Override with RUNNER_NETWORK env var (network must exist before first run).
 			NetworkMode: container.NetworkMode(r.cfg.RunnerNetwork),
