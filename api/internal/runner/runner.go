@@ -335,10 +335,10 @@ func coalesce(a, b string) string {
 	return b
 }
 
-// parseMemory converts "2g" → bytes. Returns 2 GB and logs a warning on
+// parseMemory converts "2g" → bytes. Returns 4 GB and logs a warning on
 // invalid input so containers never run unbounded (Docker treats 0 as unlimited).
 func parseMemory(s string) int64 {
-	const defaultMemory = 2 * 1024 * 1024 * 1024 // 2 GB
+	const defaultMemory = 4 * 1024 * 1024 * 1024 // 4 GB
 	var val int64
 	var unit string
 	if n, _ := fmt.Sscanf(s, "%d%s", &val, &unit); n == 0 || val <= 0 {
