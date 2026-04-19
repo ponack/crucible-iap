@@ -133,6 +133,21 @@ org_policy_defaults — policies automatically applied to all stacks in an org
 audit_events       — append-only partitioned audit log
 ```
 
+## Lifecycle hooks
+
+Each stack can define up to four bash scripts that run at specific points in the run lifecycle. The worker injects them as environment variables into the runner container:
+
+| Hook env var | Runs before |
+| --- | --- |
+| `CRUCIBLE_HOOK_PRE_PLAN` | `tofu plan` |
+| `CRUCIBLE_HOOK_POST_PLAN` | Plan artifact upload |
+| `CRUCIBLE_HOOK_PRE_APPLY` | `tofu apply` |
+| `CRUCIBLE_HOOK_POST_APPLY` | Run completion |
+
+The entrypoint executes each hook with `bash -c`. A non-zero exit code immediately fails the run. Hooks have access to the full stack environment (all env vars, OIDC tokens, remote state credentials).
+
+Hook scripts are stored as nullable TEXT columns on the `stacks` table and configured per-stack in the UI.
+
 ## Policy evaluation hooks
 
 | Hook | When | Blocks? |
