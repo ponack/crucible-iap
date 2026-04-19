@@ -668,6 +668,15 @@ export interface SystemSettings {
 	smtp_from: string;
 	smtp_tls: boolean;
 	artifact_retention_days: number;
+	oidc_provider?: string;
+	oidc_aws_role_arn?: string;
+	oidc_aws_session_duration_secs?: number;
+	oidc_gcp_audience?: string;
+	oidc_gcp_service_account_email?: string;
+	oidc_azure_tenant_id?: string;
+	oidc_azure_client_id?: string;
+	oidc_azure_subscription_id?: string;
+	oidc_audience_override?: string;
 	updated_at: string;
 }
 

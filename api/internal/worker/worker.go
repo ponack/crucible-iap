@@ -681,7 +681,25 @@ func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args que
 		&audienceOverride,
 	)
 	if err != nil {
-		return nil // no OIDC config — not an error
+		// No per-stack config — try org-level default from system_settings.
+		err = w.pool.QueryRow(ctx, `
+			SELECT NULLIF(oidc_provider,''),
+			       NULLIF(oidc_aws_role_arn,''),
+			       NULLIF(oidc_gcp_audience,''), NULLIF(oidc_gcp_service_account_email,''),
+			       NULLIF(oidc_azure_tenant_id,''), NULLIF(oidc_azure_client_id,''),
+			       NULLIF(oidc_azure_subscription_id,''), NULLIF(oidc_audience_override,'')
+			FROM system_settings WHERE id = true
+		`).Scan(
+			&provider,
+			&awsRoleARN,
+			&gcpAudience, &gcpSA,
+			&azureTenant, &azureClient, &azureSubscription,
+			&audienceOverride,
+		)
+		if err != nil || provider == "" {
+			return nil // no OIDC config anywhere — not an error
+		}
+		log.Info("using org-level OIDC default", "provider", provider)
 	}
 
 	audience := defaultAudience(provider, w.oidcProvider.Issuer())
