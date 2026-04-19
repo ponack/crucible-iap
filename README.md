@@ -4,6 +4,8 @@
 
 **Crucible IAP - Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
 
+> **Not a technical user?** Visit the [Crucible IAP product page](https://www.forgedinfeatherstechnology.com/crucible-iap) for screenshots, feature highlights, and an overview of what Crucible can do for your team.
+
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/ponack/crucible-iap)](https://github.com/ponack/crucible-iap/releases/latest)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ponack/crucible-iap/api)](https://goreportcard.com/report/github.com/ponack/crucible-iap/api)
