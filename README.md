@@ -443,6 +443,20 @@ cd api && go test -race ./...
 - [x] Notification test buttons — one-click test delivery for org-level Slack, Gotify, and ntfy endpoints directly from Settings → Notifications; confirms credentials are wired correctly without waiting for a run
 - [x] Per-stack RBAC on remote state links — configuring a cross-stack `terraform_remote_state` link now requires at least approver role on the source stack; prevents org members from granting access to state they cannot manage
 - [x] Auth endpoint rate hardening — per-IP rate limits tightened on `/auth/callback` (OAuth code exchange) and `/auth/refresh` (token renewal); service account tokens lock out after 20 failures per 5-minute window per IP
+- [ ] Scheduled runs — trigger plan, apply, or destroy runs on a cron schedule independent of code pushes; extends beyond drift (which is always proposed) to support nightly applies, morning plan checks, and weekend environment teardowns
+- [ ] Stack locking / maintenance mode — per-stack flag that prevents new runs from being queued; operators set it before manual cloud console changes and release it when done; prevents race conditions during incident response
+- [ ] Run annotations — free-text operator note on any run ("deployed for hotfix", "reverting per oncall"); closes the audit gap between who triggered a run and why
+- [ ] Generic outgoing webhooks — fire arbitrary HTTP POST on run state changes to PagerDuty, ServiceNow, Jira, or custom tooling; HMAC-signed, configurable per event type, delivery log with retry
+- [ ] SSO group → role mapping — automatically assign org and stack roles from IdP group claims; eliminates manual invite management for large teams on Authentik, Okta, Keycloak, or GitHub
+- [ ] Cost estimation — integrate Infracost (self-hosted server supported) to surface per-run monthly cost delta alongside the plan summary
+- [ ] IaC security scanning — built-in Checkov / Trivy scan post-plan; findings surfaced as structured results in the run detail alongside OPA policy output; configurable severity threshold to block apply
+- [ ] Private provider registry — extend the existing module registry to serve custom Terraform providers; critical for air-gapped deployments and teams distributing internal providers
+- [ ] Per-stack run concurrency cap — limit a specific stack to N concurrent runs (typically 1 for production); currently only a global cap exists
+- [ ] Self-service infrastructure blueprints — parameterized stack creation with named user-facing input fields rendered as a form; platform teams publish blueprints, app teams self-serve environments without touching stack config
+- [ ] OPA policy test UI — paste a synthetic run payload and evaluate it against a saved policy inline; surfaces deny/warn/pass without needing a real run; genuine differentiator — neither Spacelift nor TF Cloud has this built in
+- [ ] PR preview environments — auto-create a stack from a template when a PR opens, auto-destroy when it closes; branch name drives workspace isolation; pairs with stack dependencies for full per-PR environment chains
+- [ ] AI run troubleshooting — one-click "Explain failure" on failed runs; sends log context to the Claude API and returns a structured root-cause explanation and suggested fix; opt-in via `ANTHROPIC_API_KEY`
+- [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 
 ## License
 
