@@ -43,7 +43,8 @@ function createAuthStore() {
 			JSON.stringify({
 				user: state.user,
 				accessToken: state.accessToken,
-				refreshToken: state.refreshToken
+				refreshToken: state.refreshToken,
+				orgRole: state.orgRole
 			})
 		);
 	}
