@@ -31,6 +31,12 @@
 	function navClass(prefix: string) {
 		return 'nav-link' + (page.url.pathname.startsWith(prefix) ? ' active' : '');
 	}
+
+	async function logout() {
+		try { await fetch('/auth/logout', { method: 'POST' }); } catch {}
+		auth.clear();
+		goto('/login', { replaceState: true });
+	}
 </script>
 
 {#if isAuthRoute}
@@ -62,8 +68,9 @@
 				<a href="/monitoring" class={navClass('/monitoring')}>Monitoring</a>
 				<a href="/settings" class={navClass('/settings')}>Settings</a>
 			</nav>
-			<div class="px-4 py-3 border-t border-zinc-800 text-xs text-zinc-500 truncate" title={auth.user?.email}>
-				{auth.user?.email}
+			<div class="px-4 py-3 border-t border-zinc-800 flex items-center gap-2">
+				<span class="text-xs text-zinc-500 truncate flex-1" title={auth.user?.email}>{auth.user?.email}</span>
+				<button onclick={logout} class="text-xs text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">Sign out</button>
 			</div>
 		</aside>
 

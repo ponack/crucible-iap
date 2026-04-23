@@ -14,6 +14,7 @@
 	let inviting = $state(false);
 	let newToken = $state<string | null>(null);
 	let inviteError = $state<string | null>(null);
+	let actionError = $state<string | null>(null);
 
 	const isAdmin = $derived(
 		auth.isAdmin || members.find((m) => m.user_id === auth.user?.id)?.role === 'admin'
@@ -60,13 +61,23 @@
 	}
 
 	async function removeMember(userID: string) {
-		await org.members.remove(userID);
-		members = members.filter((m) => m.user_id !== userID);
+		actionError = null;
+		try {
+			await org.members.remove(userID);
+			members = members.filter((m) => m.user_id !== userID);
+		} catch (err) {
+			actionError = (err as Error).message;
+		}
 	}
 
 	async function changeRole(userID: string, role: string) {
-		await org.members.update(userID, role);
-		members = members.map((m) => m.user_id === userID ? { ...m, role: role as OrgMember['role'] } : m);
+		actionError = null;
+		try {
+			await org.members.update(userID, role);
+			members = members.map((m) => m.user_id === userID ? { ...m, role: role as OrgMember['role'] } : m);
+		} catch (err) {
+			actionError = (err as Error).message;
+		}
 	}
 </script>
 
@@ -79,6 +90,9 @@
 			<p class="text-xs text-zinc-500 uppercase tracking-widest">Members</p>
 		</div>
 
+		{#if actionError}
+			<p class="px-6 py-4 text-sm text-red-400">{actionError}</p>
+		{/if}
 		{#if loading}
 			<p class="px-6 py-4 text-sm text-zinc-500">Loading…</p>
 		{:else if error}
