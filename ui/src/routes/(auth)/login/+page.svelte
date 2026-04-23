@@ -44,9 +44,9 @@
 				error = 'Invalid email or password.';
 				return;
 			}
-			const { access_token, refresh_token } = await res.json();
+			const { access_token } = await res.json();
 			const payload = decodeJWTPayload(access_token);
-			auth.setTokens(access_token, refresh_token, {
+			auth.setTokens(access_token, {
 				id: payload.uid,
 				email: payload.email,
 				name: payload.name,

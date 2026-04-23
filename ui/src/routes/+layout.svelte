@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
-	import { org } from '$lib/api/client';
+	import { org, tryRefresh } from '$lib/api/client';
 	import { page } from '$app/state';
 
 	const { children } = $props();
@@ -14,7 +14,12 @@
 		page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/auth')
 	);
 
-	onMount(() => {
+	onMount(async () => {
+		// Silently restore session from the httpOnly refresh cookie.
+		// Must complete before setting mounted so the loading spinner covers the round-trip.
+		if (!isAuthRoute && !auth.isAuthenticated) {
+			await tryRefresh();
+		}
 		mounted = true;
 	});
 
