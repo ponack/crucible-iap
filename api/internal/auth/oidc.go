@@ -522,6 +522,31 @@ func (h *Handler) respondWithTokens(c echo.Context, userID, orgID, email, name s
 	})
 }
 
+// SwitchOrg issues fresh tokens scoped to a different org the user belongs to.
+func (h *Handler) SwitchOrg(c echo.Context) error {
+	userID := c.Get("userID").(string)
+
+	var req struct {
+		OrgID string `json:"org_id"`
+	}
+	if err := c.Bind(&req); err != nil || req.OrgID == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "org_id required")
+	}
+
+	var email, name string
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT u.email, u.name
+		FROM users u
+		JOIN organization_members om ON om.user_id = u.id
+		WHERE u.id = $1 AND om.org_id = $2
+	`, userID, req.OrgID).Scan(&email, &name)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusForbidden, "not a member of this org")
+	}
+
+	return h.respondWithTokens(c, userID, req.OrgID, email, name)
+}
+
 func (h *Handler) setRefreshCookie(c echo.Context, token string) {
 	c.SetCookie(&http.Cookie{
 		Name:     "crucible_refresh",
