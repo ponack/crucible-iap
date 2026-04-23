@@ -49,8 +49,8 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **SSO via OIDC** — Authentik (bundled optional), Okta, GitHub, Keycloak, or any OIDC provider; PKCE always enforced
 - **Local auth** — single operator account for deployments without an IdP
 - **RBAC** — org-level viewer / member / admin roles enforced at the API layer; org invite flow with single-use tokens; **per-stack membership** — add users as `viewer` (read-only) or `approver` (can trigger runs and confirm plans); stacks without explicit members are open to all org users; restricted stacks are hidden from non-members
-- **Service account API tokens** — long-lived `ciap_…` tokens for CI pipelines and automation scripts; hashed at rest, shown once at creation, role-scoped, last-used tracked
-- **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup; per-IP rate limits on all auth endpoints (tight on password login, moderate on token exchange and OAuth callback); service account token brute-force lockout (20 failures / 5 min per IP)
+- **Service account API tokens** — long-lived `ciap_…` tokens for CI pipelines and automation scripts; argon2id-hashed at rest (lazy upgrade from SHA-256 on first use for existing tokens), shown once at creation, role-scoped, last-used tracked
+- **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup; per-IP rate limits on all auth endpoints (tight on password login, moderate on token exchange and OAuth callback); service account token brute-force lockout (20 failures / 5 min per IP); refresh token stored in httpOnly `SameSite=Strict` cookie — inaccessible to JavaScript
 
 ### Observability and operations
 
@@ -443,9 +443,13 @@ cd api && go test -race ./...
 - [x] Notification test buttons — one-click test delivery for org-level Slack, Gotify, and ntfy endpoints directly from Settings → Notifications; confirms credentials are wired correctly without waiting for a run
 - [x] Per-stack RBAC on remote state links — configuring a cross-stack `terraform_remote_state` link now requires at least approver role on the source stack; prevents org members from granting access to state they cannot manage
 - [x] Auth endpoint rate hardening — per-IP rate limits tightened on `/auth/callback` (OAuth code exchange) and `/auth/refresh` (token renewal); service account tokens lock out after 20 failures per 5-minute window per IP
+- [x] argon2id token hashing — service account and stack tokens upgraded from unsalted SHA-256 to argon2id (32 MB / 2 iterations / 1 thread); existing tokens lazily upgraded on first use with no forced rotation; new SA token format embeds UUID for O(1) point-lookup
+- [x] httpOnly session cookies — refresh token moved from localStorage to a server-set `crucible_refresh` httpOnly `SameSite=Strict` cookie; access token kept in JS memory only; page-reload session restored transparently via silent cookie exchange
+- [x] Stack dependency flow diagram — upstream/downstream relationships visualised as an SVG flow diagram on the stack detail page; bezier-curve arrows, indigo-highlighted current stack, clickable dep nodes; zero new dependencies
+- [x] Org context switching after invite acceptance — accepting an org invite now immediately switches the active session to the invited org; users land on that org's stacks without needing to log out and back in
 - [ ] Scheduled runs — trigger plan, apply, or destroy runs on a cron schedule independent of code pushes; extends beyond drift (which is always proposed) to support nightly applies, morning plan checks, and weekend environment teardowns
-- [ ] Stack locking / maintenance mode — per-stack flag that prevents new runs from being queued; operators set it before manual cloud console changes and release it when done; prevents race conditions during incident response
-- [ ] Run annotations — free-text operator note on any run ("deployed for hotfix", "reverting per oncall"); closes the audit gap between who triggered a run and why
+- [x] Stack locking / maintenance mode — per-stack flag that prevents new runs from being queued; operators set it before manual cloud console changes and release it when done; prevents race conditions during incident response; lock reason shown as an amber banner on the stack page
+- [x] Run annotations — free-text operator note on any run ("deployed for hotfix", "reverting per oncall"); closes the audit gap between who triggered a run and why; inline click-to-edit on the run detail page
 - [ ] Generic outgoing webhooks — fire arbitrary HTTP POST on run state changes to PagerDuty, ServiceNow, Jira, or custom tooling; HMAC-signed, configurable per event type, delivery log with retry
 - [ ] SSO group → role mapping — automatically assign org and stack roles from IdP group claims; eliminates manual invite management for large teams on Authentik, Okta, Keycloak, or GitHub
 - [ ] Cost estimation — integrate Infracost (self-hosted server supported) to surface per-run monthly cost delta alongside the plan summary
