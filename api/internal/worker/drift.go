@@ -49,6 +49,7 @@ func runDriftChecks(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 		  AND drift_schedule IS NOT NULL
 		  AND drift_schedule != ''
 		  AND is_disabled = false
+		  AND is_locked = false
 		  AND (
 		    drift_last_run_at IS NULL
 		    OR drift_last_run_at + (drift_schedule::int * interval '1 minute') <= now()

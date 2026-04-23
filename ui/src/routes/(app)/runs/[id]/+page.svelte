@@ -12,6 +12,8 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let acting = $state<string | null>(null); // 'approve' | 'confirm' | 'discard' | 'cancel'
+	let editingAnnotation = $state(false);
+	let annotationDraft = $state('');
 	let policyResults = $state<RunPolicyResult[]>([]);
 
 	let logEl = $state<HTMLElement | undefined>(undefined);
@@ -153,6 +155,17 @@
 		}
 	}
 
+	async function saveAnnotation() {
+		editingAnnotation = false;
+		if (!run || annotationDraft === (run.annotation ?? '')) return;
+		try {
+			await runs.annotate(runID, annotationDraft);
+			run = { ...run, annotation: annotationDraft || undefined };
+		} catch (e) {
+			alert((e as Error).message);
+		}
+	}
+
 	function duration(start?: string, end?: string) {
 		if (!start) return null;
 		const ms = new Date(end ?? new Date()).getTime() - new Date(start).getTime();
@@ -241,6 +254,30 @@
 				<div class="text-xs text-zinc-500">
 					Approved by <span class="text-zinc-300">{run.approved_by_name}</span>
 					{#if run.approved_at}<span> · {fmtDate(run.approved_at)}</span>{/if}
+				</div>
+			{/if}
+			{#if run.annotation || run.my_stack_role !== 'viewer'}
+				<div class="text-xs text-zinc-500 flex items-center gap-1.5">
+					<span>Note:</span>
+					{#if editingAnnotation}
+						<input
+							type="text"
+							class="bg-zinc-900 border border-zinc-700 rounded px-2 py-0.5 text-zinc-200 text-xs focus:outline-none focus:border-zinc-500 w-64"
+							bind:value={annotationDraft}
+							onkeydown={(e) => { if (e.key === 'Enter') saveAnnotation(); if (e.key === 'Escape') { editingAnnotation = false; } }}
+							onblur={saveAnnotation}
+						/>
+					{:else}
+						<span
+							class="text-zinc-300 cursor-pointer hover:text-white"
+							onclick={() => { annotationDraft = run?.annotation ?? ''; editingAnnotation = true; }}
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => { if (e.key === 'Enter') { annotationDraft = run?.annotation ?? ''; editingAnnotation = true; } }}
+						>
+							{run.annotation ?? 'Add note…'}
+						</span>
+					{/if}
 				</div>
 			{/if}
 		</div>

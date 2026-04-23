@@ -72,6 +72,8 @@ type Stack struct {
 	HasStateBackend      bool       `json:"has_state_backend"`
 	StateBackendProvider string     `json:"state_backend_provider,omitempty"`
 	IsDisabled           bool       `json:"is_disabled"`
+	IsLocked             bool       `json:"is_locked"`
+	LockReason           string     `json:"lock_reason,omitempty"`
 	ScheduledDestroyAt   *time.Time `json:"scheduled_destroy_at,omitempty"`
 	IsRestricted         bool       `json:"is_restricted"`          // true = stack has explicit members
 	MyStackRole          string     `json:"my_stack_role"`           // "admin" | "approver" | "viewer"
@@ -136,7 +138,7 @@ func (h *Handler) List(c echo.Context) error {
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
 		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift,
-		       s.is_disabled, s.created_at, s.updated_at,
+		       s.is_disabled, s.is_locked, s.created_at, s.updated_at,
 		       COALESCE(lr.status::text,''), lr.queued_at,
 		       (SELECT COUNT(*) FROM stack_dependencies WHERE downstream_id = s.id),
 		       (SELECT COUNT(*) FROM stack_dependencies WHERE upstream_id = s.id),
@@ -168,7 +170,7 @@ func (h *Handler) List(c echo.Context) error {
 		if err := rows.Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 			&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
-			&s.IsDisabled, &s.CreatedAt, &s.UpdatedAt,
+			&s.IsDisabled, &s.IsLocked, &s.CreatedAt, &s.UpdatedAt,
 			&s.LastRunStatus, &s.LastRunAt,
 			&s.UpstreamCount, &s.DownstreamCount,
 			&s.MyStackRole, &s.IsRestricted,
@@ -262,7 +264,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.vcs_integration_id, s.secret_integration_id,
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
-		       s.is_disabled, s.scheduled_destroy_at, s.created_at, s.updated_at,
+		       s.is_disabled, s.is_locked, COALESCE(s.lock_reason,''), s.scheduled_destroy_at, s.created_at, s.updated_at,
 		       s.module_namespace, s.module_name, s.module_provider,
 		       s.pre_plan_hook, s.post_plan_hook, s.pre_apply_hook, s.post_apply_hook,
 		       `+access.StackRoleSQL+` AS my_stack_role,
@@ -280,7 +282,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.NotifyEmail, &s.NotifyEvents,
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
-		&s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
+		&s.IsDisabled, &s.IsLocked, &s.LockReason, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
 		&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 		&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
 		&s.MyStackRole, &s.IsRestricted)
@@ -306,6 +308,8 @@ type updateStackReq struct {
 	DriftSchedule      *string `json:"drift_schedule"`
 	AutoRemediateDrift *bool   `json:"auto_remediate_drift"`
 	IsDisabled         *bool   `json:"is_disabled"`
+	IsLocked           *bool   `json:"is_locked"`
+	LockReason         *string `json:"lock_reason"`
 	ScheduledDestroyAt *string `json:"scheduled_destroy_at"` // RFC3339 or empty string to clear
 	ModuleNamespace    *string `json:"module_namespace"`
 	ModuleName         *string `json:"module_name"`
@@ -592,6 +596,49 @@ func (h *Handler) SetIntegrations(c echo.Context) error {
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
 		ActorID: userID, Action: "stack.integrations.updated",
 		ResourceID: id, ResourceType: "stack", OrgID: orgID, IPAddress: c.RealIP(),
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
+// Lock prevents new runs from starting on a stack.
+func (h *Handler) Lock(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	_ = c.Bind(&req)
+
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE stacks SET is_locked = true, lock_reason = NULLIF($1,''), updated_at = now()
+		WHERE id = $2 AND org_id = $3
+	`, req.Reason, stackID, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "stack.locked", ResourceID: stackID, ResourceType: "stack", OrgID: orgID, IPAddress: c.RealIP(),
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
+// Unlock allows runs to start again on a stack.
+func (h *Handler) Unlock(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE stacks SET is_locked = false, lock_reason = NULL, updated_at = now()
+		WHERE id = $1 AND org_id = $2
+	`, stackID, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "stack.unlocked", ResourceID: stackID, ResourceType: "stack", OrgID: orgID, IPAddress: c.RealIP(),
 	})
 	return c.NoContent(http.StatusNoContent)
 }

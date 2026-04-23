@@ -134,7 +134,17 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 
 	// Load orgID once — needed for audit events throughout the job lifecycle.
 	var orgID string
-	_ = w.pool.QueryRow(ctx, `SELECT org_id FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID)
+	var isLocked bool
+	var lockReason *string
+	_ = w.pool.QueryRow(ctx, `SELECT org_id, is_locked, lock_reason FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID, &isLocked, &lockReason)
+
+	if isLocked {
+		msg := "stack is locked"
+		if lockReason != nil && *lockReason != "" {
+			msg += ": " + *lockReason
+		}
+		return w.failRun(ctx, orgID, args.RunID, fmt.Errorf("%s", msg))
+	}
 
 	if err := w.setStatus(ctx, orgID, args.RunID, "preparing", nil); err != nil {
 		return err
@@ -490,7 +500,7 @@ func (w *RunWorker) triggerDownstreamStacks(ctx context.Context, orgID string, a
 		SELECT s.id, s.tool, COALESCE(s.runner_image,''), s.repo_url, s.repo_branch, s.project_root, s.auto_apply
 		FROM stack_dependencies d
 		JOIN stacks s ON s.id = d.downstream_id
-		WHERE d.upstream_id = $1 AND s.is_disabled = false AND s.org_id = $2
+		WHERE d.upstream_id = $1 AND s.is_disabled = false AND s.is_locked = false AND s.org_id = $2
 	`, args.StackID, orgID)
 	if err != nil {
 		slog.Error("trigger downstream: query failed", "stack_id", args.StackID, "err", err)

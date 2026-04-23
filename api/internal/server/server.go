@@ -206,6 +206,8 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stacks/:id", stackHandler.Get)
 	api.PATCH("/stacks/:id", stackHandler.Update, member)
 	api.DELETE("/stacks/:id", stackHandler.Delete, admin)
+	api.POST("/stacks/:id/lock", stackHandler.Lock, member)
+	api.POST("/stacks/:id/unlock", stackHandler.Unlock, member)
 
 	// Stack tokens
 	api.POST("/stacks/:id/tokens", stackHandler.CreateToken, member)
@@ -311,6 +313,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/runs/:id/plan", runHandler.DownloadPlan)
 	api.GET("/runs/:id/policy-results", runHandler.PolicyResults)
 	api.DELETE("/runs/:id", runHandler.Delete, admin)
+	api.PATCH("/runs/:id/annotation", runHandler.Annotate, member)
 
 	// Audit log
 	api.GET("/audit", auditHandler.List)
