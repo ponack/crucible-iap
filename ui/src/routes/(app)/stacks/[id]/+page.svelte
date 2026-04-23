@@ -5,6 +5,7 @@
 	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
+	import DepGraph from '$lib/components/DepGraph.svelte';
 
 	const stackID = $derived(page.params.id as string);
 
@@ -1480,58 +1481,52 @@
 			<p class="text-sm text-red-400">{depsError}</p>
 		{/if}
 
-		<div class="space-y-2">
-			<p class="text-xs text-zinc-500 uppercase tracking-wide">Upstream (runs before this stack)</p>
-			{#if upstreamDeps.length > 0}
-				<div class="border border-zinc-800 rounded-xl overflow-hidden">
-					<table class="w-full text-sm">
-						<tbody class="divide-y divide-zinc-800">
-							{#each upstreamDeps as dep (dep.id)}
-								<tr>
-									<td class="px-4 py-2.5">
-										<a href="/stacks/{dep.id}" class="text-zinc-200 hover:text-white transition-colors">{dep.name}</a>
-										<span class="text-zinc-600 text-xs ml-2">{dep.slug}</span>
-									</td>
-									<td class="px-4 py-2.5 text-right">
-										{#if auth.isMemberOrAbove}
-											<button onclick={() => removeUpstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
-										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			{:else}
-				<p class="text-zinc-600 text-sm">No upstream stacks configured.</p>
-			{/if}
-		</div>
+		<!-- Flow diagram -->
+		{#if stack}
+			<div class="bg-zinc-950 border border-zinc-800 rounded-xl p-4">
+				<DepGraph
+					current={{ id: stack.id, name: stack.name, slug: stack.slug }}
+					upstream={upstreamDeps}
+					downstream={downstreamDeps}
+				/>
+			</div>
+		{/if}
+
+		<!-- Management controls -->
+		{#if auth.isMemberOrAbove && (upstreamDeps.length > 0 || downstreamDeps.length > 0)}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<tbody class="divide-y divide-zinc-800">
+						{#each upstreamDeps as dep (dep.id)}
+							<tr class="hover:bg-zinc-800/30 transition-colors">
+								<td class="px-4 py-2.5 text-xs text-zinc-500 w-20">upstream</td>
+								<td class="px-4 py-2.5">
+									<a href="/stacks/{dep.id}" class="text-zinc-300 hover:text-white transition-colors">{dep.name}</a>
+									<span class="text-zinc-600 text-xs ml-2">{dep.slug}</span>
+								</td>
+								<td class="px-4 py-2.5 text-right">
+									<button onclick={() => removeUpstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+								</td>
+							</tr>
+						{/each}
+						{#each downstreamDeps as dep (dep.id)}
+							<tr class="hover:bg-zinc-800/30 transition-colors">
+								<td class="px-4 py-2.5 text-xs text-zinc-500 w-20">downstream</td>
+								<td class="px-4 py-2.5">
+									<a href="/stacks/{dep.id}" class="text-zinc-300 hover:text-white transition-colors">{dep.name}</a>
+									<span class="text-zinc-600 text-xs ml-2">{dep.slug}</span>
+								</td>
+								<td class="px-4 py-2.5 text-right">
+									<button onclick={() => removeDownstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
 
 		<div class="space-y-2">
-			<p class="text-xs text-zinc-500 uppercase tracking-wide">Downstream (triggered after this stack applies)</p>
-			{#if downstreamDeps.length > 0}
-				<div class="border border-zinc-800 rounded-xl overflow-hidden">
-					<table class="w-full text-sm">
-						<tbody class="divide-y divide-zinc-800">
-							{#each downstreamDeps as dep (dep.id)}
-								<tr>
-									<td class="px-4 py-2.5">
-										<a href="/stacks/{dep.id}" class="text-zinc-200 hover:text-white transition-colors">{dep.name}</a>
-										<span class="text-zinc-600 text-xs ml-2">{dep.slug}</span>
-									</td>
-									<td class="px-4 py-2.5 text-right">
-										{#if auth.isMemberOrAbove}
-											<button onclick={() => removeDownstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
-										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				</div>
-			{:else}
-				<p class="text-zinc-600 text-sm">No downstream stacks configured.</p>
-			{/if}
 
 			{#if auth.isMemberOrAbove}
 				{@const eligible = allStacksList.filter(s => s.id !== stackID && !downstreamDeps.find(d => d.id === s.id) && !upstreamDeps.find(u => u.id === s.id))}
