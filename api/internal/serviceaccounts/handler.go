@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Package serviceaccounts manages org-level API tokens for non-human callers
 // (CI pipelines, automation scripts). Tokens use the "ciap_" prefix and are
-// stored as SHA-256 hashes — the raw value is returned only at creation time.
+// stored as argon2id hashes — the raw value is returned only at creation time.
 package serviceaccounts
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/tokenauth"
 )
 
 // TokenMeta is the API representation — the raw token is never returned after creation.
@@ -80,15 +81,15 @@ func (h *Handler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "role must be admin, member, or viewer")
 	}
 
-	rawToken, hash, err := generateToken()
+	secret, hash, err := generateSecret()
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to generate token")
 	}
 
 	var t TokenMeta
 	err = h.pool.QueryRow(c.Request().Context(), `
-		INSERT INTO service_account_tokens (org_id, name, role, token_hash, created_by)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO service_account_tokens (org_id, name, role, token_hash, hash_version, created_by)
+		VALUES ($1, $2, $3, $4, 'argon2id', $5)
 		RETURNING id, name, role, created_at, last_used_at
 	`, orgID, req.Name, req.Role, hash, userID).Scan(
 		&t.ID, &t.Name, &t.Role, &t.CreatedAt, &t.LastUsedAt,
@@ -97,7 +98,9 @@ func (h *Handler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, "token name already exists")
 	}
 
-	t.Token = rawToken
+	// Embed the token's UUID (dashes stripped) in the raw value so the auth
+	// path can look up by ID instead of scanning by hash.
+	t.Token = "ciap_" + strings.ReplaceAll(t.ID, "-", "") + "_" + secret
 
 	ctx, _ := json.Marshal(map[string]string{"name": t.Name, "role": t.Role})
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
@@ -140,15 +143,15 @@ func (h *Handler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// generateToken returns (rawToken, sha256Hash, error).
-// rawToken is the full "ciap_<base64url>" string returned to the user.
-// sha256Hash is what gets stored in the database.
-func generateToken() (string, []byte, error) {
+// generateSecret returns (secret, argon2idHash).
+// secret is a 43-char base64url string (32 bytes of entropy).
+// hash is the argon2id hash suitable for storage in token_hash.
+func generateSecret() (secret, hash string, err error) {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", nil, err
+	if _, err = rand.Read(b); err != nil {
+		return
 	}
-	raw := "ciap_" + base64.RawURLEncoding.EncodeToString(b)
-	h := sha256.Sum256([]byte(raw))
-	return raw, h[:], nil
+	secret = base64.RawURLEncoding.EncodeToString(b)
+	hash, err = tokenauth.Hash(secret)
+	return
 }
