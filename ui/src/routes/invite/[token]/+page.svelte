@@ -2,8 +2,9 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/stores/auth.svelte';
+	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
 	import { org } from '$lib/api/client';
+	import { decodeJWTPayload } from '$lib/jwt';
 
 	let token = $derived($page.params.token!);
 
@@ -40,8 +41,18 @@
 		accepting = true;
 		error = null;
 		try {
-			await org.invites.accept(token);
-			goto('/');
+			const { org_id, role } = await org.invites.accept(token);
+			// Switch the active session to the newly joined org.
+			const { access_token } = await org.switchOrg(org_id);
+			const payload = decodeJWTPayload(access_token);
+			auth.setTokens(access_token, {
+				id: payload.uid,
+				email: payload.email,
+				name: payload.name,
+				is_admin: false
+			});
+			auth.setOrgRole(role as OrgRole);
+			goto('/stacks', { replaceState: true });
 		} catch (err) {
 			error = (err as Error).message;
 			accepting = false;

@@ -783,6 +783,11 @@ export interface OrgInvite {
 
 export const org = {
 	me: () => request<{ role: string }>('/org/me'),
+	switchOrg: (orgID: string) =>
+		request<{ access_token: string }>('/auth/switch-org', {
+			method: 'POST',
+			body: JSON.stringify({ org_id: orgID })
+		}),
 	members: {
 		list: () => request<OrgMember[]>('/org/members'),
 		update: (userID: string, role: string) =>

@@ -188,6 +188,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/org/invites", orgHandler.CreateInvite, admin)
 	api.DELETE("/org/invites/:inviteID", orgHandler.RevokeInvite, admin)
 	api.POST("/invites/:token/accept", orgHandler.AcceptInvite)
+	api.POST("/auth/switch-org", authHandler.SwitchOrg)
 
 	// Policies
 	api.POST("/policies/validate", policyHandler.Validate)
