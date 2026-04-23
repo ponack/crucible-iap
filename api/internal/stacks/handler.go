@@ -3,7 +3,6 @@ package stacks
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -17,6 +16,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/pagination"
+	"github.com/ponack/crucible-iap/internal/tokenauth"
 	vaultpkg "github.com/ponack/crucible-iap/internal/vault"
 )
 
@@ -466,8 +466,8 @@ func (h *Handler) CreateToken(c echo.Context) error {
 
 	var t Token
 	if err := h.pool.QueryRow(c.Request().Context(), `
-		INSERT INTO stack_tokens (stack_id, name, token_hash, created_by)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO stack_tokens (stack_id, name, token_hash, hash_version, created_by)
+		VALUES ($1, $2, $3, 'argon2id', $4)
 		RETURNING id, stack_id, name, created_at
 	`, stackID, req.Name, hash, userID).Scan(&t.ID, &t.StackID, &t.Name, &t.CreatedAt); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -533,15 +533,14 @@ func (h *Handler) RevokeToken(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-// generateToken returns a URL-safe random secret and its SHA-256 hex hash.
+// generateToken returns a URL-safe random secret and its argon2id hash.
 func generateToken() (raw, hash string, err error) {
 	b := make([]byte, 32)
 	if _, err = rand.Read(b); err != nil {
 		return
 	}
 	raw = base64.RawURLEncoding.EncodeToString(b)
-	h := sha256.Sum256([]byte(raw))
-	hash = hex.EncodeToString(h[:])
+	hash, err = tokenauth.Hash(raw)
 	return
 }
 

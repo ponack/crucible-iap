@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/tokenauth"
 	"golang.org/x/oauth2"
 )
 
@@ -341,6 +343,13 @@ var serviceAccountAuth func(token string, next echo.HandlerFunc, c echo.Context)
 
 // SetServiceAccountLookup wires the DB lookup function for ciap_ tokens.
 // Called once during server startup with the pgxpool.
+//
+// Token formats:
+//   - New (argon2id): "ciap_<32hexUUID>_<43b64secret>" (81 chars total)
+//     Lookup by embedded UUID; verify with argon2id.
+//   - Legacy (sha256): "ciap_<43b64>" (48 chars total)
+//     Lookup by SHA-256 hash for backward compat; no in-place upgrade
+//     (caller must rotate to get a new-format token).
 func SetServiceAccountLookup(pool *pgxpool.Pool) {
 	serviceAccountAuth = func(raw string, next echo.HandlerFunc, c echo.Context) error {
 		ip := c.RealIP()
@@ -348,25 +357,67 @@ func SetServiceAccountLookup(pool *pgxpool.Pool) {
 			return echo.NewHTTPError(http.StatusTooManyRequests, "too many failed attempts")
 		}
 
-		h := sha256.Sum256([]byte(raw))
-
 		var id, orgID, role string
-		err := pool.QueryRow(c.Request().Context(), `
-			UPDATE service_account_tokens
-			SET last_used_at = now()
-			WHERE token_hash = $1
-			RETURNING id, org_id, role
-		`, h[:]).Scan(&id, &orgID, &role)
+		var err error
+		if len(raw) == 81 {
+			id, orgID, role, err = lookupNewSAToken(c.Request().Context(), pool, raw)
+		} else {
+			id, orgID, role, err = lookupLegacySAToken(c.Request().Context(), pool, raw)
+		}
 		if err != nil {
 			return echo.NewHTTPError(http.StatusUnauthorized, "invalid token")
 		}
 
-		saCheckAndRecord(ip, false) // clear failure counter on success
+		saCheckAndRecord(ip, false)
 		c.Set("userID", "sa:"+id)
 		c.Set("orgID", orgID)
 		c.Set("saRole", role)
 		return next(c)
 	}
+}
+
+// lookupNewSAToken handles "ciap_<32hexUUID>_<43b64secret>" tokens (argon2id).
+func lookupNewSAToken(ctx context.Context, pool *pgxpool.Pool, raw string) (id, orgID, role string, err error) {
+	body := raw[5:] // strip "ciap_"
+	if len(body) != 76 || body[32] != '_' {
+		return "", "", "", errors.New("malformed token")
+	}
+	tokenID := hexToUUID(body[:32])
+	secret := body[33:]
+
+	var storedHash, hashVersion string
+	if err = pool.QueryRow(ctx, `
+		SELECT id, org_id, role, token_hash, hash_version
+		FROM service_account_tokens WHERE id = $1
+	`, tokenID).Scan(&id, &orgID, &role, &storedHash, &hashVersion); err != nil {
+		return "", "", "", err
+	}
+
+	ok, verr := tokenauth.Verify(secret, storedHash, hashVersion)
+	if verr != nil || !ok {
+		return "", "", "", errors.New("invalid credentials")
+	}
+
+	_, _ = pool.Exec(ctx, `UPDATE service_account_tokens SET last_used_at = now() WHERE id = $1`, id)
+	return
+}
+
+// lookupLegacySAToken handles old "ciap_<43b64>" tokens (unsalted SHA-256).
+// These are kept valid until the operator rotates them.
+func lookupLegacySAToken(ctx context.Context, pool *pgxpool.Pool, raw string) (id, orgID, role string, err error) {
+	h := sha256.Sum256([]byte(raw))
+	err = pool.QueryRow(ctx, `
+		UPDATE service_account_tokens
+		SET last_used_at = now()
+		WHERE token_hash = $1
+		RETURNING id, org_id, role
+	`, hex.EncodeToString(h[:])).Scan(&id, &orgID, &role)
+	return
+}
+
+// hexToUUID converts a 32-char lowercase hex string to UUID format (8-4-4-4-12).
+func hexToUUID(h string) string {
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
 // BasicAuthMiddleware validates stack token credentials for the Terraform state backend.
@@ -396,23 +447,33 @@ func BasicAuthMiddleware(pool *pgxpool.Pool, secretKey string) echo.MiddlewareFu
 				}
 			}
 
-			// Fall back to hashed stack token lookup.
-			_ = username // tokenID passed as username for human tokens
-			h := sha256.Sum256([]byte(password))
-			hash := hex.EncodeToString(h[:])
-
-			var storedStackID string
+			// Fall back to stack token lookup: username = tokenID, password = raw secret.
+			var storedHash, hashVersion, storedStackID string
 			err := pool.QueryRow(c.Request().Context(), `
-				SELECT stack_id FROM stack_tokens
-				WHERE id = $1 AND token_hash = $2
-			`, username, hash).Scan(&storedStackID)
+				SELECT token_hash, hash_version, stack_id FROM stack_tokens WHERE id = $1
+			`, username).Scan(&storedHash, &hashVersion, &storedStackID)
 			if err != nil || storedStackID != stackID {
 				c.Response().Header().Set("WWW-Authenticate", `Basic realm="crucible"`)
 				return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
 			}
 
-			_, _ = pool.Exec(c.Request().Context(),
-				`UPDATE stack_tokens SET last_used = now() WHERE id = $1`, username)
+			verified, _ := tokenauth.Verify(password, storedHash, hashVersion)
+			if !verified {
+				c.Response().Header().Set("WWW-Authenticate", `Basic realm="crucible"`)
+				return echo.NewHTTPError(http.StatusUnauthorized, "invalid credentials")
+			}
+
+			// Lazy upgrade: re-hash with argon2id on first successful use of a legacy token.
+			if hashVersion == tokenauth.VersionSHA256 {
+				if newHash, herr := tokenauth.Hash(password); herr == nil {
+					_, _ = pool.Exec(c.Request().Context(),
+						`UPDATE stack_tokens SET token_hash = $1, hash_version = 'argon2id', last_used = now() WHERE id = $2`,
+						newHash, username)
+				}
+			} else {
+				_, _ = pool.Exec(c.Request().Context(),
+					`UPDATE stack_tokens SET last_used = now() WHERE id = $1`, username)
+			}
 
 			return next(c)
 		}

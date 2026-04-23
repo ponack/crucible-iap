@@ -118,8 +118,8 @@ func (h *Handler) AddRemoteStateSource(c echo.Context) error {
 
 	var tokenID string
 	if err := h.pool.QueryRow(c.Request().Context(), `
-		INSERT INTO stack_tokens (stack_id, name, token_hash, created_by)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO stack_tokens (stack_id, name, token_hash, hash_version, created_by)
+		VALUES ($1, $2, $3, 'argon2id', $4)
 		RETURNING id
 	`, req.SourceStackID, "remote-state-for-"+stackID, hash, userID).Scan(&tokenID); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
