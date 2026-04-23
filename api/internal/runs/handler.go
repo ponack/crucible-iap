@@ -74,6 +74,7 @@ type Run struct {
 	StartedAt        *time.Time `json:"started_at,omitempty"`
 	FinishedAt       *time.Time `json:"finished_at,omitempty"`
 	VarOverrides     []string   `json:"var_overrides,omitempty"`
+	Annotation       *string    `json:"annotation,omitempty"`
 	MyStackRole      string     `json:"my_stack_role,omitempty"` // "admin"|"approver"|"viewer" — caller's effective level
 }
 
@@ -240,19 +241,28 @@ func (h *Handler) Create(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	// Fetch stack details needed to build the job spec
+	// Fetch stack details needed to build the job spec; reject if locked.
 	var stack struct {
 		Tool        string
 		RunnerImage string
 		RepoURL     string
 		RepoBranch  string
 		ProjectRoot string
+		IsLocked    bool
+		LockReason  *string
 	}
 	if err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
+		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, is_locked, lock_reason
 		FROM stacks WHERE id = $1
-	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot); err != nil {
+	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot, &stack.IsLocked, &stack.LockReason); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+	if stack.IsLocked {
+		msg := "stack is locked"
+		if stack.LockReason != nil && *stack.LockReason != "" {
+			msg += ": " + *stack.LockReason
+		}
+		return echo.NewHTTPError(http.StatusConflict, msg)
 	}
 
 	var r Run
@@ -309,7 +319,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE(ab.name,''), COALESCE(ab.email,''),
 		       r.approved_at,
 		       r.queued_at, r.started_at, r.finished_at,
-		       r.var_overrides,
+		       r.var_overrides, r.annotation,
 		       `+access.StackRoleSQL+` AS my_stack_role
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
@@ -327,7 +337,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&r.ApprovedByName, &r.ApprovedByEmail,
 		&r.ApprovedAt,
 		&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
-		&r.VarOverrides, &r.MyStackRole)
+		&r.VarOverrides, &r.Annotation, &r.MyStackRole)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found")
 	}
@@ -824,4 +834,34 @@ func (h *Handler) TriggerDrift(c echo.Context) error {
 		ActorID: userID, Action: "run.drift.triggered", ResourceID: r.ID, ResourceType: "run",
 	})
 	return c.JSON(http.StatusCreated, r)
+}
+
+// Annotate sets or clears the operator note on a run.
+func (h *Handler) Annotate(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
+		role, err := access.StackRoleForRun(c.Request().Context(), h.pool, id, userID, orgID)
+		if err != nil || role == "" || role == "viewer" {
+			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+		}
+	}
+
+	var req struct {
+		Annotation string `json:"annotation"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE runs SET annotation = NULLIF($1,'')
+		WHERE id = $2 AND EXISTS (SELECT 1 FROM stacks WHERE id = stack_id AND org_id = $3)
+	`, req.Annotation, id, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+	return c.NoContent(http.StatusNoContent)
 }

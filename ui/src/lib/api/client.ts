@@ -102,6 +102,8 @@ export interface Stack {
 	has_state_backend: boolean;
 	state_backend_provider?: string;
 	is_disabled: boolean;
+	is_locked: boolean;
+	lock_reason?: string;
 	scheduled_destroy_at?: string;
 	is_restricted: boolean;    // true = stack has explicit members configured
 	my_stack_role: 'admin' | 'approver' | 'viewer';
@@ -303,6 +305,14 @@ export const stacks = {
 			request<null>(`/stacks/${stackID}/state-backend`, { method: 'DELETE' })
 	},
 
+	lock: (stackID: string, reason?: string) =>
+		request<null>(`/stacks/${stackID}/lock`, {
+			method: 'POST',
+			body: JSON.stringify({ reason: reason ?? '' })
+		}),
+	unlock: (stackID: string) =>
+		request<null>(`/stacks/${stackID}/unlock`, { method: 'POST' }),
+
 	webhook: {
 		rotateSecret: (stackID: string) =>
 			request<{ webhook_secret: string }>(`/stacks/${stackID}/webhook/rotate`, { method: 'POST' }),
@@ -426,6 +436,7 @@ export interface Run {
 	started_at?: string;
 	finished_at?: string;
 	var_overrides?: string[]; // KEY=value pairs; only present on Get, not list responses
+	annotation?: string;
 	my_stack_role?: 'admin' | 'approver' | 'viewer'; // caller's effective level; only on Get
 }
 
@@ -473,6 +484,11 @@ export const runs = {
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
 	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' }),
 	remove: (id: string) => request<null>(`/runs/${id}`, { method: 'DELETE' }),
+	annotate: (id: string, annotation: string) =>
+		request<null>(`/runs/${id}/annotation`, {
+			method: 'PATCH',
+			body: JSON.stringify({ annotation })
+		}),
 	policyResults: (id: string) => request<RunPolicyResult[]>(`/runs/${id}/policy-results`),
 	downloadPlan: async (id: string): Promise<Blob> => {
 		const headers: Record<string, string> = {};

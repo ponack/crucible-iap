@@ -111,6 +111,9 @@
 	// Disable/enable
 	let togglingDisabled = $state(false);
 
+	// Lock/unlock (maintenance mode)
+	let togglingLocked = $state(false);
+
 	// Remote state sources
 	let remoteSources = $state<RemoteStateSource[]>([]);
 	let addingRemoteSource = $state('');
@@ -649,6 +652,34 @@
 		}
 	}
 
+	async function toggleLock() {
+		if (!stack) return;
+		if (stack.is_locked) {
+			if (!confirm('Unlock this stack?')) return;
+			togglingLocked = true;
+			try {
+				await stacks.unlock(stackID);
+				stack = await stacks.get(stackID);
+			} catch (e) {
+				alert((e as Error).message);
+			} finally {
+				togglingLocked = false;
+			}
+		} else {
+			const reason = prompt('Lock reason (optional):') ?? null;
+			if (reason === null) return;
+			togglingLocked = true;
+			try {
+				await stacks.lock(stackID, reason);
+				stack = await stacks.get(stackID);
+			} catch (e) {
+				alert((e as Error).message);
+			} finally {
+				togglingLocked = false;
+			}
+		}
+	}
+
 	async function addRemoteSource() {
 		if (!addingRemoteSource) return;
 		addingRemoteSourceError = null;
@@ -848,6 +879,17 @@
 		</div>
 	{/if}
 
+	<!-- Locked banner -->
+	{#if stack.is_locked}
+		<div class="bg-amber-950 border border-amber-900 rounded-xl px-5 py-3">
+			<p class="text-amber-300 text-sm font-semibold">This stack is locked.</p>
+			{#if stack.lock_reason}
+				<p class="text-amber-400 text-xs mt-0.5">{stack.lock_reason}</p>
+			{/if}
+			<p class="text-amber-600 text-xs mt-0.5">New runs cannot be triggered until the stack is unlocked.</p>
+		</div>
+	{/if}
+
 	<!-- Header -->
 	<div class="flex items-start justify-between">
 		<div>
@@ -905,6 +947,13 @@
 				<button onclick={toggleDisabled} disabled={togglingDisabled}
 					class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 					{togglingDisabled ? '…' : stack.is_disabled ? 'Enable' : 'Disable'}
+				</button>
+				<button onclick={toggleLock} disabled={togglingLocked}
+					class="border text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50
+						{stack.is_locked
+							? 'border-amber-700 hover:border-amber-500 text-amber-400'
+							: 'border-zinc-700 hover:border-zinc-500 text-zinc-400'}">
+					{togglingLocked ? '…' : stack.is_locked ? 'Unlock' : 'Lock'}
 				</button>
 			{/if}
 
