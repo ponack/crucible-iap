@@ -209,6 +209,18 @@ func (h *Handler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
 }
 
+// lockedError returns a 409 Conflict if isLocked is true, nil otherwise.
+func lockedError(isLocked bool, reason *string) error {
+	if !isLocked {
+		return nil
+	}
+	msg := "stack is locked"
+	if reason != nil && *reason != "" {
+		msg += ": " + *reason
+	}
+	return echo.NewHTTPError(http.StatusConflict, msg)
+}
+
 // Create enqueues a new manual run.
 func (h *Handler) Create(c echo.Context) error {
 	stackID := c.Param("stackID")
@@ -257,12 +269,8 @@ func (h *Handler) Create(c echo.Context) error {
 	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot, &stack.IsLocked, &stack.LockReason); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
-	if stack.IsLocked {
-		msg := "stack is locked"
-		if stack.LockReason != nil && *stack.LockReason != "" {
-			msg += ": " + *stack.LockReason
-		}
-		return echo.NewHTTPError(http.StatusConflict, msg)
+	if err := lockedError(stack.IsLocked, stack.LockReason); err != nil {
+		return err
 	}
 
 	var r Run
