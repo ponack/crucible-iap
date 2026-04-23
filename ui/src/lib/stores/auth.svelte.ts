@@ -1,5 +1,5 @@
-// Auth store — manages access/refresh tokens and current user state.
-// Persists to localStorage so sessions survive page refreshes.
+// Auth store — manages access token (memory only) and user/orgRole (localStorage).
+// The refresh token lives in an httpOnly cookie managed by the server.
 
 export interface User {
 	id: string;
@@ -14,7 +14,6 @@ export type OrgRole = 'admin' | 'member' | 'viewer';
 interface AuthState {
 	user: User | null;
 	accessToken: string | null;
-	refreshToken: string | null;
 	orgRole: OrgRole | null;
 	loading: boolean;
 }
@@ -23,13 +22,17 @@ const STORAGE_KEY = 'crucible_auth';
 
 function loadStored(): Omit<AuthState, 'loading'> {
 	if (typeof localStorage === 'undefined') {
-		return { user: null, accessToken: null, refreshToken: null, orgRole: null };
+		return { user: null, accessToken: null, orgRole: null };
 	}
 	try {
 		const raw = localStorage.getItem(STORAGE_KEY);
-		if (raw) return JSON.parse(raw);
+		if (raw) {
+			const parsed = JSON.parse(raw);
+			// accessToken intentionally not loaded — silently refreshed via httpOnly cookie on mount.
+			return { user: parsed.user ?? null, accessToken: null, orgRole: parsed.orgRole ?? null };
+		}
 	} catch {}
-	return { user: null, accessToken: null, refreshToken: null, orgRole: null };
+	return { user: null, accessToken: null, orgRole: null };
 }
 
 function createAuthStore() {
@@ -38,14 +41,10 @@ function createAuthStore() {
 
 	function persist() {
 		if (typeof localStorage === 'undefined') return;
+		// accessToken excluded — memory only, prevents XSS theft.
 		localStorage.setItem(
 			STORAGE_KEY,
-			JSON.stringify({
-				user: state.user,
-				accessToken: state.accessToken,
-				refreshToken: state.refreshToken,
-				orgRole: state.orgRole
-			})
+			JSON.stringify({ user: state.user, orgRole: state.orgRole })
 		);
 	}
 
@@ -55,9 +54,6 @@ function createAuthStore() {
 		},
 		get accessToken() {
 			return state.accessToken;
-		},
-		get refreshToken() {
-			return state.refreshToken;
 		},
 		get orgRole() {
 			return state.orgRole;
@@ -75,9 +71,8 @@ function createAuthStore() {
 			return state.orgRole === 'admin' || state.orgRole === 'member';
 		},
 
-		setTokens(accessToken: string, refreshToken: string | null, user: User) {
+		setTokens(accessToken: string, user: User) {
 			state.accessToken = accessToken;
-			state.refreshToken = refreshToken;
 			state.user = user;
 			state.loading = false;
 			persist();
@@ -85,7 +80,6 @@ function createAuthStore() {
 
 		setAccessToken(token: string) {
 			state.accessToken = token;
-			persist();
 		},
 
 		setOrgRole(role: OrgRole) {
@@ -95,7 +89,6 @@ function createAuthStore() {
 
 		clear() {
 			state.accessToken = null;
-			state.refreshToken = null;
 			state.user = null;
 			state.orgRole = null;
 			state.loading = false;

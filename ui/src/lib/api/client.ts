@@ -1,5 +1,6 @@
 // Typed API client for the Crucible backend.
 import { auth } from '$lib/stores/auth.svelte';
+import { decodeJWTPayload } from '$lib/jwt';
 
 const BASE = '/api/v1';
 
@@ -16,7 +17,7 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 	const res = await fetch(BASE + path, { ...init, headers });
 
 	// Attempt silent token refresh on 401, once.
-	if (res.status === 401 && retry && auth.refreshToken) {
+	if (res.status === 401 && retry) {
 		const refreshed = await tryRefresh();
 		if (refreshed) return request<T>(path, init, false);
 		auth.clear();
@@ -39,16 +40,24 @@ async function request<T>(path: string, init: RequestInit = {}, retry = true): P
 	return res.json() as Promise<T>;
 }
 
-async function tryRefresh(): Promise<boolean> {
+// tryRefresh silently exchanges the httpOnly refresh cookie for a new access token.
+// Exported so the layout can call it on startup to restore the session after a page reload.
+export async function tryRefresh(): Promise<boolean> {
 	try {
-		const res = await fetch('/auth/refresh', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ refresh_token: auth.refreshToken })
-		});
+		const res = await fetch('/auth/refresh', { method: 'POST' });
 		if (!res.ok) return false;
 		const { access_token } = await res.json();
-		auth.setAccessToken(access_token);
+		try {
+			const payload = decodeJWTPayload(access_token);
+			auth.setTokens(access_token, {
+				id: payload.uid,
+				email: payload.email,
+				name: payload.name,
+				is_admin: false
+			});
+		} catch {
+			auth.setAccessToken(access_token);
+		}
 		return true;
 	} catch {
 		return false;
@@ -865,7 +874,7 @@ async function requestForm<T>(path: string, body: FormData, retry = true): Promi
 	const headers: Record<string, string> = {};
 	if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
 	const res = await fetch('/api/v1' + path, { method: 'POST', headers, body });
-	if (res.status === 401 && retry && auth.refreshToken) {
+	if (res.status === 401 && retry) {
 		const refreshed = await tryRefresh();
 		if (refreshed) return requestForm<T>(path, body, false);
 		auth.clear();

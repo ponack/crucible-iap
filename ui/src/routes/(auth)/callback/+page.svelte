@@ -9,7 +9,6 @@
 	onMount(() => {
 		const params = new URLSearchParams(window.location.hash.slice(1));
 		const accessToken = params.get('access_token');
-		const refreshToken = params.get('refresh_token');
 
 		if (!accessToken) {
 			error = 'No access token received. Please try signing in again.';
@@ -18,7 +17,7 @@
 
 		try {
 			const payload = decodeJWTPayload(accessToken);
-			auth.setTokens(accessToken, refreshToken, {
+			auth.setTokens(accessToken, {
 				id: payload.uid,
 				email: payload.email,
 				name: payload.name,

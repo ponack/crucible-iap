@@ -212,27 +212,27 @@ func (h *Handler) Callback(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue refresh token")
 	}
 
-	// Redirect the browser to the UI callback page with tokens.
+	h.setRefreshCookie(c, refreshToken)
+
+	// Redirect the browser to the UI callback page with access token only.
+	// The refresh token is delivered via httpOnly cookie set above.
 	uiBase := h.cfg.UIBaseURL
 	if uiBase == "" {
 		uiBase = h.cfg.BaseURL
 	}
-	dest := fmt.Sprintf("%s/callback#access_token=%s&refresh_token=%s",
-		uiBase, accessToken, refreshToken)
+	dest := fmt.Sprintf("%s/callback#access_token=%s", uiBase, accessToken)
 	return c.Redirect(http.StatusTemporaryRedirect, dest)
 }
 
-// Refresh issues a new access token given a valid refresh token.
+// Refresh issues a new access token given a valid crucible_refresh httpOnly cookie.
 func (h *Handler) Refresh(c echo.Context) error {
-	var req struct {
-		RefreshToken string `json:"refresh_token"`
-	}
-	if err := c.Bind(&req); err != nil || req.RefreshToken == "" {
-		return echo.NewHTTPError(http.StatusBadRequest, "refresh_token required")
+	cookie, err := c.Cookie("crucible_refresh")
+	if err != nil || cookie.Value == "" {
+		return echo.NewHTTPError(http.StatusUnauthorized, "refresh token required")
 	}
 
 	rc := &jwt.RegisteredClaims{}
-	_, err := jwt.ParseWithClaims(req.RefreshToken, rc, func(t *jwt.Token) (any, error) {
+	_, err = jwt.ParseWithClaims(cookie.Value, rc, func(t *jwt.Token) (any, error) {
 		return []byte(h.cfg.SecretKey), nil
 	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithAudience("refresh"), jwt.WithExpirationRequired())
 	if err != nil {
@@ -265,7 +265,7 @@ func (h *Handler) Refresh(c echo.Context) error {
 }
 
 func (h *Handler) Logout(c echo.Context) error {
-	// Stateless JWTs — client drops tokens. Refresh tokens expire naturally.
+	h.clearRefreshCookie(c)
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -515,10 +515,34 @@ func (h *Handler) respondWithTokens(c echo.Context, userID, orgID, email, name s
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue refresh token")
 	}
+	h.setRefreshCookie(c, refreshToken)
 	return c.JSON(http.StatusOK, map[string]string{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
-		"token_type":    "Bearer",
+		"access_token": accessToken,
+		"token_type":   "Bearer",
+	})
+}
+
+func (h *Handler) setRefreshCookie(c echo.Context, token string) {
+	c.SetCookie(&http.Cookie{
+		Name:     "crucible_refresh",
+		Value:    token,
+		Path:     "/auth",
+		MaxAge:   7 * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   !h.cfg.IsDev(),
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func (h *Handler) clearRefreshCookie(c echo.Context) {
+	c.SetCookie(&http.Cookie{
+		Name:     "crucible_refresh",
+		Value:    "",
+		Path:     "/auth",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   !h.cfg.IsDev(),
+		SameSite: http.SameSiteStrictMode,
 	})
 }
 
