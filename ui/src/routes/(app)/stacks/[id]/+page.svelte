@@ -25,6 +25,7 @@
 		name: '', description: '', repo_url: '', repo_branch: '', project_root: '',
 		auto_apply: false, drift_detection: false, drift_schedule: '', auto_remediate_drift: false,
 		scheduled_destroy_at: '',
+		plan_schedule: '', apply_schedule: '', destroy_schedule: '',
 		pre_plan_hook: '', post_plan_hook: '', pre_apply_hook: '', post_apply_hook: ''
 	});
 
@@ -292,6 +293,9 @@
 			scheduled_destroy_at: stack.scheduled_destroy_at
 				? stack.scheduled_destroy_at.slice(0, 16)
 				: '',
+			plan_schedule: stack.plan_schedule ?? '',
+			apply_schedule: stack.apply_schedule ?? '',
+			destroy_schedule: stack.destroy_schedule ?? '',
 			pre_plan_hook: stack.pre_plan_hook ?? '',
 			post_plan_hook: stack.post_plan_hook ?? '',
 			pre_apply_hook: stack.pre_apply_hook ?? '',
@@ -1135,6 +1139,36 @@
 				<p class="text-xs text-zinc-600">If set, a destroy run will be triggered automatically at this time.</p>
 			</div>
 			<div class="space-y-3">
+				<p class="field-label">Cron schedules <span class="font-normal text-zinc-500">(5-field cron — leave blank to disable)</span></p>
+				<p class="text-xs text-zinc-600">Examples: <span class="font-mono">0 2 * * *</span> = 2 am daily &nbsp;·&nbsp; <span class="font-mono">0 6 * * 1</span> = 6 am every Monday &nbsp;·&nbsp; <span class="font-mono">0 */6 * * *</span> = every 6 hours</p>
+				<div class="grid grid-cols-3 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label font-normal text-zinc-400" for="edit-plan-sched">Plan schedule</label>
+						<input id="edit-plan-sched" class="field-input font-mono text-sm"
+							placeholder="0 2 * * *" bind:value={form.plan_schedule} />
+						{#if stack.plan_next_run_at && form.plan_schedule === (stack.plan_schedule ?? '')}
+							<p class="text-xs text-zinc-600">Next: {new Date(stack.plan_next_run_at).toLocaleString()}</p>
+						{/if}
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label font-normal text-zinc-400" for="edit-apply-sched">Apply schedule</label>
+						<input id="edit-apply-sched" class="field-input font-mono text-sm"
+							placeholder="0 6 * * 1" bind:value={form.apply_schedule} />
+						{#if stack.apply_next_run_at && form.apply_schedule === (stack.apply_schedule ?? '')}
+							<p class="text-xs text-zinc-600">Next: {new Date(stack.apply_next_run_at).toLocaleString()}</p>
+						{/if}
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label font-normal text-zinc-400" for="edit-destroy-sched">Destroy schedule</label>
+						<input id="edit-destroy-sched" class="field-input font-mono text-sm"
+							placeholder="0 22 * * 5" bind:value={form.destroy_schedule} />
+						{#if stack.destroy_next_run_at && form.destroy_schedule === (stack.destroy_schedule ?? '')}
+							<p class="text-xs text-zinc-600">Next: {new Date(stack.destroy_next_run_at).toLocaleString()}</p>
+						{/if}
+					</div>
+				</div>
+			</div>
+			<div class="space-y-3">
 				<p class="field-label">Lifecycle hooks <span class="font-normal text-zinc-500">(bash scripts — leave blank to skip)</span></p>
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-1.5">
@@ -1181,6 +1215,9 @@
 			['Drift interval', stack.drift_detection ? driftScheduleLabel(stack.drift_schedule) : '—'],
 			['Auto-remediate drift', stack.drift_detection ? (stack.auto_remediate_drift ? 'Yes' : 'No') : '—'],
 			['Scheduled destroy', stack.scheduled_destroy_at ? fmtDate(stack.scheduled_destroy_at) + ' UTC' : '—'],
+			['Plan schedule', stack.plan_schedule || '—'],
+			['Apply schedule', stack.apply_schedule || '—'],
+			['Destroy schedule', stack.destroy_schedule || '—'],
 			['Created', fmtDate(stack.created_at)]
 		] as [label, value]}
 			<div class="flex px-4 py-3">
