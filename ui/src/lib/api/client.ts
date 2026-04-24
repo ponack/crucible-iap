@@ -781,8 +781,16 @@ export interface OrgInvite {
 	token?: string; // only present on creation
 }
 
+export interface OrgSummary {
+	id: string;
+	name: string;
+	slug: string;
+	role: string;
+}
+
 export const org = {
 	me: () => request<{ role: string }>('/org/me'),
+	list: () => request<OrgSummary[]>('/orgs'),
 	switchOrg: (orgID: string) =>
 		request<{ access_token: string }>('/auth/switch-org', {
 			method: 'POST',

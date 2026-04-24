@@ -34,6 +34,37 @@ type Invite struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+// ListMyOrgs returns all organizations the authenticated user belongs to.
+func (h *Handler) ListMyOrgs(c echo.Context) error {
+	userID := c.Get("userID").(string)
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT o.id, o.name, o.slug, om.role
+		FROM organizations o
+		JOIN organization_members om ON om.org_id = o.id
+		WHERE om.user_id = $1
+		ORDER BY om.joined_at
+	`, userID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+	type OrgSummary struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+		Role string `json:"role"`
+	}
+	orgs := []OrgSummary{}
+	for rows.Next() {
+		var o OrgSummary
+		if err := rows.Scan(&o.ID, &o.Name, &o.Slug, &o.Role); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		orgs = append(orgs, o)
+	}
+	return c.JSON(http.StatusOK, orgs)
+}
+
 // Me returns the current user's role in the authenticated org.
 func (h *Handler) Me(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
