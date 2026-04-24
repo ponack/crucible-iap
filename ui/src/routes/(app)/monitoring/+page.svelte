@@ -19,6 +19,9 @@
 		{ id: 3, title: 'HTTP Latency (p50/p95/p99)', cols: 'col-span-3' },
 		{ id: 4, title: 'Run Completions by Status',  cols: 'col-span-2' },
 		{ id: 5, title: 'Queue Depth',                cols: 'col-span-1' },
+		{ id: 6, title: 'Active Runs',                cols: 'col-span-1' },
+		{ id: 7, title: 'Stack Count',                cols: 'col-span-1' },
+		{ id: 8, title: 'Run Success Rate (1 h)',     cols: 'col-span-1' },
 	];
 
 	let health = $state<HealthStatus | null>(null);
