@@ -75,9 +75,15 @@ The UI is at **`https://localhost`**. Open it, accept the self-signed certificat
 
 ## Step 2 — Create a test repository
 
-Create a new repository on GitHub (or GitLab/Gitea) named `crucible-quickstart`. Add two files:
+### Option A — Use the template (recommended)
 
-### `versions.tf`
+Go to [github.com/ponack/crucible-quickstart](https://github.com/ponack/crucible-quickstart) and click **Use this template → Create a new repository**. Name it anything you like. The template ships the two files below already — skip ahead to Step 3.
+
+### Option B — Write the files yourself
+
+Create a new repository on GitHub (or GitLab/Gitea). Add two files:
+
+**`versions.tf`**
 
 ```hcl
 terraform {
@@ -94,7 +100,7 @@ terraform {
 
 The `backend "http" {}` block is intentionally empty — Crucible injects the state backend credentials automatically when the runner starts.
 
-### `main.tf`
+**`main.tf`**
 
 ```hcl
 resource "random_pet" "name" {
