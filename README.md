@@ -55,6 +55,12 @@ docker compose up -d
 
 Crucible IAP will be available at `https://localhost` (self-signed cert — accept the browser warning on first visit). Caddy provisions a real TLS certificate automatically when `CRUCIBLE_BASE_URL` is a public hostname and `CADDY_ACME_EMAIL` is set.
 
+After login, the dashboard greets you with a one-click path to your first stack:
+
+![First-run welcome screen](assets/screenshots/first-run-welcome.png)
+
+Click **Create your first stack** to connect a Git repo — or [**use the `crucible-quickstart` template**](https://github.com/ponack/crucible-quickstart/generate) for a ready-to-run OpenTofu stack you can point Crucible at in under a minute.
+
 ## Deployment options
 
 ### Bundled Caddy (default)
