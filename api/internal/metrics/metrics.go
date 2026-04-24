@@ -39,6 +39,16 @@ var (
 		Help: "Number of River jobs currently in the available state.",
 	})
 
+	ActiveRuns = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "crucible_active_runs",
+		Help: "Number of runs currently in progress (preparing, planning, or applying).",
+	})
+
+	StacksTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "crucible_stacks_total",
+		Help: "Total number of stacks.",
+	})
+
 	BuildInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "crucible_build_info",
 		Help: "Build metadata.",
@@ -86,8 +96,8 @@ func Handler() echo.HandlerFunc {
 	}
 }
 
-// PollQueueDepth starts a background goroutine that updates the QueueDepth
-// gauge every 30 seconds by querying the River job table.
+// PollQueueDepth starts a background goroutine that updates operational gauges
+// every 30 seconds by querying the database.
 func PollQueueDepth(ctx context.Context, pool *pgxpool.Pool) {
 	go func() {
 		tick := time.NewTicker(30 * time.Second)
@@ -97,15 +107,35 @@ func PollQueueDepth(ctx context.Context, pool *pgxpool.Pool) {
 			case <-ctx.Done():
 				return
 			case <-tick.C:
-				var n int
-				if err := pool.QueryRow(ctx,
-					`SELECT count(*) FROM river_job WHERE state = 'available'`,
-				).Scan(&n); err == nil {
-					QueueDepth.Set(float64(n))
-				} else {
-					slog.Debug("queue depth poll failed", "err", err)
-				}
+				pollGauges(ctx, pool)
 			}
 		}
 	}()
+}
+
+func pollGauges(ctx context.Context, pool *pgxpool.Pool) {
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM river_job WHERE state = 'available'`,
+	).Scan(&n); err == nil {
+		QueueDepth.Set(float64(n))
+	} else {
+		slog.Debug("queue depth poll failed", "err", err)
+	}
+
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM runs WHERE status IN ('preparing','planning','applying')`,
+	).Scan(&n); err == nil {
+		ActiveRuns.Set(float64(n))
+	} else {
+		slog.Debug("active runs poll failed", "err", err)
+	}
+
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM stacks`,
+	).Scan(&n); err == nil {
+		StacksTotal.Set(float64(n))
+	} else {
+		slog.Debug("stacks total poll failed", "err", err)
+	}
 }
