@@ -88,6 +88,12 @@
 					</div>
 					{#if error}
 						<p class="text-red-400 text-xs">{error}</p>
+						{#if authConfig.local && !authConfig.oidc}
+							<p class="text-zinc-500 text-xs">
+								First time? The credentials are set via <code class="text-zinc-400">LOCAL_AUTH_EMAIL</code>
+								and <code class="text-zinc-400">LOCAL_AUTH_PASSWORD</code> in your <code class="text-zinc-400">.env</code>.
+							</p>
+						{/if}
 					{/if}
 					<button
 						type="submit"
