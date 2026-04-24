@@ -4,6 +4,13 @@
 
 A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible plans it → review → apply. State, policy, and audit trail stay on your own infrastructure.
 
+| | |
+| :---: | :---: |
+| ![Dashboard](assets/screenshots/dashboard.png) | ![Plan awaiting approval](assets/screenshots/run-plan-awaiting-approval.png) |
+| **Dashboard** — active runs, approvals, recent activity. | **Plan → confirm → apply** — review the plan, then click Confirm. |
+| ![Policy-as-code](assets/screenshots/policy-as-code.png) | ![Built-in monitoring](assets/screenshots/built-in-monitoring.png) |
+| **Policy-as-code** — OPA/Rego guards with a test playground. | **Built-in monitoring** — Prometheus + Grafana, embedded in-app. |
+
 > **Not a technical user?** Visit the [Crucible IAP product page](https://www.forgedinfeatherstechnology.com/crucible-iap) for screenshots, feature highlights, and an overview of what Crucible can do for your team.
 
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
@@ -18,64 +25,21 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 ## Features
 
-### GitOps & runs
+| Area | What you get |
+| ---- | ------------ |
+| **GitOps & runs** | Push or PR triggers a tracked run (plan → confirm → apply) with PR comments and commit status checks. Works with GitHub, GitLab, Gitea, and Gogs (HMAC-verified webhooks). Tracked / proposed / destroy / drift run types, auto-apply, and scheduled drift detection. |
+| **Policy-as-code** | OPA/Rego policies at `pre_plan`, `post_plan`, `pre_apply`, `trigger`, `login`, and `approval` hooks. Blocking denies + non-blocking warnings. Approval gating on blast radius. Standalone `/policies/test` playground with OPA evaluation trace. Full append-only audit log. |
+| **State & runners** | OpenTofu, Terraform, Ansible, and Pulumi. Built-in Terraform HTTP backend on MinIO (zero config) or per-stack S3 / GCS / Azure Blob overrides. Each run in a fresh, read-only, capability-dropped Docker container — cosign-signed, digest-pinned runner image. |
+| **Secrets & identity** | Per-stack OIDC workload identity federation with AWS, GCP, Azure, Vault, Authentik, or any OIDC IdP — no static cloud credentials. Encrypted stack env vars + reusable variable sets. External secret stores: AWS Secrets Manager, Vault KV v2, Bitwarden, Vaultwarden. See [`docs/security.md`](docs/security.md) for crypto details. |
+| **Auth & access** | SSO via OIDC (Authentik, Okta, GitHub, Keycloak, anything OIDC) with PKCE, or single-operator local auth. Org-level RBAC (viewer / member / admin), per-stack `viewer` / `approver` membership, and service-account API tokens for CI. Rate-limited, hardened login. |
+| **Observability** | Embedded Grafana on `/monitoring` (8 panels, 30 s refresh). Prometheus + Grafana shipped in-box. Per-stack Slack, Gotify, ntfy, and email notifications. Webhook delivery log with full payload inspection. |
+| **Deployment** | Single `docker compose up` — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, Grafana. Let's Encrypt TLS via Caddy or the `external-proxy` profile for nginx / Traefik / your own Caddy. Optional bundled Authentik IdP. Built-in Terraform module registry and stack templates. |
 
-- **GitOps-driven** — push to a branch triggers a tracked run (plan → confirm → apply); open a PR and Crucible plans it, posts a comment, and sets a commit status check
-- **GitHub, GitLab, Gitea, and Gogs** — HMAC-verified webhooks (modern X-Hub-Signature-256 and legacy per-forge fallbacks), PR/MR comments, and commit status checks; custom instance base URLs supported for self-hosted deployments
-- **Run types** — tracked, proposed (plan-only), destroy, and drift — manual or webhook-triggered
-- **Auto-apply** — skip the confirmation gate for low-risk stacks
-- **Drift detection** — scheduled proposed runs alert when live state diverges from code
-
-### Policy and compliance
-
-- **Policy-as-code** — OPA/Rego policies evaluate in microseconds; attach multiple policies per stack
-- **Policy hooks** — `pre_plan`, `post_plan`, `pre_apply`, `trigger` (downstream stacks), `login`, `approval`
-- **Deny and warn** — blocking denials halt the run; non-blocking warnings surface to the operator
-- **Approval policies** — `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and can return `require_approval: true` to gate runs behind explicit sign-off; a `deny` fails the run immediately; approved runs transition to `unconfirmed` or auto-apply directly
-- **Policy test playground** — standalone `/policies/test` page to evaluate any saved policy against synthetic JSON input without a real run; results show allow/deny/warn/trigger with per-message cards; optional OPA evaluation trace reveals exactly which rules entered, failed, and exited
-- **Full audit log** — every state-mutating action recorded; append-only and tamper-resistant at the database level
-
-### Infrastructure
-
-- **Multi-tool** — OpenTofu, Terraform, Ansible, and Pulumi in the same platform
-- **Flexible state storage** — built-in Terraform/OpenTofu HTTP backend backed by MinIO (zero config); or override per-stack with Amazon S3 / S3-compatible (built-in Sig v4), Google Cloud Storage (RSA-SHA256 JWT), or Azure Blob Storage (SharedKeyLite) — credentials encrypted at rest
-- **Ephemeral job runners** — each run in a fresh Docker container: read-only rootfs, `--cap-drop ALL`, tmpfs workspace, per-job scoped JWT — container is gone when the job ends; runner image digest-pinned and cosign-signed on every release; manual runs support per-run variable overrides (highest env precedence, not persisted to stack config)
-- **OIDC workload identity federation** — Crucible acts as its own OIDC identity provider (ECDSA P-256, vault-encrypted key, RFC 7638 JWKS); each run receives a short-lived signed JWT scoped to the stack and run; configure per-stack or set an org-level default in Settings to exchange the token for temporary credentials with AWS, GCP, Azure, HashiCorp Vault, Authentik, or any generic OIDC-compatible IdP (Keycloak, Zitadel, Dex…) — no static secrets stored in Crucible
-- **Stack env vars** — AES-256-GCM encrypted at rest with per-stack HKDF-derived keys salted with a deployment-unique secret; injected into runners at job time, never logged or returned by the API
-- **Variable sets** — named collections of env vars defined once and attached to multiple stacks; values are write-only, encrypted with the same AES-256-GCM vault; injection order: external secrets → variable sets → stack env vars (stack wins on collision)
-- **External secret stores** — pull secrets from AWS Secrets Manager (built-in Sig v4, no SDK), HashiCorp Vault KV v2 (token or AppRole), Bitwarden Secrets Manager (AES-256-CBC E2E decryption), or Vaultwarden / self-hosted Bitwarden (PBKDF2-SHA256 / Argon2id master key derivation + AES-CBC vault crypto); merged with built-in env vars, built-in takes precedence on collision
-
-### Auth and access
-
-- **SSO via OIDC** — Authentik (bundled optional), Okta, GitHub, Keycloak, or any OIDC provider; PKCE always enforced
-- **Local auth** — single operator account for deployments without an IdP
-- **RBAC** — org-level viewer / member / admin roles enforced at the API layer; org invite flow with single-use tokens; **per-stack membership** — add users as `viewer` (read-only) or `approver` (can trigger runs and confirm plans); stacks without explicit members are open to all org users; restricted stacks are hidden from non-members
-- **Service account API tokens** — long-lived `ciap_…` tokens for CI pipelines and automation scripts; argon2id-hashed at rest (lazy upgrade from SHA-256 on first use for existing tokens), shown once at creation, role-scoped, last-used tracked
-- **Security hardening** — CSP headers, HSTS, failed login auditing, weak credential detection on startup; per-IP rate limits on all auth endpoints (tight on password login, moderate on token exchange and OAuth callback); service account token brute-force lockout (20 failures / 5 min per IP); refresh token stored in httpOnly `SameSite=Strict` cookie — inaccessible to JavaScript
-
-### Observability and operations
-
-- **Monitoring page** — Grafana panels embedded directly in the Crucible UI at `/monitoring`; eight dashboard panels rendered inline with a 30 s auto-refresh: HTTP request rate, error rate, latency p50/p95/p99, run completions, queue depth, active runs, stack count, and run success rate (1 h); link to the full Grafana dashboard for admin use
-- **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; Grafana served at `{BASE_URL}/grafana`
-- **Push notifications** — per-stack Slack webhooks, Gotify, ntfy, and email (SMTP) event subscriptions: plan complete, run succeeded, run failed; configurable defaults in Settings → Notifications with one-click test delivery; per-stack overrides on the stack detail page
-- **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) with the full stored payload; click any delivery in the UI to inspect the raw JSON body for debugging missed or skipped events
-- **Structured health endpoint** — `/health` reports DB status, version, and uptime
-- **Automatic migrations** — schema migrations run on startup; `migrate` subcommand available for manual control
-
-### Deployment
-
-- **Terraform module registry** — private module registry backed by MinIO; implements the full Terraform Module Registry Protocol v1 so modules can be sourced as `source = "crucible.example.com/org/name/provider"`; publish via UI upload or git-tag auto-publish (push a semver tag on a stack with module config and Crucible downloads the archive, extracts the README, and publishes automatically); download count tracked per version; README rendered as markdown in the UI; authenticate via service account token in `~/.terraformrc`
-- **Stack templates** — save a stack configuration as a reusable template (tool, repo, branch, project root, policies, auto-apply, drift settings); new stacks can be pre-filled from a template in one click
-- **Provider caching** — Terraform/OpenTofu provider binaries cached in MinIO after first download; subsequent runs restore from cache before `init` so registry round-trips are eliminated; transparent to existing stacks
-- **Custom run hooks** — per-stack bash scripts executed at pre-plan, post-plan, pre-apply, and post-apply lifecycle points inside the runner container; configured in the stack settings UI; non-zero exit fails the run
-- **Single `docker compose up`** — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, and Grafana in one command
-- **Separated API and Worker** — the HTTP API server and the Docker job runner run as distinct containers; the API has no Docker socket, the worker has no public ports
-- **Zero-config TLS** — Let's Encrypt via Caddy; bring your own cert or reverse proxy with the `external-proxy` profile
-- **Bundled Authentik** — optional `--profile authentik` for a fully self-hosted IdP
+Full feature list with security/crypto specifics: [`docs/operator-guide.md`](docs/operator-guide.md) and [`docs/security.md`](docs/security.md).
 
 ## Quick start
 
-> **Just trying it out?** Follow [`docs/quickstart.md`](docs/quickstart.md) for a 10-minute local walkthrough that uses HTTP and local auth — no domain or cert required.
+> **Just trying it out?** Follow [`docs/quickstart.md`](docs/quickstart.md) for a 15-minute local walkthrough (bundled Caddy on `https://localhost` with local auth) that takes you from `docker compose up` to a plan → confirm → apply run.
 
 **Prerequisites:** `docker` (with compose v2), `openssl`, and a free port 443 (or 80/443 if using Let's Encrypt).
 
@@ -251,176 +215,9 @@ Stack tokens are managed in the UI (Settings → Tokens) or via the API. State i
 
 ## Cloud OIDC workload identity federation
 
-Crucible acts as its own OIDC identity provider. On every run, it mints a short-lived signed JWT and injects it into the runner container. Each cloud provider can be configured to exchange that token for temporary credentials — no static cloud secrets stored in Crucible.
+Crucible acts as its own OIDC identity provider. Every run mints a short-lived signed JWT that cloud providers exchange for temporary credentials — no static cloud secrets are stored in Crucible. AWS, GCP, Azure, HashiCorp Vault, Authentik, Keycloak, Zitadel, Dex, and any OIDC-compatible IdP are supported; configure per-stack or set an org-level default in **Settings → General → Cloud OIDC Default**.
 
-**OIDC issuer:** `CRUCIBLE_BASE_URL` (must be publicly reachable so cloud providers can fetch the JWKS)
-
-**Discovery endpoint:** `https://crucible.example.com/.well-known/openid-configuration`
-
-**JWKS endpoint:** `https://crucible.example.com/.well-known/jwks.json`
-
-Configure federation on the stack detail page → **Cloud OIDC federation**.
-
-### AWS
-
-1. In IAM → **Identity providers** → **Add provider**
-   - Provider type: **OpenID Connect**
-   - Provider URL: `https://crucible.example.com`
-   - Audience: `sts.amazonaws.com`
-2. Create an IAM role with a trust policy:
-
-   ```json
-   {
-     "Effect": "Allow",
-     "Principal": { "Federated": "arn:aws:iam::<ACCOUNT>:oidc-provider/crucible.example.com" },
-     "Action": "sts:AssumeRoleWithWebIdentity",
-     "Condition": {
-       "StringLike": {
-         "crucible.example.com:sub": "stack:<your-stack-slug>"
-       }
-     }
-   }
-   ```
-
-3. On the stack: set **Cloud provider** to `AWS`, paste the **IAM Role ARN**.
-
-The runner receives `AWS_WEB_IDENTITY_TOKEN_FILE` and `AWS_ROLE_ARN` — the AWS SDK picks these up automatically.
-
-### Google Cloud
-
-1. In IAM → **Workload Identity Federation** → **Create pool**, then **Add provider**
-   - Provider type: **OpenID Connect**
-   - Issuer URL: `https://crucible.example.com`
-   - Audience: leave as-is or customise
-2. Grant the pool permission to impersonate a service account:
-
-   ```bash
-   gcloud iam service-accounts add-iam-policy-binding runner@PROJECT.iam.gserviceaccount.com \
-     --role=roles/iam.workloadIdentityUser \
-     --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.sub/stack:<your-stack-slug>"
-   ```
-
-3. On the stack: set **Cloud provider** to `GCP`, paste the **Workload identity audience** and **Service account email**.
-
-The runner receives a GCP External Account credential config at `GOOGLE_APPLICATION_CREDENTIALS` — the GCP SDK picks this up automatically.
-
-### Azure
-
-1. In Entra ID → **App registrations** → your app → **Certificates & secrets** → **Federated credentials** → **Add credential**
-   - Scenario: **Other issuer**
-   - Issuer: `https://crucible.example.com`
-   - Subject identifier: `stack:<your-stack-slug>`
-   - Audience: `api://AzureADTokenExchange`
-2. Assign the app the necessary Azure RBAC roles on your subscription/resource group.
-3. On the stack: set **Cloud provider** to `Azure`, paste **Tenant ID**, **Client (App) ID**, and **Subscription ID**.
-
-The runner receives `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` — the Azure SDK picks these up automatically.
-
-### HashiCorp Vault
-
-Uses Vault's [JWT/OIDC auth method](https://developer.hashicorp.com/vault/docs/auth/jwt). The runner exchanges the Crucible token for a Vault token; your entrypoint script can then use `VAULT_TOKEN` to pull secrets or credentials.
-
-1. Enable the JWT auth method and configure it to trust the Crucible issuer:
-
-   ```bash
-   vault auth enable jwt
-
-   vault write auth/jwt/config \
-     oidc_discovery_url="https://crucible.example.com" \
-     default_role="crucible-runner"
-
-   vault write auth/jwt/role/crucible-runner \
-     role_type="jwt" \
-     bound_audiences="https://crucible.example.com" \
-     user_claim="sub" \
-     bound_claims='{"sub":"stack:<your-stack-slug>"}' \
-     policies="crucible-runner-policy" \
-     ttl="1h"
-   ```
-
-2. On the stack: set **OIDC provider** to `HashiCorp Vault`, enter the **Vault address**, **JWT auth role**, and (if not the default `jwt`) the **JWT auth mount**.
-
-The runner receives:
-
-| Env var | Value |
-| --- | --- |
-| `VAULT_ADDR` | Vault server URL |
-| `CRUCIBLE_OIDC_VAULT_ROLE` | JWT auth role name |
-| `CRUCIBLE_OIDC_VAULT_MOUNT` | Auth mount path (default: `jwt`) |
-| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
-
-**Example entrypoint snippet:**
-
-```bash
-VAULT_TOKEN=$(vault write -field=token \
-  auth/${CRUCIBLE_OIDC_VAULT_MOUNT}/login \
-  role="${CRUCIBLE_OIDC_VAULT_ROLE}" \
-  jwt="$(cat ${CRUCIBLE_OIDC_TOKEN_FILE})")
-export VAULT_TOKEN
-```
-
-### Authentik
-
-Uses Authentik's [JWT source](https://docs.goauthentik.io/docs/sources/oauth/) to trust the Crucible-issued token and exchange it for an Authentik session.
-
-1. In Authentik → **Directory** → **Federation & Social login** → **Create** → **JWT source**
-   - Issuer URL: `https://crucible.example.com`
-   - JWKS URL: `https://crucible.example.com/.well-known/jwks.json`
-   - Note the **slug** — this becomes the client ID.
-2. On the stack: set **OIDC provider** to `Authentik`, enter the **Authentik URL** and the **JWT source slug** as the client ID.
-
-The runner receives:
-
-| Env var | Value |
-| --- | --- |
-| `AUTHENTIK_URL` | Authentik base URL |
-| `CRUCIBLE_OIDC_AUTHENTIK_CLIENT_ID` | JWT source slug / client ID |
-| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
-
-### Generic (Keycloak, Zitadel, Dex, custom IdP)
-
-Any OIDC-compatible identity provider that supports token exchange or direct JWT bearer flows. Configure the token endpoint and optional client ID / scope; your runner entrypoint script performs the exchange.
-
-1. Configure your IdP to trust the Crucible OIDC issuer (`https://crucible.example.com`) and accept the issued JWT as a bearer or exchange token.
-2. On the stack: set **OIDC provider** to `Generic`, enter the **token exchange endpoint**, and optionally a **client ID** and **scope**.
-
-The runner receives:
-
-| Env var | Value |
-| --- | --- |
-| `CRUCIBLE_OIDC_TOKEN_URL` | Token exchange endpoint |
-| `CRUCIBLE_OIDC_CLIENT_ID` | Client ID (if set) |
-| `CRUCIBLE_OIDC_SCOPE` | Scope (if set) |
-| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
-
-**Keycloak example** (token exchange):
-
-```bash
-ACCESS_TOKEN=$(curl -s -X POST "${CRUCIBLE_OIDC_TOKEN_URL}" \
-  -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
-  -d "client_id=${CRUCIBLE_OIDC_CLIENT_ID}" \
-  -d "subject_token=$(cat ${CRUCIBLE_OIDC_TOKEN_FILE})" \
-  -d "subject_token_type=urn:ietf:params:oauth:token-type:jwt" \
-  | jq -r '.access_token')
-```
-
-### Default audience for self-hosted providers
-
-For Vault, Authentik, and Generic providers the default JWT audience (`aud` claim) is the **Crucible base URL**. Configure your IdP to accept this audience, or use the **Audience override** field to set a custom value.
-
-### JWT claims reference
-
-| Claim | Value |
-| ----- | ----- |
-| `iss` | Crucible base URL |
-| `sub` | `stack:<slug>` |
-| `aud` | Cloud-specific (see above) or custom audience override |
-| `stack_id` | Stack UUID |
-| `stack_slug` | Stack slug |
-| `org_id` | Org UUID |
-| `run_id` | Run UUID |
-| `run_type` | `tracked` / `proposed` / `destroy` / `apply` |
-| `branch` | Repository branch |
+Per-provider setup (IAM trust policies, GCP workload identity pools, Entra federated credentials, Vault JWT roles, IdP exchange endpoints) and the JWT claims reference are in [`docs/operator-guide.md#cloud-oidc-workload-identity-federation`](docs/operator-guide.md#cloud-oidc-workload-identity-federation).
 
 ## Policy-as-code
 

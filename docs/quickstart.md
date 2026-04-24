@@ -33,7 +33,7 @@ cp .env.example .env
 Open `.env` and set these four values — everything else can stay as-is for local use:
 
 ```env
-CRUCIBLE_BASE_URL=http://localhost:8080
+CRUCIBLE_BASE_URL=https://localhost
 CRUCIBLE_SECRET_KEY=<paste output of: openssl rand -hex 32>
 POSTGRES_PASSWORD=<any strong password>
 MINIO_SECRET_KEY=<any strong password>
@@ -58,7 +58,8 @@ Wait for migrations to complete, then confirm the API is healthy:
 
 ```bash
 # Poll /health until it returns status:ok (usually <30s on first start)
-until curl -sf http://localhost:8080/health | grep -q '"status":"ok"'; do
+# -k skips TLS verification for the self-signed Caddy cert on localhost
+until curl -skf https://localhost/health | grep -q '"status":"ok"'; do
   echo "waiting for crucible-api…"; sleep 2
 done
 docker compose ps
@@ -66,9 +67,9 @@ docker compose ps
 
 Expected: `HTTP 200` with `"status":"ok"` in the body.
 
-The UI is at **http://localhost:3000**. Open it and log in with the email and password you set above.
+The UI is at **`https://localhost`**. Open it, accept the self-signed certificate warning on first visit, and log in with the email and password you set above.
 
-> **First-run note:** On the very first start, Crucible creates the MinIO buckets and runs all database migrations automatically. The `crucible-api` container will restart once while it waits for PostgreSQL to become healthy — this is normal.
+> **First-run note:** On the very first start, Crucible creates the MinIO buckets and runs all database migrations automatically. The `crucible-api` container will restart once while it waits for PostgreSQL to become healthy — this is normal. Caddy generates a local TLS cert the first time it starts; your browser will warn that it is not trusted — accept it for `https://localhost`.
 
 ---
 

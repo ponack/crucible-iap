@@ -230,6 +230,27 @@
 
 	{#if loading}
 		<div class="text-zinc-500 text-sm py-12 text-center">Loading…</div>
+	{:else if totalStacks === 0}
+
+	<!-- ── First-run welcome (no stacks yet) ───────────────────────────────── -->
+	<div class="border border-zinc-800 bg-zinc-900/40 rounded-xl p-10 sm:p-14 text-center space-y-5 max-w-2xl mx-auto mt-8">
+		<p class="text-zinc-100 text-lg font-semibold">Welcome to Crucible IAP</p>
+		<p class="text-zinc-400 text-sm max-w-md mx-auto leading-relaxed">
+			A stack connects a Git repository to a Terraform, OpenTofu, Pulumi, or Ansible workspace.
+			Crucible plans each push, waits for approval, then applies — with policy checks, state storage, and a full audit trail.
+		</p>
+		<div class="flex flex-wrap gap-3 justify-center pt-2">
+			<a href="/stacks/new"
+				class="inline-block bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
+				Create your first stack →
+			</a>
+			<a href="https://github.com/ponack/crucible-iap/blob/main/docs/quickstart.md" target="_blank" rel="noopener"
+				class="inline-block border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white text-sm px-5 py-2.5 rounded-lg transition-colors">
+				Read the quickstart
+			</a>
+		</div>
+	</div>
+
 	{:else}
 
 	<!-- ── Stat cards ───────────────────────────────────────────────────────── -->
@@ -415,18 +436,6 @@
 			{/if}
 		</section>
 	</div>
-
-	<!-- ── Empty state (no stacks yet) ─────────────────────────────────────── -->
-	{#if totalStacks === 0}
-		<div class="border border-zinc-800 rounded-xl p-12 text-center space-y-4">
-			<p class="text-zinc-300 text-base font-medium">Welcome to Crucible IAP</p>
-			<p class="text-zinc-500 text-sm max-w-sm mx-auto">Get started by creating your first stack. A stack connects a repository to a Terraform/OpenTofu workspace and manages its full run lifecycle.</p>
-			<a href="/stacks/new"
-				class="inline-block bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-5 py-2 rounded-lg transition-colors">
-				Create your first stack →
-			</a>
-		</div>
-	{/if}
 
 	{/if}
 </div>
