@@ -1,8 +1,8 @@
-# Crucible IAP
+# Crucible IAP — Infrastructure Automation Platform
 
 ![Crucible IAP](assets/CrucibleIAP_master_TRANSPARENT.png)
 
-**Crucible IAP - Infrastructure Automation Platform** — a self-hosted, privacy-first alternative to Spacelift.
+A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible plans it → review → apply. State, policy, and audit trail stay on your own infrastructure.
 
 > **Not a technical user?** Visit the [Crucible IAP product page](https://www.forgedinfeatherstechnology.com/crucible-iap) for screenshots, feature highlights, and an overview of what Crucible can do for your team.
 
@@ -75,6 +75,10 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 ## Quick start
 
+> **Just trying it out?** Follow [`docs/quickstart.md`](docs/quickstart.md) for a 10-minute local walkthrough that uses HTTP and local auth — no domain or cert required.
+
+**Prerequisites:** `docker` (with compose v2), `openssl`, and a free port 443 (or 80/443 if using Let's Encrypt).
+
 ```bash
 cp .env.example .env
 # Edit .env — set CRUCIBLE_BASE_URL, CRUCIBLE_SECRET_KEY, POSTGRES_PASSWORD, etc.
@@ -85,7 +89,7 @@ docker network create crucible-runner
 docker compose up -d
 ```
 
-Crucible IAP will be available at `https://localhost`. Caddy provisions a TLS certificate automatically (set `CADDY_ACME_EMAIL` for Let's Encrypt).
+Crucible IAP will be available at `https://localhost` (self-signed cert — accept the browser warning on first visit). Caddy provisions a real TLS certificate automatically when `CRUCIBLE_BASE_URL` is a public hostname and `CADDY_ACME_EMAIL` is set.
 
 ## Deployment options
 

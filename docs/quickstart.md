@@ -54,12 +54,17 @@ docker network create crucible-runner
 docker compose up -d
 ```
 
-Wait about 20 seconds for migrations to complete, then check:
+Wait for migrations to complete, then confirm the API is healthy:
 
 ```bash
+# Poll /health until it returns status:ok (usually <30s on first start)
+until curl -sf http://localhost:8080/health | grep -q '"status":"ok"'; do
+  echo "waiting for crucible-api…"; sleep 2
+done
 docker compose ps
-curl -s http://localhost:8080/health | grep '"status":"ok"'
 ```
+
+Expected: `HTTP 200` with `"status":"ok"` in the body.
 
 The UI is at **http://localhost:3000**. Open it and log in with the email and password you set above.
 
