@@ -141,13 +141,21 @@
 
 	// Cloud OIDC workload identity federation
 	let oidcConfig = $state<CloudOIDCConfig | null>(null);
-	let oidcProvider = $state<'aws' | 'gcp' | 'azure'>('aws');
+	let oidcProvider = $state<CloudOIDCConfig['provider']>('aws');
 	let oidcAWSRoleARN = $state('');
 	let oidcGCPAudience = $state('');
 	let oidcGCPSA = $state('');
 	let oidcAzureTenant = $state('');
 	let oidcAzureClient = $state('');
 	let oidcAzureSubscription = $state('');
+	let oidcVaultAddr = $state('');
+	let oidcVaultRole = $state('');
+	let oidcVaultMount = $state('');
+	let oidcAuthentikURL = $state('');
+	let oidcAuthentikClientID = $state('');
+	let oidcGenericTokenURL = $state('');
+	let oidcGenericClientID = $state('');
+	let oidcGenericScope = $state('');
 	let oidcAudienceOverride = $state('');
 	let savingOIDC = $state(false);
 	let oidcSaved = $state(false);
@@ -233,6 +241,14 @@
 				oidcAzureTenant = oidcConfig.azure_tenant_id ?? '';
 				oidcAzureClient = oidcConfig.azure_client_id ?? '';
 				oidcAzureSubscription = oidcConfig.azure_subscription_id ?? '';
+				oidcVaultAddr = oidcConfig.vault_addr ?? '';
+				oidcVaultRole = oidcConfig.vault_role ?? '';
+				oidcVaultMount = oidcConfig.vault_mount ?? '';
+				oidcAuthentikURL = oidcConfig.authentik_url ?? '';
+				oidcAuthentikClientID = oidcConfig.authentik_client_id ?? '';
+				oidcGenericTokenURL = oidcConfig.generic_token_url ?? '';
+				oidcGenericClientID = oidcConfig.generic_client_id ?? '';
+				oidcGenericScope = oidcConfig.generic_scope ?? '';
 				oidcAudienceOverride = oidcConfig.audience_override ?? '';
 			} catch {
 				oidcConfig = null;
@@ -587,6 +603,17 @@
 				body.azure_tenant_id = oidcAzureTenant;
 				body.azure_client_id = oidcAzureClient;
 				body.azure_subscription_id = oidcAzureSubscription;
+			} else if (oidcProvider === 'vault') {
+				body.vault_addr = oidcVaultAddr;
+				body.vault_role = oidcVaultRole;
+				if (oidcVaultMount) body.vault_mount = oidcVaultMount;
+			} else if (oidcProvider === 'authentik') {
+				body.authentik_url = oidcAuthentikURL;
+				body.authentik_client_id = oidcAuthentikClientID;
+			} else if (oidcProvider === 'generic') {
+				body.generic_token_url = oidcGenericTokenURL;
+				if (oidcGenericClientID) body.generic_client_id = oidcGenericClientID;
+				if (oidcGenericScope) body.generic_scope = oidcGenericScope;
 			}
 			if (oidcAudienceOverride) body.audience_override = oidcAudienceOverride;
 			oidcConfig = await cloudOIDC.upsert(stackID, body);
@@ -610,6 +637,14 @@
 			oidcAzureTenant = '';
 			oidcAzureClient = '';
 			oidcAzureSubscription = '';
+			oidcVaultAddr = '';
+			oidcVaultRole = '';
+			oidcVaultMount = '';
+			oidcAuthentikURL = '';
+			oidcAuthentikClientID = '';
+			oidcGenericTokenURL = '';
+			oidcGenericClientID = '';
+			oidcGenericScope = '';
 			oidcAudienceOverride = '';
 		} catch (err) {
 			alert((err as Error).message);
@@ -2215,9 +2250,16 @@
 			<div class="space-y-1.5">
 				<label class="field-label" for="oidc-provider">Cloud provider</label>
 				<select id="oidc-provider" class="field-input" bind:value={oidcProvider}>
-					<option value="aws">AWS</option>
-					<option value="gcp">Google Cloud</option>
-					<option value="azure">Azure</option>
+					<optgroup label="Cloud">
+						<option value="aws">AWS</option>
+						<option value="gcp">Google Cloud</option>
+						<option value="azure">Azure</option>
+					</optgroup>
+					<optgroup label="Self-hosted">
+						<option value="vault">HashiCorp Vault</option>
+						<option value="authentik">Authentik</option>
+						<option value="generic">Generic (Keycloak, Zitadel, Dex…)</option>
+					</optgroup>
 				</select>
 			</div>
 
@@ -2254,6 +2296,62 @@
 						<input id="oidc-az-sub" class="field-input font-mono" bind:value={oidcAzureSubscription} placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
 					</div>
 				</div>
+			{:else if oidcProvider === 'vault'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-vault-addr">Vault address</label>
+						<input id="oidc-vault-addr" class="field-input font-mono" bind:value={oidcVaultAddr}
+							placeholder="https://vault.example.com" />
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-vault-role">JWT auth role</label>
+							<input id="oidc-vault-role" class="field-input font-mono" bind:value={oidcVaultRole}
+								placeholder="crucible-runner" />
+						</div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-vault-mount">JWT auth mount <span class="font-normal text-zinc-500">(optional, default: jwt)</span></label>
+							<input id="oidc-vault-mount" class="field-input font-mono" bind:value={oidcVaultMount}
+								placeholder="jwt" />
+						</div>
+					</div>
+					<p class="text-xs text-zinc-600">The runner receives <code class="text-zinc-400">VAULT_ADDR</code>, <code class="text-zinc-400">CRUCIBLE_OIDC_VAULT_ROLE</code>, and <code class="text-zinc-400">CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token</code>. Your entrypoint script exchanges the token via <code class="text-zinc-400">vault write auth/&lt;mount&gt;/login</code>.</p>
+				</div>
+			{:else if oidcProvider === 'authentik'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-authentik-url">Authentik URL</label>
+						<input id="oidc-authentik-url" class="field-input font-mono" bind:value={oidcAuthentikURL}
+							placeholder="https://auth.example.com" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-authentik-cid">JWT source client ID</label>
+						<input id="oidc-authentik-cid" class="field-input font-mono" bind:value={oidcAuthentikClientID}
+							placeholder="crucible" />
+					</div>
+					<p class="text-xs text-zinc-600">The runner receives <code class="text-zinc-400">AUTHENTIK_URL</code>, <code class="text-zinc-400">CRUCIBLE_OIDC_AUTHENTIK_CLIENT_ID</code>, and <code class="text-zinc-400">CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token</code>. Configure an Authentik JWT source to trust the Crucible issuer.</p>
+				</div>
+			{:else if oidcProvider === 'generic'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-generic-url">Token exchange endpoint</label>
+						<input id="oidc-generic-url" class="field-input font-mono" bind:value={oidcGenericTokenURL}
+							placeholder="https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token" />
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-generic-cid">Client ID <span class="font-normal text-zinc-500">(optional)</span></label>
+							<input id="oidc-generic-cid" class="field-input font-mono" bind:value={oidcGenericClientID}
+								placeholder="crucible-runner" />
+						</div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-generic-scope">Scope <span class="font-normal text-zinc-500">(optional)</span></label>
+							<input id="oidc-generic-scope" class="field-input font-mono" bind:value={oidcGenericScope}
+								placeholder="openid" />
+						</div>
+					</div>
+					<p class="text-xs text-zinc-600">The runner receives <code class="text-zinc-400">CRUCIBLE_OIDC_TOKEN_URL</code>, <code class="text-zinc-400">CRUCIBLE_OIDC_CLIENT_ID</code>, and <code class="text-zinc-400">CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token</code>. Your entrypoint script performs the token exchange using these env vars.</p>
+				</div>
 			{/if}
 
 			<details class="text-xs">
@@ -2271,7 +2369,8 @@
 					{savingOIDC ? 'Saving…' : oidcSaved ? 'Saved' : oidcConfig ? 'Update' : 'Enable'}
 				</button>
 				{#if oidcConfig}
-					<span class="text-xs text-emerald-500">Enabled · {oidcConfig.provider.toUpperCase()}</span>
+					{@const providerLabel = { aws: 'AWS', gcp: 'Google Cloud', azure: 'Azure', vault: 'Vault', authentik: 'Authentik', generic: 'Generic OIDC' }}
+					<span class="text-xs text-emerald-500">Enabled · {providerLabel[oidcConfig.provider] ?? oidcConfig.provider}</span>
 				{/if}
 			</div>
 		</form>

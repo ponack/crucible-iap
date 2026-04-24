@@ -39,7 +39,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **Multi-tool** — OpenTofu, Terraform, Ansible, and Pulumi in the same platform
 - **Flexible state storage** — built-in Terraform/OpenTofu HTTP backend backed by MinIO (zero config); or override per-stack with Amazon S3 / S3-compatible (built-in Sig v4), Google Cloud Storage (RSA-SHA256 JWT), or Azure Blob Storage (SharedKeyLite) — credentials encrypted at rest
 - **Ephemeral job runners** — each run in a fresh Docker container: read-only rootfs, `--cap-drop ALL`, tmpfs workspace, per-job scoped JWT — container is gone when the job ends; runner image digest-pinned and cosign-signed on every release; manual runs support per-run variable overrides (highest env precedence, not persisted to stack config)
-- **OIDC workload identity federation** — Crucible acts as its own OIDC identity provider (ECDSA P-256, vault-encrypted key, RFC 7638 JWKS); each run receives a short-lived signed JWT scoped to the stack and run; configure per-stack or set an org-level default in Settings to exchange the token for temporary AWS, GCP, or Azure credentials — no static cloud secrets stored in Crucible
+- **OIDC workload identity federation** — Crucible acts as its own OIDC identity provider (ECDSA P-256, vault-encrypted key, RFC 7638 JWKS); each run receives a short-lived signed JWT scoped to the stack and run; configure per-stack or set an org-level default in Settings to exchange the token for temporary credentials with AWS, GCP, Azure, HashiCorp Vault, Authentik, or any generic OIDC-compatible IdP (Keycloak, Zitadel, Dex…) — no static secrets stored in Crucible
 - **Stack env vars** — AES-256-GCM encrypted at rest with per-stack HKDF-derived keys salted with a deployment-unique secret; injected into runners at job time, never logged or returned by the API
 - **Variable sets** — named collections of env vars defined once and attached to multiple stacks; values are write-only, encrypted with the same AES-256-GCM vault; injection order: external secrets → variable sets → stack env vars (stack wins on collision)
 - **External secret stores** — pull secrets from AWS Secrets Manager (built-in Sig v4, no SDK), HashiCorp Vault KV v2 (token or AppRole), Bitwarden Secrets Manager (AES-256-CBC E2E decryption), or Vaultwarden / self-hosted Bitwarden (PBKDF2-SHA256 / Argon2id master key derivation + AES-CBC vault crypto); merged with built-in env vars, built-in takes precedence on collision
@@ -311,6 +311,98 @@ The runner receives a GCP External Account credential config at `GOOGLE_APPLICAT
 
 The runner receives `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` — the Azure SDK picks these up automatically.
 
+### HashiCorp Vault
+
+Uses Vault's [JWT/OIDC auth method](https://developer.hashicorp.com/vault/docs/auth/jwt). The runner exchanges the Crucible token for a Vault token; your entrypoint script can then use `VAULT_TOKEN` to pull secrets or credentials.
+
+1. Enable the JWT auth method and configure it to trust the Crucible issuer:
+
+   ```bash
+   vault auth enable jwt
+
+   vault write auth/jwt/config \
+     oidc_discovery_url="https://crucible.example.com" \
+     default_role="crucible-runner"
+
+   vault write auth/jwt/role/crucible-runner \
+     role_type="jwt" \
+     bound_audiences="https://crucible.example.com" \
+     user_claim="sub" \
+     bound_claims='{"sub":"stack:<your-stack-slug>"}' \
+     policies="crucible-runner-policy" \
+     ttl="1h"
+   ```
+
+2. On the stack: set **OIDC provider** to `HashiCorp Vault`, enter the **Vault address**, **JWT auth role**, and (if not the default `jwt`) the **JWT auth mount**.
+
+The runner receives:
+
+| Env var | Value |
+| --- | --- |
+| `VAULT_ADDR` | Vault server URL |
+| `CRUCIBLE_OIDC_VAULT_ROLE` | JWT auth role name |
+| `CRUCIBLE_OIDC_VAULT_MOUNT` | Auth mount path (default: `jwt`) |
+| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
+
+**Example entrypoint snippet:**
+
+```bash
+VAULT_TOKEN=$(vault write -field=token \
+  auth/${CRUCIBLE_OIDC_VAULT_MOUNT}/login \
+  role="${CRUCIBLE_OIDC_VAULT_ROLE}" \
+  jwt="$(cat ${CRUCIBLE_OIDC_TOKEN_FILE})")
+export VAULT_TOKEN
+```
+
+### Authentik
+
+Uses Authentik's [JWT source](https://docs.goauthentik.io/docs/sources/oauth/) to trust the Crucible-issued token and exchange it for an Authentik session.
+
+1. In Authentik → **Directory** → **Federation & Social login** → **Create** → **JWT source**
+   - Issuer URL: `https://crucible.example.com`
+   - JWKS URL: `https://crucible.example.com/.well-known/jwks.json`
+   - Note the **slug** — this becomes the client ID.
+2. On the stack: set **OIDC provider** to `Authentik`, enter the **Authentik URL** and the **JWT source slug** as the client ID.
+
+The runner receives:
+
+| Env var | Value |
+| --- | --- |
+| `AUTHENTIK_URL` | Authentik base URL |
+| `CRUCIBLE_OIDC_AUTHENTIK_CLIENT_ID` | JWT source slug / client ID |
+| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
+
+### Generic (Keycloak, Zitadel, Dex, custom IdP)
+
+Any OIDC-compatible identity provider that supports token exchange or direct JWT bearer flows. Configure the token endpoint and optional client ID / scope; your runner entrypoint script performs the exchange.
+
+1. Configure your IdP to trust the Crucible OIDC issuer (`https://crucible.example.com`) and accept the issued JWT as a bearer or exchange token.
+2. On the stack: set **OIDC provider** to `Generic`, enter the **token exchange endpoint**, and optionally a **client ID** and **scope**.
+
+The runner receives:
+
+| Env var | Value |
+| --- | --- |
+| `CRUCIBLE_OIDC_TOKEN_URL` | Token exchange endpoint |
+| `CRUCIBLE_OIDC_CLIENT_ID` | Client ID (if set) |
+| `CRUCIBLE_OIDC_SCOPE` | Scope (if set) |
+| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
+
+**Keycloak example** (token exchange):
+
+```bash
+ACCESS_TOKEN=$(curl -s -X POST "${CRUCIBLE_OIDC_TOKEN_URL}" \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
+  -d "client_id=${CRUCIBLE_OIDC_CLIENT_ID}" \
+  -d "subject_token=$(cat ${CRUCIBLE_OIDC_TOKEN_FILE})" \
+  -d "subject_token_type=urn:ietf:params:oauth:token-type:jwt" \
+  | jq -r '.access_token')
+```
+
+### Default audience for self-hosted providers
+
+For Vault, Authentik, and Generic providers the default JWT audience (`aud` claim) is the **Crucible base URL**. Configure your IdP to accept this audience, or use the **Audience override** field to set a custom value.
+
 ### JWT claims reference
 
 | Claim | Value |
@@ -439,7 +531,7 @@ cd api && go test -race ./...
 - [x] Custom run hooks — per-stack pre/post-plan and pre/post-apply bash scripts; configured in the stack settings UI, injected as env vars, executed inside the runner container; a non-zero exit fails the run
 - [x] Context-aware approval policies — OPA `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and returns `require_approval: true` to gate runs behind explicit sign-off; `deny` fails the run immediately
 - [x] Startup config validation — `RUNNER_MEMORY_LIMIT` and `RUNNER_CPU_LIMIT` validated at boot; server refuses to start on invalid values rather than silently running containers unbounded
-- [x] OIDC workload identity federation — Crucible acts as its own OIDC identity provider; each run receives a short-lived signed JWT; configure per-stack or set an org-level default in Settings → General to exchange it for temporary AWS, GCP, or Azure credentials — no static cloud secrets in Crucible
+- [x] OIDC workload identity federation — Crucible acts as its own OIDC identity provider; each run receives a short-lived signed JWT; configure per-stack or set an org-level default in Settings → General to exchange it for temporary credentials with AWS, GCP, Azure, HashiCorp Vault, Authentik, or any generic OIDC-compatible IdP — no static secrets in Crucible
 - [x] Notification test buttons — one-click test delivery for org-level Slack, Gotify, and ntfy endpoints directly from Settings → Notifications; confirms credentials are wired correctly without waiting for a run
 - [x] Per-stack RBAC on remote state links — configuring a cross-stack `terraform_remote_state` link now requires at least approver role on the source stack; prevents org members from granting access to state they cannot manage
 - [x] Auth endpoint rate hardening — per-IP rate limits tightened on `/auth/callback` (OAuth code exchange) and `/auth/refresh` (token renewal); service account tokens lock out after 20 failures per 5-minute window per IP
