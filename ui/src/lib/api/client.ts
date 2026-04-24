@@ -788,8 +788,17 @@ export interface OrgSummary {
 	role: string;
 }
 
+export interface OrgDetail {
+	id: string;
+	name: string;
+	slug: string;
+}
+
 export const org = {
 	me: () => request<{ role: string }>('/org/me'),
+	get: () => request<OrgDetail>('/org'),
+	update: (name: string) =>
+		request<{ name: string }>('/org', { method: 'PATCH', body: JSON.stringify({ name }) }),
 	list: () => request<OrgSummary[]>('/orgs'),
 	switchOrg: (orgID: string) =>
 		request<{ access_token: string }>('/auth/switch-org', {
