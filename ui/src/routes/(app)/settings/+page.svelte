@@ -25,6 +25,9 @@
 		oidc_aws_role_arn: '', oidc_aws_session_duration_secs: 3600,
 		oidc_gcp_audience: '', oidc_gcp_service_account_email: '',
 		oidc_azure_tenant_id: '', oidc_azure_client_id: '', oidc_azure_subscription_id: '',
+		oidc_vault_addr: '', oidc_vault_role: '', oidc_vault_mount: '',
+		oidc_authentik_url: '', oidc_authentik_client_id: '',
+		oidc_generic_token_url: '', oidc_generic_client_id: '', oidc_generic_scope: '',
 		oidc_audience_override: ''
 	});
 	let savingOIDC = $state(false);
@@ -52,6 +55,14 @@
 				oidc_azure_tenant_id: s.oidc_azure_tenant_id ?? '',
 				oidc_azure_client_id: s.oidc_azure_client_id ?? '',
 				oidc_azure_subscription_id: s.oidc_azure_subscription_id ?? '',
+				oidc_vault_addr: s.oidc_vault_addr ?? '',
+				oidc_vault_role: s.oidc_vault_role ?? '',
+				oidc_vault_mount: s.oidc_vault_mount ?? '',
+				oidc_authentik_url: s.oidc_authentik_url ?? '',
+				oidc_authentik_client_id: s.oidc_authentik_client_id ?? '',
+				oidc_generic_token_url: s.oidc_generic_token_url ?? '',
+				oidc_generic_client_id: s.oidc_generic_client_id ?? '',
+				oidc_generic_scope: s.oidc_generic_scope ?? '',
 				oidc_audience_override: s.oidc_audience_override ?? ''
 			};
 		}).catch(() => {});
@@ -241,9 +252,16 @@
 				<label class="field-label" for="oidc-provider">Cloud provider</label>
 				<select id="oidc-provider" class="field-input" bind:value={oidcForm.oidc_provider}>
 					<option value="">Disabled (no org default)</option>
-					<option value="aws">AWS</option>
-					<option value="gcp">GCP</option>
-					<option value="azure">Azure</option>
+					<optgroup label="Cloud">
+						<option value="aws">AWS</option>
+						<option value="gcp">Google Cloud</option>
+						<option value="azure">Azure</option>
+					</optgroup>
+					<optgroup label="Self-hosted">
+						<option value="vault">HashiCorp Vault</option>
+						<option value="authentik">Authentik</option>
+						<option value="generic">Generic (Keycloak, Zitadel, Dex…)</option>
+					</optgroup>
 				</select>
 			</div>
 
@@ -295,6 +313,60 @@
 						<label class="field-label" for="oidc-azure-sub">Subscription ID</label>
 						<input id="oidc-azure-sub" class="field-input font-mono text-sm"
 							bind:value={oidcForm.oidc_azure_subscription_id} placeholder="xxxxxxxx-xxxx-…" />
+					</div>
+				</div>
+			{:else if oidcForm.oidc_provider === 'vault'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-vault-addr">Vault address</label>
+						<input id="oidc-vault-addr" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_vault_addr} placeholder="https://vault.example.com" />
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-vault-role">JWT auth role</label>
+							<input id="oidc-vault-role" class="field-input font-mono text-sm"
+								bind:value={oidcForm.oidc_vault_role} placeholder="crucible-runner" />
+						</div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-vault-mount">JWT auth mount <span class="font-normal text-zinc-500">(optional, default: jwt)</span></label>
+							<input id="oidc-vault-mount" class="field-input font-mono text-sm"
+								bind:value={oidcForm.oidc_vault_mount} placeholder="jwt" />
+						</div>
+					</div>
+				</div>
+			{:else if oidcForm.oidc_provider === 'authentik'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-authentik-url">Authentik URL</label>
+						<input id="oidc-authentik-url" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_authentik_url} placeholder="https://auth.example.com" />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-authentik-cid">JWT source client ID</label>
+						<input id="oidc-authentik-cid" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_authentik_client_id} placeholder="crucible" />
+					</div>
+				</div>
+			{:else if oidcForm.oidc_provider === 'generic'}
+				<div class="space-y-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="oidc-generic-url">Token exchange endpoint</label>
+						<input id="oidc-generic-url" class="field-input font-mono text-sm"
+							bind:value={oidcForm.oidc_generic_token_url}
+							placeholder="https://keycloak.example.com/realms/myrealm/protocol/openid-connect/token" />
+					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-generic-cid">Client ID <span class="font-normal text-zinc-500">(optional)</span></label>
+							<input id="oidc-generic-cid" class="field-input font-mono text-sm"
+								bind:value={oidcForm.oidc_generic_client_id} placeholder="crucible-runner" />
+						</div>
+						<div class="space-y-1.5">
+							<label class="field-label" for="oidc-generic-scope">Scope <span class="font-normal text-zinc-500">(optional)</span></label>
+							<input id="oidc-generic-scope" class="field-input font-mono text-sm"
+								bind:value={oidcForm.oidc_generic_scope} placeholder="openid" />
+						</div>
 					</div>
 				</div>
 			{/if}

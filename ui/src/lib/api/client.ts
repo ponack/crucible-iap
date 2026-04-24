@@ -701,6 +701,14 @@ export interface SystemSettings {
 	oidc_azure_tenant_id?: string;
 	oidc_azure_client_id?: string;
 	oidc_azure_subscription_id?: string;
+	oidc_vault_addr?: string;
+	oidc_vault_role?: string;
+	oidc_vault_mount?: string;
+	oidc_authentik_url?: string;
+	oidc_authentik_client_id?: string;
+	oidc_generic_token_url?: string;
+	oidc_generic_client_id?: string;
+	oidc_generic_scope?: string;
 	oidc_audience_override?: string;
 	updated_at: string;
 }
@@ -923,7 +931,7 @@ export const registry = {
 
 export interface CloudOIDCConfig {
 	stack_id: string;
-	provider: 'aws' | 'gcp' | 'azure';
+	provider: 'aws' | 'gcp' | 'azure' | 'vault' | 'authentik' | 'generic';
 	aws_role_arn?: string;
 	aws_session_duration_secs?: number;
 	gcp_workload_identity_audience?: string;
@@ -931,6 +939,14 @@ export interface CloudOIDCConfig {
 	azure_tenant_id?: string;
 	azure_client_id?: string;
 	azure_subscription_id?: string;
+	vault_addr?: string;
+	vault_role?: string;
+	vault_mount?: string;
+	authentik_url?: string;
+	authentik_client_id?: string;
+	generic_token_url?: string;
+	generic_client_id?: string;
+	generic_scope?: string;
 	audience_override?: string;
 	created_at: string;
 	updated_at: string;

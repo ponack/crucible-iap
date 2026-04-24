@@ -669,18 +669,26 @@ func (w *pgNotifyWriter) Write(p []byte) (int, error) {
 // the OIDC-related fields on spec. Non-fatal: caller logs and continues without OIDC.
 func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args queue.RunJobArgs, spec *runner.JobSpec) error {
 	var (
-		provider                 string
-		awsRoleARN               *string
-		gcpAudience, gcpSA       *string
-		azureTenant, azureClient *string
-		azureSubscription        *string
-		audienceOverride         *string
+		provider                    string
+		awsRoleARN                  *string
+		gcpAudience, gcpSA          *string
+		azureTenant, azureClient    *string
+		azureSubscription           *string
+		vaultAddr, vaultRole        *string
+		vaultMount                  *string
+		authentikURL, authentikCID  *string
+		genericTokenURL, genericCID *string
+		genericScope                *string
+		audienceOverride            *string
 	)
 	err := w.pool.QueryRow(ctx, `
 		SELECT provider,
 		       aws_role_arn,
 		       gcp_workload_identity_audience, gcp_service_account_email,
 		       azure_tenant_id, azure_client_id, azure_subscription_id,
+		       vault_addr, vault_role, vault_mount,
+		       authentik_url, authentik_client_id,
+		       generic_token_url, generic_client_id, generic_scope,
 		       audience_override
 		FROM stack_cloud_oidc WHERE stack_id = $1
 	`, args.StackID).Scan(
@@ -688,6 +696,9 @@ func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args que
 		&awsRoleARN,
 		&gcpAudience, &gcpSA,
 		&azureTenant, &azureClient, &azureSubscription,
+		&vaultAddr, &vaultRole, &vaultMount,
+		&authentikURL, &authentikCID,
+		&genericTokenURL, &genericCID, &genericScope,
 		&audienceOverride,
 	)
 	if err != nil {
@@ -697,13 +708,22 @@ func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args que
 			       NULLIF(oidc_aws_role_arn,''),
 			       NULLIF(oidc_gcp_audience,''), NULLIF(oidc_gcp_service_account_email,''),
 			       NULLIF(oidc_azure_tenant_id,''), NULLIF(oidc_azure_client_id,''),
-			       NULLIF(oidc_azure_subscription_id,''), NULLIF(oidc_audience_override,'')
+			       NULLIF(oidc_azure_subscription_id,''),
+			       NULLIF(oidc_vault_addr,''), NULLIF(oidc_vault_role,''),
+			       NULLIF(oidc_vault_mount,''),
+			       NULLIF(oidc_authentik_url,''), NULLIF(oidc_authentik_client_id,''),
+			       NULLIF(oidc_generic_token_url,''), NULLIF(oidc_generic_client_id,''),
+			       NULLIF(oidc_generic_scope,''),
+			       NULLIF(oidc_audience_override,'')
 			FROM system_settings WHERE id = true
 		`).Scan(
 			&provider,
 			&awsRoleARN,
 			&gcpAudience, &gcpSA,
 			&azureTenant, &azureClient, &azureSubscription,
+			&vaultAddr, &vaultRole, &vaultMount,
+			&authentikURL, &authentikCID,
+			&genericTokenURL, &genericCID, &genericScope,
 			&audienceOverride,
 		)
 		if err != nil || provider == "" {
@@ -760,6 +780,30 @@ func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args que
 	if azureSubscription != nil {
 		spec.AzureOIDCSubscriptionID = *azureSubscription
 	}
+	if vaultAddr != nil {
+		spec.VaultAddr = *vaultAddr
+	}
+	if vaultRole != nil {
+		spec.VaultRole = *vaultRole
+	}
+	if vaultMount != nil {
+		spec.VaultMount = *vaultMount
+	}
+	if authentikURL != nil {
+		spec.AuthentikURL = *authentikURL
+	}
+	if authentikCID != nil {
+		spec.AuthentikClientID = *authentikCID
+	}
+	if genericTokenURL != nil {
+		spec.GenericTokenURL = *genericTokenURL
+	}
+	if genericCID != nil {
+		spec.GenericClientID = *genericCID
+	}
+	if genericScope != nil {
+		spec.GenericScope = *genericScope
+	}
 
 	log.Info("OIDC federation enabled", "provider", provider, "stack_slug", stackSlug)
 	return nil
@@ -773,6 +817,10 @@ func defaultAudience(provider, issuer string) string {
 		return issuer
 	case "azure":
 		return "api://AzureADTokenExchange"
+	// Self-hosted providers use the issuer URL as audience by convention.
+	// The operator configures the IdP to accept tokens with this audience.
+	case "vault", "authentik", "generic":
+		return issuer
 	}
 	return issuer
 }

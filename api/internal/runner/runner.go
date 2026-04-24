@@ -52,7 +52,7 @@ type JobSpec struct {
 	// OIDC workload identity federation — if set, an OIDC JWT is injected into
 	// /tmp inside the container and cloud-specific env vars are added.
 	OIDCToken    string // signed JWT issued by oidcprovider
-	OIDCProvider string // "aws" | "gcp" | "azure"
+	OIDCProvider string // "aws" | "gcp" | "azure" | "vault" | "authentik" | "generic"
 	// AWS
 	AWSOIDCRoleARN string
 	// GCP
@@ -62,6 +62,17 @@ type JobSpec struct {
 	AzureOIDCTenantID       string
 	AzureOIDCClientID       string
 	AzureOIDCSubscriptionID string
+	// Vault JWT auth
+	VaultAddr  string
+	VaultRole  string
+	VaultMount string
+	// Authentik
+	AuthentikURL      string
+	AuthentikClientID string
+	// Generic OIDC (Keycloak, Zitadel, Dex, …)
+	GenericTokenURL string
+	GenericClientID string
+	GenericScope    string
 }
 
 type Runner struct {
@@ -391,6 +402,38 @@ func oidcEnv(spec JobSpec) []string {
 			"AZURE_TENANT_ID=" + spec.AzureOIDCTenantID,
 			"AZURE_SUBSCRIPTION_ID=" + spec.AzureOIDCSubscriptionID,
 		}
+	case "vault":
+		mount := spec.VaultMount
+		if mount == "" {
+			mount = "jwt"
+		}
+		return []string{
+			"CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token",
+			"CRUCIBLE_OIDC_PROVIDER=vault",
+			"VAULT_ADDR=" + spec.VaultAddr,
+			"CRUCIBLE_OIDC_VAULT_ROLE=" + spec.VaultRole,
+			"CRUCIBLE_OIDC_VAULT_MOUNT=" + mount,
+		}
+	case "authentik":
+		return []string{
+			"CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token",
+			"CRUCIBLE_OIDC_PROVIDER=authentik",
+			"AUTHENTIK_URL=" + spec.AuthentikURL,
+			"CRUCIBLE_OIDC_AUTHENTIK_CLIENT_ID=" + spec.AuthentikClientID,
+		}
+	case "generic":
+		env := []string{
+			"CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token",
+			"CRUCIBLE_OIDC_PROVIDER=generic",
+			"CRUCIBLE_OIDC_TOKEN_URL=" + spec.GenericTokenURL,
+		}
+		if spec.GenericClientID != "" {
+			env = append(env, "CRUCIBLE_OIDC_CLIENT_ID="+spec.GenericClientID)
+		}
+		if spec.GenericScope != "" {
+			env = append(env, "CRUCIBLE_OIDC_SCOPE="+spec.GenericScope)
+		}
+		return env
 	}
 	return nil
 }

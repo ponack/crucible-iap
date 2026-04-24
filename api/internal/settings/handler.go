@@ -78,16 +78,24 @@ type Settings struct {
 	SMTPTLS               bool      `json:"smtp_tls"`
 	ArtifactRetentionDays int       `json:"artifact_retention_days"`
 	// Org-level OIDC federation defaults — used when a stack has no per-stack config.
-	OIDCProvider              string `json:"oidc_provider,omitempty"`
-	OIDCAWSRoleARN            string `json:"oidc_aws_role_arn,omitempty"`
-	OIDCAWSSessionDurationSecs int   `json:"oidc_aws_session_duration_secs,omitempty"`
-	OIDCGCPAudience           string `json:"oidc_gcp_audience,omitempty"`
+	OIDCProvider               string `json:"oidc_provider,omitempty"`
+	OIDCAWSRoleARN             string `json:"oidc_aws_role_arn,omitempty"`
+	OIDCAWSSessionDurationSecs int    `json:"oidc_aws_session_duration_secs,omitempty"`
+	OIDCGCPAudience            string `json:"oidc_gcp_audience,omitempty"`
 	OIDCGCPServiceAccountEmail string `json:"oidc_gcp_service_account_email,omitempty"`
-	OIDCAzureTenantID         string `json:"oidc_azure_tenant_id,omitempty"`
-	OIDCAzureClientID         string `json:"oidc_azure_client_id,omitempty"`
-	OIDCAzureSubscriptionID   string `json:"oidc_azure_subscription_id,omitempty"`
-	OIDCAudienceOverride      string `json:"oidc_audience_override,omitempty"`
-	UpdatedAt                 time.Time `json:"updated_at"`
+	OIDCAzureTenantID          string `json:"oidc_azure_tenant_id,omitempty"`
+	OIDCAzureClientID          string `json:"oidc_azure_client_id,omitempty"`
+	OIDCAzureSubscriptionID    string `json:"oidc_azure_subscription_id,omitempty"`
+	OIDCVaultAddr              string `json:"oidc_vault_addr,omitempty"`
+	OIDCVaultRole              string `json:"oidc_vault_role,omitempty"`
+	OIDCVaultMount             string `json:"oidc_vault_mount,omitempty"`
+	OIDCAuthentikURL           string `json:"oidc_authentik_url,omitempty"`
+	OIDCAuthentikClientID      string `json:"oidc_authentik_client_id,omitempty"`
+	OIDCGenericTokenURL        string `json:"oidc_generic_token_url,omitempty"`
+	OIDCGenericClientID        string `json:"oidc_generic_client_id,omitempty"`
+	OIDCGenericScope           string `json:"oidc_generic_scope,omitempty"`
+	OIDCAudienceOverride       string `json:"oidc_audience_override,omitempty"`
+	UpdatedAt                  time.Time `json:"updated_at"`
 }
 
 type Handler struct {
@@ -133,8 +141,7 @@ func validateRunnerFields(maxConcurrent, timeoutMins, retentionDays *int, memLim
 	return nil
 }
 
-// validateSettingsUpdate checks all field constraints for a settings update request.
-func validateSettingsUpdate(req *struct {
+type settingsUpdateReq struct {
 	RunnerDefaultImage    *string `json:"runner_default_image"`
 	RunnerMaxConcurrent   *int    `json:"runner_max_concurrent"`
 	RunnerJobTimeoutMins  *int    `json:"runner_job_timeout_mins"`
@@ -162,8 +169,19 @@ func validateSettingsUpdate(req *struct {
 	OIDCAzureTenantID          *string `json:"oidc_azure_tenant_id"`
 	OIDCAzureClientID          *string `json:"oidc_azure_client_id"`
 	OIDCAzureSubscriptionID    *string `json:"oidc_azure_subscription_id"`
+	OIDCVaultAddr              *string `json:"oidc_vault_addr"`
+	OIDCVaultRole              *string `json:"oidc_vault_role"`
+	OIDCVaultMount             *string `json:"oidc_vault_mount"`
+	OIDCAuthentikURL           *string `json:"oidc_authentik_url"`
+	OIDCAuthentikClientID      *string `json:"oidc_authentik_client_id"`
+	OIDCGenericTokenURL        *string `json:"oidc_generic_token_url"`
+	OIDCGenericClientID        *string `json:"oidc_generic_client_id"`
+	OIDCGenericScope           *string `json:"oidc_generic_scope"`
 	OIDCAudienceOverride       *string `json:"oidc_audience_override"`
-}) error {
+}
+
+// validateSettingsUpdate checks all field constraints for a settings update request.
+func validateSettingsUpdate(req *settingsUpdateReq) error {
 	if err := validateRunnerFields(req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
 		req.ArtifactRetentionDays, req.RunnerMemoryLimit, req.RunnerCPULimit); err != nil {
 		return err
@@ -178,9 +196,9 @@ func validateSettingsUpdate(req *struct {
 		}
 	}
 	if req.OIDCProvider != nil && *req.OIDCProvider != "" {
-		valid := map[string]bool{"aws": true, "gcp": true, "azure": true}
+		valid := map[string]bool{"aws": true, "gcp": true, "azure": true, "vault": true, "authentik": true, "generic": true}
 		if !valid[*req.OIDCProvider] {
-			return fmt.Errorf("oidc_provider must be aws, gcp, or azure")
+			return fmt.Errorf("oidc_provider must be aws, gcp, azure, vault, authentik, or generic")
 		}
 	}
 	return nil
@@ -188,36 +206,7 @@ func validateSettingsUpdate(req *struct {
 
 // Update persists new system settings (admin-only).
 func (h *Handler) Update(c echo.Context) error {
-	var req struct {
-		RunnerDefaultImage    *string `json:"runner_default_image"`
-		RunnerMaxConcurrent   *int    `json:"runner_max_concurrent"`
-		RunnerJobTimeoutMins  *int    `json:"runner_job_timeout_mins"`
-		RunnerMemoryLimit     *string `json:"runner_memory_limit"`
-		RunnerCPULimit        *string `json:"runner_cpu_limit"`
-		DefaultSlackWebhook   *string `json:"default_slack_webhook"`
-		DefaultVCSProvider    *string `json:"default_vcs_provider"`
-		DefaultVCSBaseURL     *string `json:"default_vcs_base_url"`
-		DefaultGotifyURL      *string `json:"default_gotify_url"`
-		DefaultGotifyToken    *string `json:"default_gotify_token"`
-		DefaultNtfyURL        *string `json:"default_ntfy_url"`
-		DefaultNtfyToken      *string `json:"default_ntfy_token"`
-		SMTPHost              *string `json:"smtp_host"`
-		SMTPPort              *int    `json:"smtp_port"`
-		SMTPUsername          *string `json:"smtp_username"`
-		SMTPPassword          *string `json:"smtp_password"`
-		SMTPFrom              *string `json:"smtp_from"`
-		SMTPTLS               *bool   `json:"smtp_tls"`
-		ArtifactRetentionDays *int    `json:"artifact_retention_days"`
-		OIDCProvider               *string `json:"oidc_provider"`
-		OIDCAWSRoleARN             *string `json:"oidc_aws_role_arn"`
-		OIDCAWSSessionDurationSecs *int    `json:"oidc_aws_session_duration_secs"`
-		OIDCGCPAudience            *string `json:"oidc_gcp_audience"`
-		OIDCGCPServiceAccountEmail *string `json:"oidc_gcp_service_account_email"`
-		OIDCAzureTenantID          *string `json:"oidc_azure_tenant_id"`
-		OIDCAzureClientID          *string `json:"oidc_azure_client_id"`
-		OIDCAzureSubscriptionID    *string `json:"oidc_azure_subscription_id"`
-		OIDCAudienceOverride       *string `json:"oidc_audience_override"`
-	}
+	var req settingsUpdateReq
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
@@ -254,7 +243,15 @@ func (h *Handler) Update(c echo.Context) error {
 			oidc_azure_tenant_id             = COALESCE($25, oidc_azure_tenant_id),
 			oidc_azure_client_id             = COALESCE($26, oidc_azure_client_id),
 			oidc_azure_subscription_id       = COALESCE($27, oidc_azure_subscription_id),
-			oidc_audience_override           = COALESCE($28, oidc_audience_override),
+			oidc_vault_addr                  = COALESCE($28, oidc_vault_addr),
+			oidc_vault_role                  = COALESCE($29, oidc_vault_role),
+			oidc_vault_mount                 = COALESCE($30, oidc_vault_mount),
+			oidc_authentik_url               = COALESCE($31, oidc_authentik_url),
+			oidc_authentik_client_id         = COALESCE($32, oidc_authentik_client_id),
+			oidc_generic_token_url           = COALESCE($33, oidc_generic_token_url),
+			oidc_generic_client_id           = COALESCE($34, oidc_generic_client_id),
+			oidc_generic_scope               = COALESCE($35, oidc_generic_scope),
+			oidc_audience_override           = COALESCE($36, oidc_audience_override),
 			updated_at                       = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
@@ -266,6 +263,9 @@ func (h *Handler) Update(c echo.Context) error {
 		req.OIDCProvider, req.OIDCAWSRoleARN, req.OIDCAWSSessionDurationSecs,
 		req.OIDCGCPAudience, req.OIDCGCPServiceAccountEmail,
 		req.OIDCAzureTenantID, req.OIDCAzureClientID, req.OIDCAzureSubscriptionID,
+		req.OIDCVaultAddr, req.OIDCVaultRole, req.OIDCVaultMount,
+		req.OIDCAuthentikURL, req.OIDCAuthentikClientID,
+		req.OIDCGenericTokenURL, req.OIDCGenericClientID, req.OIDCGenericScope,
 		req.OIDCAudienceOverride)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -299,7 +299,13 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(oidc_aws_session_duration_secs, 0),
 		       COALESCE(oidc_gcp_audience, ''), COALESCE(oidc_gcp_service_account_email, ''),
 		       COALESCE(oidc_azure_tenant_id, ''), COALESCE(oidc_azure_client_id, ''),
-		       COALESCE(oidc_azure_subscription_id, ''), COALESCE(oidc_audience_override, ''),
+		       COALESCE(oidc_azure_subscription_id, ''),
+		       COALESCE(oidc_vault_addr, ''), COALESCE(oidc_vault_role, ''),
+		       COALESCE(oidc_vault_mount, ''),
+		       COALESCE(oidc_authentik_url, ''), COALESCE(oidc_authentik_client_id, ''),
+		       COALESCE(oidc_generic_token_url, ''), COALESCE(oidc_generic_client_id, ''),
+		       COALESCE(oidc_generic_scope, ''),
+		       COALESCE(oidc_audience_override, ''),
 		       updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
@@ -311,6 +317,9 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		&s.OIDCProvider, &s.OIDCAWSRoleARN, &s.OIDCAWSSessionDurationSecs,
 		&s.OIDCGCPAudience, &s.OIDCGCPServiceAccountEmail,
 		&s.OIDCAzureTenantID, &s.OIDCAzureClientID, &s.OIDCAzureSubscriptionID,
+		&s.OIDCVaultAddr, &s.OIDCVaultRole, &s.OIDCVaultMount,
+		&s.OIDCAuthentikURL, &s.OIDCAuthentikClientID,
+		&s.OIDCGenericTokenURL, &s.OIDCGenericClientID, &s.OIDCGenericScope,
 		&s.OIDCAudienceOverride,
 		&s.UpdatedAt)
 	if err != nil {
