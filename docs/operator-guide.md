@@ -5,10 +5,11 @@
 1. [Requirements](#requirements)
 2. [First-time deployment](#first-time-deployment)
 3. [Configuration reference](#configuration-reference)
-4. [Upgrading](#upgrading)
-5. [Backup and restore](#backup-and-restore)
-6. [Monitoring](#monitoring)
-7. [Troubleshooting](#troubleshooting)
+4. [Cloud OIDC workload identity federation](#cloud-oidc-workload-identity-federation)
+5. [Upgrading](#upgrading)
+6. [Backup and restore](#backup-and-restore)
+7. [Monitoring](#monitoring)
+8. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -164,6 +165,181 @@ Hooks run with the same environment as the rest of the run (all stack env vars, 
 When a run starts, the worker checks for a per-stack Cloud OIDC configuration first. If none is set, it falls back to the org default. Per-stack configuration always takes precedence.
 
 This is useful when all (or most) of your stacks deploy to the same cloud account — configure the role ARN once in Settings and skip per-stack OIDC setup entirely. Stacks that need a different role can override it with their own configuration.
+
+---
+
+## Cloud OIDC workload identity federation
+
+Crucible acts as its own OIDC identity provider. On every run, it mints a short-lived signed JWT and injects it into the runner container. Each cloud provider can be configured to exchange that token for temporary credentials — no static cloud secrets stored in Crucible.
+
+**OIDC issuer:** `CRUCIBLE_BASE_URL` (must be publicly reachable so cloud providers can fetch the JWKS)
+
+**Discovery endpoint:** `https://crucible.example.com/.well-known/openid-configuration`
+
+**JWKS endpoint:** `https://crucible.example.com/.well-known/jwks.json`
+
+Configure federation on the stack detail page → **Cloud OIDC federation**. For an org-wide default identity shared across stacks, see [Org-level Cloud OIDC default](#org-level-cloud-oidc-default).
+
+### AWS
+
+1. In IAM → **Identity providers** → **Add provider**
+   - Provider type: **OpenID Connect**
+   - Provider URL: `https://crucible.example.com`
+   - Audience: `sts.amazonaws.com`
+2. Create an IAM role with a trust policy:
+
+   ```json
+   {
+     "Effect": "Allow",
+     "Principal": { "Federated": "arn:aws:iam::<ACCOUNT>:oidc-provider/crucible.example.com" },
+     "Action": "sts:AssumeRoleWithWebIdentity",
+     "Condition": {
+       "StringLike": {
+         "crucible.example.com:sub": "stack:<your-stack-slug>"
+       }
+     }
+   }
+   ```
+
+3. On the stack: set **Cloud provider** to `AWS`, paste the **IAM Role ARN**.
+
+The runner receives `AWS_WEB_IDENTITY_TOKEN_FILE` and `AWS_ROLE_ARN` — the AWS SDK picks these up automatically.
+
+### Google Cloud
+
+1. In IAM → **Workload Identity Federation** → **Create pool**, then **Add provider**
+   - Provider type: **OpenID Connect**
+   - Issuer URL: `https://crucible.example.com`
+   - Audience: leave as-is or customise
+2. Grant the pool permission to impersonate a service account:
+
+   ```bash
+   gcloud iam service-accounts add-iam-policy-binding runner@PROJECT.iam.gserviceaccount.com \
+     --role=roles/iam.workloadIdentityUser \
+     --member="principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/attribute.sub/stack:<your-stack-slug>"
+   ```
+
+3. On the stack: set **Cloud provider** to `GCP`, paste the **Workload identity audience** and **Service account email**.
+
+The runner receives a GCP External Account credential config at `GOOGLE_APPLICATION_CREDENTIALS` — the GCP SDK picks this up automatically.
+
+### Azure
+
+1. In Entra ID → **App registrations** → your app → **Certificates & secrets** → **Federated credentials** → **Add credential**
+   - Scenario: **Other issuer**
+   - Issuer: `https://crucible.example.com`
+   - Subject identifier: `stack:<your-stack-slug>`
+   - Audience: `api://AzureADTokenExchange`
+2. Assign the app the necessary Azure RBAC roles on your subscription/resource group.
+3. On the stack: set **Cloud provider** to `Azure`, paste **Tenant ID**, **Client (App) ID**, and **Subscription ID**.
+
+The runner receives `AZURE_FEDERATED_TOKEN_FILE`, `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` — the Azure SDK picks these up automatically.
+
+### HashiCorp Vault
+
+Uses Vault's [JWT/OIDC auth method](https://developer.hashicorp.com/vault/docs/auth/jwt). The runner exchanges the Crucible token for a Vault token; your entrypoint script can then use `VAULT_TOKEN` to pull secrets or credentials.
+
+1. Enable the JWT auth method and configure it to trust the Crucible issuer:
+
+   ```bash
+   vault auth enable jwt
+
+   vault write auth/jwt/config \
+     oidc_discovery_url="https://crucible.example.com" \
+     default_role="crucible-runner"
+
+   vault write auth/jwt/role/crucible-runner \
+     role_type="jwt" \
+     bound_audiences="https://crucible.example.com" \
+     user_claim="sub" \
+     bound_claims='{"sub":"stack:<your-stack-slug>"}' \
+     policies="crucible-runner-policy" \
+     ttl="1h"
+   ```
+
+2. On the stack: set **OIDC provider** to `HashiCorp Vault`, enter the **Vault address**, **JWT auth role**, and (if not the default `jwt`) the **JWT auth mount**.
+
+The runner receives:
+
+| Env var | Value |
+| --- | --- |
+| `VAULT_ADDR` | Vault server URL |
+| `CRUCIBLE_OIDC_VAULT_ROLE` | JWT auth role name |
+| `CRUCIBLE_OIDC_VAULT_MOUNT` | Auth mount path (default: `jwt`) |
+| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
+
+**Example entrypoint snippet:**
+
+```bash
+VAULT_TOKEN=$(vault write -field=token \
+  auth/${CRUCIBLE_OIDC_VAULT_MOUNT}/login \
+  role="${CRUCIBLE_OIDC_VAULT_ROLE}" \
+  jwt="$(cat ${CRUCIBLE_OIDC_TOKEN_FILE})")
+export VAULT_TOKEN
+```
+
+### Authentik
+
+Uses Authentik's [JWT source](https://docs.goauthentik.io/docs/sources/oauth/) to trust the Crucible-issued token and exchange it for an Authentik session.
+
+1. In Authentik → **Directory** → **Federation & Social login** → **Create** → **JWT source**
+   - Issuer URL: `https://crucible.example.com`
+   - JWKS URL: `https://crucible.example.com/.well-known/jwks.json`
+   - Note the **slug** — this becomes the client ID.
+2. On the stack: set **OIDC provider** to `Authentik`, enter the **Authentik URL** and the **JWT source slug** as the client ID.
+
+The runner receives:
+
+| Env var | Value |
+| --- | --- |
+| `AUTHENTIK_URL` | Authentik base URL |
+| `CRUCIBLE_OIDC_AUTHENTIK_CLIENT_ID` | JWT source slug / client ID |
+| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
+
+### Generic (Keycloak, Zitadel, Dex, custom IdP)
+
+Any OIDC-compatible identity provider that supports token exchange or direct JWT bearer flows. Configure the token endpoint and optional client ID / scope; your runner entrypoint script performs the exchange.
+
+1. Configure your IdP to trust the Crucible OIDC issuer (`https://crucible.example.com`) and accept the issued JWT as a bearer or exchange token.
+2. On the stack: set **OIDC provider** to `Generic`, enter the **token exchange endpoint**, and optionally a **client ID** and **scope**.
+
+The runner receives:
+
+| Env var | Value |
+| --- | --- |
+| `CRUCIBLE_OIDC_TOKEN_URL` | Token exchange endpoint |
+| `CRUCIBLE_OIDC_CLIENT_ID` | Client ID (if set) |
+| `CRUCIBLE_OIDC_SCOPE` | Scope (if set) |
+| `CRUCIBLE_OIDC_TOKEN_FILE` | `/tmp/oidc-token` |
+
+**Keycloak example** (token exchange):
+
+```bash
+ACCESS_TOKEN=$(curl -s -X POST "${CRUCIBLE_OIDC_TOKEN_URL}" \
+  -d "grant_type=urn:ietf:params:oauth:grant-type:token-exchange" \
+  -d "client_id=${CRUCIBLE_OIDC_CLIENT_ID}" \
+  -d "subject_token=$(cat ${CRUCIBLE_OIDC_TOKEN_FILE})" \
+  -d "subject_token_type=urn:ietf:params:oauth:token-type:jwt" \
+  | jq -r '.access_token')
+```
+
+### Default audience for self-hosted providers
+
+For Vault, Authentik, and Generic providers the default JWT audience (`aud` claim) is the **Crucible base URL**. Configure your IdP to accept this audience, or use the **Audience override** field to set a custom value.
+
+### JWT claims reference
+
+| Claim | Value |
+| ----- | ----- |
+| `iss` | Crucible base URL |
+| `sub` | `stack:<slug>` |
+| `aud` | Cloud-specific (see above) or custom audience override |
+| `stack_id` | Stack UUID |
+| `stack_slug` | Stack slug |
+| `org_id` | Org UUID |
+| `run_id` | Run UUID |
+| `run_type` | `tracked` / `proposed` / `destroy` / `apply` |
+| `branch` | Repository branch |
 
 ---
 
