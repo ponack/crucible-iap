@@ -2,6 +2,8 @@
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { org, type OrgMember, type OrgInvite, type OrgDetail } from '$lib/api/client';
+	import { orgListStore } from '$lib/stores/orgs.svelte';
+	import { decodeJWTPayload } from '$lib/jwt';
 
 	let orgDetail = $state<OrgDetail | null>(null);
 	let orgNameDraft = $state('');
@@ -59,8 +61,14 @@
 		nameError = null;
 		nameSaved = false;
 		try {
-			await org.update(orgNameDraft.trim());
-			if (orgDetail) orgDetail = { ...orgDetail, name: orgNameDraft.trim() };
+			const trimmed = orgNameDraft.trim();
+			await org.update(trimmed);
+			if (orgDetail) orgDetail = { ...orgDetail, name: trimmed };
+			// Keep the sidebar org switcher in sync without a full reload.
+			try {
+				const orgID = decodeJWTPayload(auth.accessToken!).org as string;
+				orgListStore.updateName(orgID, trimmed);
+			} catch {}
 			nameSaved = true;
 			setTimeout(() => { nameSaved = false; }, 2500);
 		} catch (err) {

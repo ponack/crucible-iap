@@ -3,14 +3,15 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
-	import { org, tryRefresh, type OrgSummary } from '$lib/api/client';
+	import { org, tryRefresh } from '$lib/api/client';
+	import { orgListStore } from '$lib/stores/orgs.svelte';
 	import { decodeJWTPayload } from '$lib/jwt';
 	import { page } from '$app/state';
 
 	const { children } = $props();
 
 	let mounted = $state(false);
-	let myOrgs = $state<OrgSummary[]>([]);
+	const myOrgs = orgListStore;
 	let switchingOrg = $state(false);
 
 	const isAuthRoute = $derived(
@@ -40,8 +41,8 @@
 			org.me().then((r) => auth.setOrgRole(r.role as OrgRole)).catch(() => {});
 		}
 		// Load orgs for the switcher once authenticated.
-		if (mounted && !isAuthRoute && auth.isAuthenticated && myOrgs.length === 0) {
-			org.list().then((r) => { myOrgs = r; }).catch(() => {});
+		if (mounted && !isAuthRoute && auth.isAuthenticated && myOrgs.list.length === 0) {
+			org.list().then((r) => { myOrgs.set(r); }).catch(() => {});
 		}
 	});
 
@@ -67,9 +68,9 @@
 				name: payload.name,
 				is_admin: false
 			});
-			const switched = myOrgs.find(o => o.id === orgID);
+			const switched = myOrgs.list.find(o => o.id === orgID);
 			if (switched) auth.setOrgRole(switched.role as OrgRole);
-			myOrgs = []; // triggers reload on next effect tick
+			myOrgs.clear(); // triggers reload on next effect tick
 			goto('/stacks', { replaceState: true });
 		} catch {
 			// silently ignore — user stays on current org
@@ -98,7 +99,7 @@
 			</div>
 
 			<!-- Org switcher — only shown when user belongs to more than one org -->
-			{#if myOrgs.length > 1}
+			{#if myOrgs.list.length > 1}
 				<div class="px-2 py-2 border-b border-zinc-800">
 					<div class="relative">
 						<select
@@ -107,7 +108,7 @@
 							disabled={switchingOrg}
 							class="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 truncate"
 						>
-							{#each myOrgs as o (o.id)}
+							{#each myOrgs.list as o (o.id)}
 								<option value={o.id}>{o.name}</option>
 							{/each}
 						</select>
