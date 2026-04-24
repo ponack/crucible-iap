@@ -54,7 +54,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 ### Observability and operations
 
-- **Monitoring page** — Grafana panels embedded directly in the Crucible UI at `/monitoring`; all five dashboard panels (HTTP request rate, error rate, latency p50/p95/p99, run completions, queue depth) rendered inline with a 30 s auto-refresh; link to the full Grafana dashboard for admin use
+- **Monitoring page** — Grafana panels embedded directly in the Crucible UI at `/monitoring`; eight dashboard panels rendered inline with a 30 s auto-refresh: HTTP request rate, error rate, latency p50/p95/p99, run completions, queue depth, active runs, stack count, and run success rate (1 h); link to the full Grafana dashboard for admin use
 - **Prometheus + Grafana** — built-in dashboards for HTTP latency, run throughput, and queue depth; Grafana served at `{BASE_URL}/grafana`
 - **Push notifications** — per-stack Slack webhooks, Gotify, ntfy, and email (SMTP) event subscriptions: plan complete, run succeeded, run failed; configurable defaults in Settings → Notifications with one-click test delivery; per-stack overrides on the stack detail page
 - **Webhook delivery log** — every inbound webhook request is recorded (forge, event type, outcome, skip reason, linked run) with the full stored payload; click any delivery in the UI to inspect the raw JSON body for debugging missed or skipped events
@@ -489,7 +489,7 @@ cd api && go test -race ./...
 - [x] Settings UI — member management, role changes, invite links
 - [x] Automatic migrations on startup
 - [x] Prometheus metrics + Grafana dashboards (built-in, served at `/grafana`)
-- [x] Monitoring page — Grafana panels embedded in the Crucible UI; no separate Grafana tab needed for day-to-day observability
+- [x] Monitoring page — Grafana panels embedded in the Crucible UI; eight panels: HTTP request rate, error rate, latency, run completions, queue depth, active runs, stack count, and run success rate; no separate Grafana tab needed for day-to-day observability
 - [x] Org-level Gotify and ntfy defaults — configure default push notification endpoints in Settings; new stacks inherit them
 - [x] Structured `/health` endpoint (DB status, version, uptime)
 - [x] Policy management UI + drift detection scheduling
@@ -539,6 +539,7 @@ cd api && go test -race ./...
 - [x] httpOnly session cookies — refresh token moved from localStorage to a server-set `crucible_refresh` httpOnly `SameSite=Strict` cookie; access token kept in JS memory only; page-reload session restored transparently via silent cookie exchange
 - [x] Stack dependency flow diagram — upstream/downstream relationships visualised as an SVG flow diagram on the stack detail page; bezier-curve arrows, indigo-highlighted current stack, clickable dep nodes; zero new dependencies
 - [x] Org context switching after invite acceptance — accepting an org invite now immediately switches the active session to the invited org; users land on that org's stacks without needing to log out and back in
+- [x] Org name editing — admins can rename their organisation from Settings → Organisation; slug remains stable for URL routing
 - [ ] Scheduled runs — trigger plan, apply, or destroy runs on a cron schedule independent of code pushes; extends beyond drift (which is always proposed) to support nightly applies, morning plan checks, and weekend environment teardowns
 - [x] Stack locking / maintenance mode — per-stack flag that prevents new runs from being queued; operators set it before manual cloud console changes and release it when done; prevents race conditions during incident response; lock reason shown as an amber banner on the stack page
 - [x] Run annotations — free-text operator note on any run ("deployed for hotfix", "reverting per oncall"); closes the audit gap between who triggered a run and why; inline click-to-edit on the run detail page
