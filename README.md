@@ -32,6 +32,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 - **Policy hooks** — `pre_plan`, `post_plan`, `pre_apply`, `trigger` (downstream stacks), `login`, `approval`
 - **Deny and warn** — blocking denials halt the run; non-blocking warnings surface to the operator
 - **Approval policies** — `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and can return `require_approval: true` to gate runs behind explicit sign-off; a `deny` fails the run immediately; approved runs transition to `unconfirmed` or auto-apply directly
+- **Policy test playground** — standalone `/policies/test` page to evaluate any saved policy against synthetic JSON input without a real run; results show allow/deny/warn/trigger with per-message cards; optional OPA evaluation trace reveals exactly which rules entered, failed, and exited
 - **Full audit log** — every state-mutating action recorded; append-only and tamper-resistant at the database level
 
 ### Infrastructure
@@ -540,7 +541,7 @@ cd api && go test -race ./...
 - [x] Stack dependency flow diagram — upstream/downstream relationships visualised as an SVG flow diagram on the stack detail page; bezier-curve arrows, indigo-highlighted current stack, clickable dep nodes; zero new dependencies
 - [x] Org context switching after invite acceptance — accepting an org invite now immediately switches the active session to the invited org; users land on that org's stacks without needing to log out and back in
 - [x] Org name editing — admins can rename their organisation from Settings → Organisation; slug remains stable for URL routing
-- [ ] Scheduled runs — trigger plan, apply, or destroy runs on a cron schedule independent of code pushes; extends beyond drift (which is always proposed) to support nightly applies, morning plan checks, and weekend environment teardowns
+- [x] Scheduled runs — cron-based plan, apply, or destroy runs per stack independent of code pushes; standard 5-field cron expressions (`0 2 * * *` = 2 am daily); next run time shown inline; worker polls every minute and enqueues the appropriate run type automatically
 - [x] Stack locking / maintenance mode — per-stack flag that prevents new runs from being queued; operators set it before manual cloud console changes and release it when done; prevents race conditions during incident response; lock reason shown as an amber banner on the stack page
 - [x] Run annotations — free-text operator note on any run ("deployed for hotfix", "reverting per oncall"); closes the audit gap between who triggered a run and why; inline click-to-edit on the run detail page
 - [ ] Generic outgoing webhooks — fire arbitrary HTTP POST on run state changes to PagerDuty, ServiceNow, Jira, or custom tooling; HMAC-signed, configurable per event type, delivery log with retry
@@ -550,7 +551,7 @@ cd api && go test -race ./...
 - [ ] Private provider registry — extend the existing module registry to serve custom Terraform providers; critical for air-gapped deployments and teams distributing internal providers
 - [ ] Per-stack run concurrency cap — limit a specific stack to N concurrent runs (typically 1 for production); currently only a global cap exists
 - [ ] Self-service infrastructure blueprints — parameterized stack creation with named user-facing input fields rendered as a form; platform teams publish blueprints, app teams self-serve environments without touching stack config
-- [ ] OPA policy test UI — paste a synthetic run payload and evaluate it against a saved policy inline; surfaces deny/warn/pass without needing a real run; genuine differentiator — neither Spacelift nor TF Cloud has this built in
+- [x] OPA policy test playground — standalone `/policies/test` page; pick any saved policy, paste synthetic JSON, run it and see allow/deny/warn/trigger results with optional OPA evaluation trace; genuine differentiator — neither Spacelift nor TF Cloud has this built in
 - [ ] PR preview environments — auto-create a stack from a template when a PR opens, auto-destroy when it closes; branch name drives workspace isolation; pairs with stack dependencies for full per-PR environment chains
 - [ ] AI run troubleshooting — one-click "Explain failure" on failed runs; sends log context to the Claude API and returns a structured root-cause explanation and suggested fix; opt-in via `ANTHROPIC_API_KEY`
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
