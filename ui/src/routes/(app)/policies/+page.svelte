@@ -95,12 +95,20 @@
 <div class="max-w-3xl space-y-6 p-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-lg font-semibold text-white">Policies</h1>
-		<button
-			onclick={() => (creating = !creating)}
-			class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500"
-		>
-			{creating ? 'Cancel' : 'New policy'}
-		</button>
+		<div class="flex items-center gap-2">
+			<a
+				href="/policies/test"
+				class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+			>
+				Test playground
+			</a>
+			<button
+				onclick={() => (creating = !creating)}
+				class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500"
+			>
+				{creating ? 'Cancel' : 'New policy'}
+			</button>
+		</div>
 	</div>
 
 	{#if creating}
