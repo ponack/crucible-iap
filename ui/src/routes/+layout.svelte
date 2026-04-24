@@ -3,15 +3,23 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
-	import { org, tryRefresh } from '$lib/api/client';
+	import { org, tryRefresh, type OrgSummary } from '$lib/api/client';
+	import { decodeJWTPayload } from '$lib/jwt';
 	import { page } from '$app/state';
 
 	const { children } = $props();
 
 	let mounted = $state(false);
+	let myOrgs = $state<OrgSummary[]>([]);
+	let switchingOrg = $state(false);
 
 	const isAuthRoute = $derived(
 		page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/auth')
+	);
+
+	// Current org ID from the JWT — used to mark the active org in the switcher.
+	const currentOrgID = $derived(
+		auth.accessToken ? (() => { try { return decodeJWTPayload(auth.accessToken!).org as string; } catch { return ''; } })() : ''
 	);
 
 	onMount(async () => {
@@ -31,6 +39,10 @@
 		if (mounted && !isAuthRoute && auth.isAuthenticated && !auth.orgRole) {
 			org.me().then((r) => auth.setOrgRole(r.role as OrgRole)).catch(() => {});
 		}
+		// Load orgs for the switcher once authenticated.
+		if (mounted && !isAuthRoute && auth.isAuthenticated && myOrgs.length === 0) {
+			org.list().then((r) => { myOrgs = r; }).catch(() => {});
+		}
 	});
 
 	function navClass(prefix: string) {
@@ -41,6 +53,29 @@
 		try { await fetch('/auth/logout', { method: 'POST' }); } catch {}
 		auth.clear();
 		goto('/login', { replaceState: true });
+	}
+
+	async function switchOrg(orgID: string) {
+		if (orgID === currentOrgID || switchingOrg) return;
+		switchingOrg = true;
+		try {
+			const { access_token } = await org.switchOrg(orgID);
+			const payload = decodeJWTPayload(access_token);
+			auth.setTokens(access_token, {
+				id: payload.uid,
+				email: payload.email,
+				name: payload.name,
+				is_admin: false
+			});
+			const switched = myOrgs.find(o => o.id === orgID);
+			if (switched) auth.setOrgRole(switched.role as OrgRole);
+			myOrgs = []; // triggers reload on next effect tick
+			goto('/stacks', { replaceState: true });
+		} catch {
+			// silently ignore — user stays on current org
+		} finally {
+			switchingOrg = false;
+		}
 	}
 </script>
 
@@ -61,6 +96,29 @@
 					<span class="text-[10px] text-zinc-500 uppercase tracking-widest">IAP</span>
 				</div>
 			</div>
+
+			<!-- Org switcher — only shown when user belongs to more than one org -->
+			{#if myOrgs.length > 1}
+				<div class="px-2 py-2 border-b border-zinc-800">
+					<div class="relative">
+						<select
+							onchange={(e) => switchOrg((e.target as HTMLSelectElement).value)}
+							value={currentOrgID}
+							disabled={switchingOrg}
+							class="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 truncate"
+						>
+							{#each myOrgs as o (o.id)}
+								<option value={o.id}>{o.name}</option>
+							{/each}
+						</select>
+						<div class="pointer-events-none absolute inset-y-0 right-2 flex items-center">
+							<svg class="h-3 w-3 text-zinc-500" viewBox="0 0 12 12" fill="none">
+								<path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+							</svg>
+						</div>
+					</div>
+				</div>
+			{/if}
 			<nav class="flex-1 px-2 py-4 space-y-1 text-sm">
 				<a href="/dashboard" class={navClass('/dashboard')}>Dashboard</a>
 				<a href="/stacks" class={navClass('/stacks')}>Stacks</a>
