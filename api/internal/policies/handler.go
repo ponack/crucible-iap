@@ -67,12 +67,14 @@ func LoadEngine(ctx context.Context, pool *pgxpool.Pool, engine *policy.Engine) 
 
 // Validate compiles Rego without saving and returns any compile errors.
 // If input is provided, also evaluates the policy and returns the result.
-// POST /api/v1/policies/validate  { type, body, input? }
+// Pass trace:true to include OPA evaluation trace in the response.
+// POST /api/v1/policies/validate  { type, body, input?, trace? }
 func (h *Handler) Validate(c echo.Context) error {
 	var req struct {
 		Type  string         `json:"type"`
 		Body  string         `json:"body"`
 		Input map[string]any `json:"input,omitempty"`
+		Trace bool           `json:"trace,omitempty"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -85,6 +87,13 @@ func (h *Handler) Validate(c echo.Context) error {
 
 	// If input is provided, compile + evaluate in one shot (dry-run sandbox).
 	if req.Input != nil {
+		if req.Trace {
+			result, trace, err := h.engine.EvaluateSourceWithTrace(ctx, policy.Type(req.Type), req.Body, req.Input)
+			if err != nil {
+				return c.JSON(http.StatusOK, map[string]any{"ok": false, "error": err.Error()})
+			}
+			return c.JSON(http.StatusOK, map[string]any{"ok": true, "result": result, "trace": trace})
+		}
 		result, err := h.engine.EvaluateSource(ctx, policy.Type(req.Type), req.Body, req.Input)
 		if err != nil {
 			return c.JSON(http.StatusOK, map[string]any{"ok": false, "error": err.Error()})

@@ -22,8 +22,9 @@
 	let showTemplates = $state(false);
 	let testInput = $state('');
 	let testing = $state(false);
-	let testResult = $state<{ ok: boolean; error?: string; result?: PolicyResult } | null>(null);
+	let testResult = $state<{ ok: boolean; error?: string; result?: PolicyResult; trace?: string } | null>(null);
 	let showTest = $state(false);
+	let traceEnabled = $state(false);
 	let isOrgDefault = $state(false);
 	let togglingOrgDefault = $state(false);
 
@@ -64,7 +65,7 @@
 		testing = true;
 		testResult = null;
 		try {
-			testResult = await policies.test(policy.type, form.body, parsed);
+			testResult = await policies.test(policy.type, form.body, parsed, traceEnabled);
 		} catch (e) {
 			testResult = { ok: false, error: (e as Error).message };
 		} finally {
@@ -309,35 +310,10 @@
 							></textarea>
 						</div>
 						<div class="flex items-center justify-between">
-							<div>
-								{#if testResult}
-									{#if !testResult.ok}
-										<p class="font-mono text-xs text-red-400">{testResult.error}</p>
-									{:else if testResult.result}
-										{@const r = testResult.result}
-										<div class="space-y-1">
-											<p class="text-xs font-medium {r.allow ? 'text-green-400' : 'text-red-400'}">
-												{r.allow ? 'PASS — no denials' : 'BLOCKED'}
-											</p>
-											{#if r.deny && r.deny.length > 0}
-												{#each r.deny as msg}
-													<p class="font-mono text-xs text-red-300">deny: {msg}</p>
-												{/each}
-											{/if}
-											{#if r.warn && r.warn.length > 0}
-												{#each r.warn as msg}
-													<p class="font-mono text-xs text-amber-300">warn: {msg}</p>
-												{/each}
-											{/if}
-											{#if r.trigger && r.trigger.length > 0}
-												{#each r.trigger as id}
-													<p class="font-mono text-xs text-indigo-300">trigger: {id}</p>
-												{/each}
-											{/if}
-										</div>
-									{/if}
-								{/if}
-							</div>
+							<label class="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300">
+								<input type="checkbox" bind:checked={traceEnabled} class="accent-indigo-500" />
+								Include trace
+							</label>
 							<button
 								type="button"
 								onclick={runTest}
@@ -347,6 +323,45 @@
 								{testing ? 'Running…' : 'Run test'}
 							</button>
 						</div>
+
+						{#if testResult}
+							{#if !testResult.ok}
+								<p class="font-mono text-xs text-red-400">{testResult.error}</p>
+							{:else if testResult.result}
+								{@const r = testResult.result}
+								<div class="space-y-1 rounded-lg bg-zinc-950 px-3 py-2">
+									<p class="text-xs font-medium {r.allow ? 'text-green-400' : 'text-red-400'}">
+										{r.allow ? 'PASS — no denials' : 'BLOCKED'}
+									</p>
+									{#if r.deny && r.deny.length > 0}
+										{#each r.deny as msg}
+											<p class="font-mono text-xs text-red-300">deny: {msg}</p>
+										{/each}
+									{/if}
+									{#if r.warn && r.warn.length > 0}
+										{#each r.warn as msg}
+											<p class="font-mono text-xs text-amber-300">warn: {msg}</p>
+										{/each}
+									{/if}
+									{#if r.trigger && r.trigger.length > 0}
+										{#each r.trigger as id}
+											<p class="font-mono text-xs text-indigo-300">trigger: {id}</p>
+										{/each}
+									{/if}
+									{#if r.require_approval}
+										<p class="font-mono text-xs text-yellow-300">require_approval: true</p>
+									{/if}
+								</div>
+								{#if testResult.trace}
+									<details class="rounded-lg border border-zinc-800">
+										<summary class="cursor-pointer px-3 py-2 text-xs text-zinc-500 hover:text-zinc-300">
+											Evaluation trace
+										</summary>
+										<pre class="max-h-64 overflow-auto px-3 pb-3 font-mono text-[11px] leading-relaxed text-zinc-400 whitespace-pre">{testResult.trace}</pre>
+									</details>
+								{/if}
+							{/if}
+						{/if}
 					</div>
 				{/if}
 			</div>

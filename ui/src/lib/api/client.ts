@@ -739,6 +739,8 @@ export interface PolicyResult {
 	deny?: string[];
 	warn?: string[];
 	trigger?: string[];
+	require_approval?: boolean;
+	trace?: string;
 }
 
 export const policies = {
@@ -747,10 +749,10 @@ export const policies = {
 			method: 'POST',
 			body: JSON.stringify({ type, body })
 		}),
-	test: (type: string, body: string, input: unknown) =>
-		request<{ ok: boolean; error?: string; result?: PolicyResult }>('/policies/validate', {
+	test: (type: string, body: string, input: unknown, trace = false) =>
+		request<{ ok: boolean; error?: string; result?: PolicyResult; trace?: string }>('/policies/validate', {
 			method: 'POST',
-			body: JSON.stringify({ type, body, input })
+			body: JSON.stringify({ type, body, input, trace })
 		}),
 	list: () => request<Policy[]>('/policies'),
 	get: (id: string) => request<Policy>(`/policies/${id}`),

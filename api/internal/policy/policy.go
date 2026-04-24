@@ -6,9 +6,11 @@ package policy
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/open-policy-agent/opa/v1/rego"
+	"github.com/open-policy-agent/opa/v1/topdown"
 )
 
 // Type identifies which hook a policy applies to.
@@ -85,8 +87,33 @@ func (e *Engine) EvaluateSource(ctx context.Context, t Type, source string, inpu
 	if err != nil {
 		return Result{}, fmt.Errorf("compile: %w", err)
 	}
-	p := &Policy{query: q}
-	return p.eval(ctx, input)
+	rs, err := q.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		return Result{}, err
+	}
+	return parseResultSet(rs), nil
+}
+
+// EvaluateSourceWithTrace is like EvaluateSource but also returns OPA's evaluation
+// trace, formatted by topdown.PrettyTrace. Used by the policy test playground.
+func (e *Engine) EvaluateSourceWithTrace(ctx context.Context, t Type, source string, input map[string]any) (Result, string, error) {
+	q, err := rego.New(
+		rego.Query(queryForType(t)),
+		rego.Module("test.rego", source),
+	).PrepareForEval(ctx)
+	if err != nil {
+		return Result{}, "", fmt.Errorf("compile: %w", err)
+	}
+
+	buf := topdown.NewBufferTracer()
+	rs, err := q.Eval(ctx, rego.EvalInput(input), rego.EvalQueryTracer(buf))
+	if err != nil {
+		return Result{}, "", err
+	}
+
+	var sb strings.Builder
+	topdown.PrettyTrace(&sb, *buf)
+	return parseResultSet(rs), sb.String(), nil
 }
 
 // Unload removes a policy by ID.
@@ -170,26 +197,28 @@ func (p *Policy) eval(ctx context.Context, input map[string]any) (Result, error)
 	if err != nil {
 		return Result{}, err
 	}
-	if len(rs) == 0 || len(rs[0].Expressions) == 0 {
-		return Result{Allow: true}, nil
-	}
+	return parseResultSet(rs), nil
+}
 
+func parseResultSet(rs rego.ResultSet) Result {
+	if len(rs) == 0 || len(rs[0].Expressions) == 0 {
+		return Result{Allow: true}
+	}
 	val, ok := rs[0].Expressions[0].Value.(map[string]any)
 	if !ok {
-		return Result{Allow: true}, nil
+		return Result{Allow: true}
 	}
-
 	result := Result{
-		Allow:          true,
-		Deny:           extractStrings(val, "deny"),
-		Warn:           extractStrings(val, "warn"),
-		Trigger:        extractStrings(val, "trigger"),
+		Allow:           true,
+		Deny:            extractStrings(val, "deny"),
+		Warn:            extractStrings(val, "warn"),
+		Trigger:         extractStrings(val, "trigger"),
 		RequireApproval: extractBool(val, "require_approval"),
 	}
 	if len(result.Deny) > 0 {
 		result.Allow = false
 	}
-	return result, nil
+	return result
 }
 
 func extractStrings(val map[string]any, key string) []string {
