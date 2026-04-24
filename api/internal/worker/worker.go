@@ -665,82 +665,84 @@ func (w *pgNotifyWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// oidcFields holds the raw DB values for an OIDC federation config.
+type oidcFields struct {
+	provider        string
+	awsRoleARN      *string
+	gcpAudience     *string
+	gcpSA           *string
+	azureTenant     *string
+	azureClient     *string
+	azureSubscription *string
+	vaultAddr       *string
+	vaultRole       *string
+	vaultMount      *string
+	authentikURL    *string
+	authentikCID    *string
+	genericTokenURL *string
+	genericCID      *string
+	genericScope    *string
+	audienceOverride *string
+}
+
+func (f *oidcFields) scanDest() []any {
+	return []any{
+		&f.provider,
+		&f.awsRoleARN,
+		&f.gcpAudience, &f.gcpSA,
+		&f.azureTenant, &f.azureClient, &f.azureSubscription,
+		&f.vaultAddr, &f.vaultRole, &f.vaultMount,
+		&f.authentikURL, &f.authentikCID,
+		&f.genericTokenURL, &f.genericCID, &f.genericScope,
+		&f.audienceOverride,
+	}
+}
+
+// applyOIDCToSpec copies oidcFields into the runner JobSpec — no branching on field presence.
+func applyOIDCToSpec(f oidcFields, token string, spec *runner.JobSpec) {
+	spec.OIDCToken = token
+	spec.OIDCProvider = f.provider
+	spec.AWSOIDCRoleARN = derefStr(f.awsRoleARN)
+	spec.GCPOIDCAudience = derefStr(f.gcpAudience)
+	spec.GCPOIDCServiceAccountEmail = derefStr(f.gcpSA)
+	spec.AzureOIDCTenantID = derefStr(f.azureTenant)
+	spec.AzureOIDCClientID = derefStr(f.azureClient)
+	spec.AzureOIDCSubscriptionID = derefStr(f.azureSubscription)
+	spec.VaultAddr = derefStr(f.vaultAddr)
+	spec.VaultRole = derefStr(f.vaultRole)
+	spec.VaultMount = derefStr(f.vaultMount)
+	spec.AuthentikURL = derefStr(f.authentikURL)
+	spec.AuthentikClientID = derefStr(f.authentikCID)
+	spec.GenericTokenURL = derefStr(f.genericTokenURL)
+	spec.GenericClientID = derefStr(f.genericCID)
+	spec.GenericScope = derefStr(f.genericScope)
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 // loadOIDCSpec fetches the stack's cloud OIDC config, issues a JWT, and populates
 // the OIDC-related fields on spec. Non-fatal: caller logs and continues without OIDC.
 func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args queue.RunJobArgs, spec *runner.JobSpec) error {
-	var (
-		provider                    string
-		awsRoleARN                  *string
-		gcpAudience, gcpSA          *string
-		azureTenant, azureClient    *string
-		azureSubscription           *string
-		vaultAddr, vaultRole        *string
-		vaultMount                  *string
-		authentikURL, authentikCID  *string
-		genericTokenURL, genericCID *string
-		genericScope                *string
-		audienceOverride            *string
-	)
-	err := w.pool.QueryRow(ctx, `
-		SELECT provider,
-		       aws_role_arn,
-		       gcp_workload_identity_audience, gcp_service_account_email,
-		       azure_tenant_id, azure_client_id, azure_subscription_id,
-		       vault_addr, vault_role, vault_mount,
-		       authentik_url, authentik_client_id,
-		       generic_token_url, generic_client_id, generic_scope,
-		       audience_override
-		FROM stack_cloud_oidc WHERE stack_id = $1
-	`, args.StackID).Scan(
-		&provider,
-		&awsRoleARN,
-		&gcpAudience, &gcpSA,
-		&azureTenant, &azureClient, &azureSubscription,
-		&vaultAddr, &vaultRole, &vaultMount,
-		&authentikURL, &authentikCID,
-		&genericTokenURL, &genericCID, &genericScope,
-		&audienceOverride,
-	)
-	if err != nil {
-		// No per-stack config — try org-level default from system_settings.
-		err = w.pool.QueryRow(ctx, `
-			SELECT NULLIF(oidc_provider,''),
-			       NULLIF(oidc_aws_role_arn,''),
-			       NULLIF(oidc_gcp_audience,''), NULLIF(oidc_gcp_service_account_email,''),
-			       NULLIF(oidc_azure_tenant_id,''), NULLIF(oidc_azure_client_id,''),
-			       NULLIF(oidc_azure_subscription_id,''),
-			       NULLIF(oidc_vault_addr,''), NULLIF(oidc_vault_role,''),
-			       NULLIF(oidc_vault_mount,''),
-			       NULLIF(oidc_authentik_url,''), NULLIF(oidc_authentik_client_id,''),
-			       NULLIF(oidc_generic_token_url,''), NULLIF(oidc_generic_client_id,''),
-			       NULLIF(oidc_generic_scope,''),
-			       NULLIF(oidc_audience_override,'')
-			FROM system_settings WHERE id = true
-		`).Scan(
-			&provider,
-			&awsRoleARN,
-			&gcpAudience, &gcpSA,
-			&azureTenant, &azureClient, &azureSubscription,
-			&vaultAddr, &vaultRole, &vaultMount,
-			&authentikURL, &authentikCID,
-			&genericTokenURL, &genericCID, &genericScope,
-			&audienceOverride,
-		)
-		if err != nil || provider == "" {
-			return nil // no OIDC config anywhere — not an error
-		}
-		log.Info("using org-level OIDC default", "provider", provider)
+	cfg, fromOrg, err := w.fetchOIDCFields(ctx, args.StackID)
+	if err != nil || cfg.provider == "" {
+		return nil // no OIDC config anywhere — not an error
+	}
+	if fromOrg {
+		log.Info("using org-level OIDC default", "provider", cfg.provider)
 	}
 
-	audience := defaultAudience(provider, w.oidcProvider.Issuer())
-	if audienceOverride != nil && *audienceOverride != "" {
-		audience = *audienceOverride
+	audience := defaultAudience(cfg.provider, w.oidcProvider.Issuer())
+	if cfg.audienceOverride != nil && *cfg.audienceOverride != "" {
+		audience = *cfg.audienceOverride
 	}
 
-	var stackSlug string
+	var stackSlug, orgID string
 	_ = w.pool.QueryRow(ctx, `SELECT slug FROM stacks WHERE id = $1`, args.StackID).Scan(&stackSlug)
-
-	var orgID string
 	_ = w.pool.QueryRow(ctx, `SELECT org_id FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID)
 
 	claims := oidcprovider.TokenClaims{
@@ -760,53 +762,50 @@ func (w *RunWorker) loadOIDCSpec(ctx context.Context, log *slog.Logger, args que
 		return fmt.Errorf("issue OIDC token: %w", err)
 	}
 
-	spec.OIDCToken = token
-	spec.OIDCProvider = provider
-	if awsRoleARN != nil {
-		spec.AWSOIDCRoleARN = *awsRoleARN
-	}
-	if gcpAudience != nil {
-		spec.GCPOIDCAudience = *gcpAudience
-	}
-	if gcpSA != nil {
-		spec.GCPOIDCServiceAccountEmail = *gcpSA
-	}
-	if azureTenant != nil {
-		spec.AzureOIDCTenantID = *azureTenant
-	}
-	if azureClient != nil {
-		spec.AzureOIDCClientID = *azureClient
-	}
-	if azureSubscription != nil {
-		spec.AzureOIDCSubscriptionID = *azureSubscription
-	}
-	if vaultAddr != nil {
-		spec.VaultAddr = *vaultAddr
-	}
-	if vaultRole != nil {
-		spec.VaultRole = *vaultRole
-	}
-	if vaultMount != nil {
-		spec.VaultMount = *vaultMount
-	}
-	if authentikURL != nil {
-		spec.AuthentikURL = *authentikURL
-	}
-	if authentikCID != nil {
-		spec.AuthentikClientID = *authentikCID
-	}
-	if genericTokenURL != nil {
-		spec.GenericTokenURL = *genericTokenURL
-	}
-	if genericCID != nil {
-		spec.GenericClientID = *genericCID
-	}
-	if genericScope != nil {
-		spec.GenericScope = *genericScope
+	applyOIDCToSpec(cfg, token, spec)
+	log.Info("OIDC federation enabled", "provider", cfg.provider, "stack_slug", stackSlug)
+	return nil
+}
+
+// fetchOIDCFields tries the per-stack config first, then falls back to the org-level default.
+// Returns (fields, fromOrg, err). err is non-nil only for unexpected DB failures;
+// a missing config returns (zero, false, nil).
+func (w *RunWorker) fetchOIDCFields(ctx context.Context, stackID string) (oidcFields, bool, error) {
+	var f oidcFields
+	err := w.pool.QueryRow(ctx, `
+		SELECT provider,
+		       aws_role_arn,
+		       gcp_workload_identity_audience, gcp_service_account_email,
+		       azure_tenant_id, azure_client_id, azure_subscription_id,
+		       vault_addr, vault_role, vault_mount,
+		       authentik_url, authentik_client_id,
+		       generic_token_url, generic_client_id, generic_scope,
+		       audience_override
+		FROM stack_cloud_oidc WHERE stack_id = $1
+	`, stackID).Scan(f.scanDest()...)
+	if err == nil {
+		return f, false, nil
 	}
 
-	log.Info("OIDC federation enabled", "provider", provider, "stack_slug", stackSlug)
-	return nil
+	// No per-stack row — try org-level default.
+	err = w.pool.QueryRow(ctx, `
+		SELECT NULLIF(oidc_provider,''),
+		       NULLIF(oidc_aws_role_arn,''),
+		       NULLIF(oidc_gcp_audience,''), NULLIF(oidc_gcp_service_account_email,''),
+		       NULLIF(oidc_azure_tenant_id,''), NULLIF(oidc_azure_client_id,''),
+		       NULLIF(oidc_azure_subscription_id,''),
+		       NULLIF(oidc_vault_addr,''), NULLIF(oidc_vault_role,''),
+		       NULLIF(oidc_vault_mount,''),
+		       NULLIF(oidc_authentik_url,''), NULLIF(oidc_authentik_client_id,''),
+		       NULLIF(oidc_generic_token_url,''), NULLIF(oidc_generic_client_id,''),
+		       NULLIF(oidc_generic_scope,''),
+		       NULLIF(oidc_audience_override,'')
+		FROM system_settings WHERE id = true
+	`).Scan(f.scanDest()...)
+	if err != nil {
+		return oidcFields{}, false, nil
+	}
+	return f, true, nil
 }
 
 func defaultAudience(provider, issuer string) string {
