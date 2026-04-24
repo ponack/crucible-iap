@@ -65,6 +65,37 @@ func (h *Handler) ListMyOrgs(c echo.Context) error {
 	return c.JSON(http.StatusOK, orgs)
 }
 
+// UpdateOrg allows an admin to rename the current org.
+func (h *Handler) UpdateOrg(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := c.Bind(&req); err != nil || req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "name required")
+	}
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE organizations SET name = $1 WHERE id = $2
+	`, req.Name, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to update org")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"name": req.Name})
+}
+
+// GetOrg returns the current org's details.
+func (h *Handler) GetOrg(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	var name, slug string
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT name, slug FROM organizations WHERE id = $1
+	`, orgID).Scan(&name, &slug)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "org not found")
+	}
+	return c.JSON(http.StatusOK, map[string]string{"id": orgID, "name": name, "slug": slug})
+}
+
 // Me returns the current user's role in the authenticated org.
 func (h *Handler) Me(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
