@@ -18,7 +18,19 @@ import (
 	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/tokenauth"
 	vaultpkg "github.com/ponack/crucible-iap/internal/vault"
+	"github.com/robfig/cron/v3"
 )
+
+var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
+
+// parseCronNext parses a 5-field cron expression and returns the next occurrence after now.
+func parseCronNext(expr string) (time.Time, error) {
+	s, err := cronParser.Parse(expr)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid cron expression %q: %w", expr, err)
+	}
+	return s.Next(time.Now().UTC()), nil
+}
 
 // webhookSecret generates a random 32-byte hex string for use as a webhook secret.
 func webhookSecret() (string, error) {
@@ -75,6 +87,12 @@ type Stack struct {
 	IsLocked             bool       `json:"is_locked"`
 	LockReason           string     `json:"lock_reason,omitempty"`
 	ScheduledDestroyAt   *time.Time `json:"scheduled_destroy_at,omitempty"`
+	PlanSchedule         string     `json:"plan_schedule,omitempty"`
+	ApplySchedule        string     `json:"apply_schedule,omitempty"`
+	DestroySchedule      string     `json:"destroy_schedule,omitempty"`
+	PlanNextRunAt        *time.Time `json:"plan_next_run_at,omitempty"`
+	ApplyNextRunAt       *time.Time `json:"apply_next_run_at,omitempty"`
+	DestroyNextRunAt     *time.Time `json:"destroy_next_run_at,omitempty"`
 	IsRestricted         bool       `json:"is_restricted"`          // true = stack has explicit members
 	MyStackRole          string     `json:"my_stack_role"`           // "admin" | "approver" | "viewer"
 	LastRunStatus        string     `json:"last_run_status,omitempty"`
@@ -267,6 +285,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.is_disabled, s.is_locked, COALESCE(s.lock_reason,''), s.scheduled_destroy_at, s.created_at, s.updated_at,
 		       s.module_namespace, s.module_name, s.module_provider,
 		       s.pre_plan_hook, s.post_plan_hook, s.pre_apply_hook, s.post_apply_hook,
+		       COALESCE(s.plan_schedule,''), COALESCE(s.apply_schedule,''), COALESCE(s.destroy_schedule,''),
+		       s.plan_next_run_at, s.apply_next_run_at, s.destroy_next_run_at,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -285,6 +305,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.IsDisabled, &s.IsLocked, &s.LockReason, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
 		&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 		&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
+		&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
+		&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -311,6 +333,9 @@ type updateStackReq struct {
 	IsLocked           *bool   `json:"is_locked"`
 	LockReason         *string `json:"lock_reason"`
 	ScheduledDestroyAt *string `json:"scheduled_destroy_at"` // RFC3339 or empty string to clear
+	PlanSchedule       *string `json:"plan_schedule"`        // cron expression or empty to clear
+	ApplySchedule      *string `json:"apply_schedule"`
+	DestroySchedule    *string `json:"destroy_schedule"`
 	ModuleNamespace    *string `json:"module_namespace"`
 	ModuleName         *string `json:"module_name"`
 	ModuleProvider     *string `json:"module_provider"`
@@ -382,6 +407,30 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 			add("scheduled_destroy_at", t.UTC())
 		}
 	}
+	for _, f := range []struct {
+		schedCol   string
+		nextRunCol string
+		v          *string
+	}{
+		{"plan_schedule", "plan_next_run_at", r.PlanSchedule},
+		{"apply_schedule", "apply_next_run_at", r.ApplySchedule},
+		{"destroy_schedule", "destroy_next_run_at", r.DestroySchedule},
+	} {
+		if f.v == nil {
+			continue
+		}
+		if *f.v == "" {
+			add(f.schedCol, nil)
+			add(f.nextRunCol, nil)
+		} else {
+			next, cronErr := parseCronNext(*f.v)
+			if cronErr != nil {
+				return nil, nil, cronErr
+			}
+			add(f.schedCol, *f.v)
+			add(f.nextRunCol, next)
+		}
+	}
 	return sets, args, nil
 }
 
@@ -407,7 +456,9 @@ func (h *Handler) Update(c echo.Context) error {
 		          COALESCE(runner_image,''), auto_apply, drift_detection,
 		          COALESCE(drift_schedule,''), auto_remediate_drift, is_disabled,
 		          scheduled_destroy_at, created_at, updated_at,
-		          pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook
+		          pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
+		          COALESCE(plan_schedule,''), COALESCE(apply_schedule,''), COALESCE(destroy_schedule,''),
+		          plan_next_run_at, apply_next_run_at, destroy_next_run_at
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -416,7 +467,9 @@ func (h *Handler) Update(c echo.Context) error {
 			&s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule,
 			&s.AutoRemediateDrift, &s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
-			&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook); err != nil {
+			&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
+			&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
+			&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.JSON(http.StatusOK, s)

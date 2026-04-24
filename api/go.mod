@@ -14,6 +14,7 @@ require (
 	github.com/prometheus/client_golang v1.21.0
 	github.com/riverqueue/river v0.14.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.14.2
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/viper v1.19.0
 	golang.org/x/crypto v0.48.0
 	golang.org/x/oauth2 v0.34.0

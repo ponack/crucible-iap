@@ -114,6 +114,12 @@ export interface Stack {
 	is_locked: boolean;
 	lock_reason?: string;
 	scheduled_destroy_at?: string;
+	plan_schedule?: string;
+	apply_schedule?: string;
+	destroy_schedule?: string;
+	plan_next_run_at?: string;
+	apply_next_run_at?: string;
+	destroy_next_run_at?: string;
 	is_restricted: boolean;    // true = stack has explicit members configured
 	my_stack_role: 'admin' | 'approver' | 'viewer';
 	last_run_status?: string;
