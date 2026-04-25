@@ -333,6 +333,81 @@ func (h *Handler) RevokeInvite(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// GroupMap is a single IdP group → org role mapping.
+type GroupMap struct {
+	ID         string    `json:"id"`
+	GroupClaim string    `json:"group_claim"`
+	Role       string    `json:"role"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// ListGroupMaps returns all SSO group → role mappings for the current org.
+func (h *Handler) ListGroupMaps(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT id, group_claim, role, created_at
+		FROM org_sso_group_maps WHERE org_id = $1
+		ORDER BY created_at
+	`, orgID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+
+	maps := []GroupMap{}
+	for rows.Next() {
+		var gm GroupMap
+		if err := rows.Scan(&gm.ID, &gm.GroupClaim, &gm.Role, &gm.CreatedAt); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		maps = append(maps, gm)
+	}
+	return c.JSON(http.StatusOK, maps)
+}
+
+// CreateGroupMap adds an SSO group → role mapping. Admin only.
+// If the group_claim already exists for the org the role is updated.
+func (h *Handler) CreateGroupMap(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	creatorID := c.Get("userID").(string)
+
+	var req struct {
+		GroupClaim string `json:"group_claim"`
+		Role       string `json:"role"`
+	}
+	if err := c.Bind(&req); err != nil || req.GroupClaim == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "group_claim required")
+	}
+	if req.Role != "admin" && req.Role != "member" && req.Role != "viewer" {
+		return echo.NewHTTPError(http.StatusBadRequest, "role must be admin, member, or viewer")
+	}
+
+	var gm GroupMap
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		INSERT INTO org_sso_group_maps (org_id, group_claim, role, created_by)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (org_id, group_claim) DO UPDATE SET role = EXCLUDED.role
+		RETURNING id, group_claim, role, created_at
+	`, orgID, req.GroupClaim, req.Role, creatorID).Scan(&gm.ID, &gm.GroupClaim, &gm.Role, &gm.CreatedAt); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(http.StatusCreated, gm)
+}
+
+// DeleteGroupMap removes an SSO group mapping. Admin only.
+func (h *Handler) DeleteGroupMap(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	id := c.Param("id")
+
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		DELETE FROM org_sso_group_maps WHERE id = $1 AND org_id = $2
+	`, id, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "group map not found")
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
 func generateToken() (raw, hash string, err error) {
 	b := make([]byte, 32)
 	if _, err = rand.Read(b); err != nil {

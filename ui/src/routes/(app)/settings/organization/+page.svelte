@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { auth } from '$lib/stores/auth.svelte';
-	import { org, type OrgMember, type OrgInvite, type OrgDetail } from '$lib/api/client';
+	import { org, type OrgMember, type OrgInvite, type OrgDetail, type OrgGroupMap } from '$lib/api/client';
 	import { orgListStore } from '$lib/stores/orgs.svelte';
 	import { decodeJWTPayload } from '$lib/jwt';
 
@@ -24,23 +24,32 @@
 	let inviteError = $state<string | null>(null);
 	let actionError = $state<string | null>(null);
 
+	// SSO group maps
+	let groupMaps = $state<OrgGroupMap[]>([]);
+	let newGroupClaim = $state('');
+	let newGroupRole = $state('member');
+	let addingGroupMap = $state(false);
+	let groupMapError = $state<string | null>(null);
+
 	const isAdmin = $derived(
 		auth.isAdmin || members.find((m) => m.user_id === auth.user?.id)?.role === 'admin'
 	);
 
 	onMount(async () => {
 		try {
-			const [detailRes, membersRes, invitesRes] = await Promise.all([
+			const [detailRes, membersRes, invitesRes, groupMapsRes] = await Promise.all([
 				org.get(),
 				org.members.list(),
-				org.invites.list()
+				org.invites.list(),
+				org.groupMaps.list()
 			]);
 			orgDetail = detailRes;
 			orgNameDraft = detailRes.name;
 			members = membersRes;
 			invites = invitesRes;
+			groupMaps = groupMapsRes;
 		} catch {
-			// non-admins can't list invites — try without
+			// non-admins can't list invites or group maps — try without
 			try {
 				const [detailRes, membersRes] = await Promise.all([org.get(), org.members.list()]);
 				orgDetail = detailRes;
@@ -118,6 +127,27 @@
 		} catch (err) {
 			actionError = (err as Error).message;
 		}
+	}
+
+	async function addGroupMap(e: Event) {
+		e.preventDefault();
+		if (!newGroupClaim.trim()) return;
+		addingGroupMap = true;
+		groupMapError = null;
+		try {
+			const gm = await org.groupMaps.create(newGroupClaim.trim(), newGroupRole);
+			groupMaps = [...groupMaps.filter((m) => m.id !== gm.id), gm];
+			newGroupClaim = '';
+		} catch (err) {
+			groupMapError = (err as Error).message;
+		} finally {
+			addingGroupMap = false;
+		}
+	}
+
+	async function deleteGroupMap(id: string) {
+		await org.groupMaps.delete(id);
+		groupMaps = groupMaps.filter((m) => m.id !== id);
 	}
 </script>
 
@@ -278,6 +308,66 @@
 											onclick={() => revokeInvite(invite.id)}
 											class="text-xs text-red-400 hover:text-red-300"
 										>Revoke</button>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- SSO Group Mapping (admins only, only meaningful when OIDC is configured) -->
+	{#if isAdmin}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="px-6 py-4 border-b border-zinc-800">
+				<p class="text-xs text-zinc-500 uppercase tracking-widest">SSO Group Mapping</p>
+				<p class="text-xs text-zinc-600 mt-1">Map IdP group claims to org roles. Applied automatically on each login.</p>
+			</div>
+			<div class="px-6 py-4 space-y-3">
+				<form onsubmit={addGroupMap} class="flex gap-2">
+					<input
+						type="text"
+						bind:value={newGroupClaim}
+						placeholder="idp-group-name"
+						required
+						class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+					/>
+					<select
+						bind:value={newGroupRole}
+						class="bg-zinc-800 border border-zinc-700 text-zinc-300 text-sm rounded-lg px-2 py-2"
+					>
+						<option value="viewer">viewer</option>
+						<option value="member">member</option>
+						<option value="admin">admin</option>
+					</select>
+					<button
+						type="submit"
+						disabled={addingGroupMap}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+					>
+						{addingGroupMap ? 'Adding…' : 'Add'}
+					</button>
+				</form>
+				{#if groupMapError}
+					<p class="text-xs text-red-400">{groupMapError}</p>
+				{/if}
+			</div>
+
+			{#if groupMaps.length > 0}
+				<div class="border-t border-zinc-800">
+					<table class="w-full text-sm">
+						<tbody class="divide-y divide-zinc-800">
+							{#each groupMaps as gm (gm.id)}
+								<tr class="hover:bg-zinc-800/40 transition-colors">
+									<td class="px-6 py-3 font-mono text-zinc-300 text-xs">{gm.group_claim}</td>
+									<td class="px-6 py-3 text-xs text-zinc-500">{gm.role}</td>
+									<td class="px-6 py-3 text-right">
+										<button
+											onclick={() => deleteGroupMap(gm.id)}
+											class="text-xs text-red-400 hover:text-red-300"
+										>Remove</button>
 									</td>
 								</tr>
 							{/each}
