@@ -244,8 +244,27 @@ func (w *RunWorker) loadRunEnv(ctx context.Context, log *slog.Logger, stackID, a
 		log.Warn("failed to load remote state sources", "err", err)
 	}
 	hookEnv := w.loadHookEnv(ctx, log, stackID)
-	// Merge order: external secrets → variable sets → remote state → stack env vars → hooks (last wins).
-	return vcsToken, append(append(append(append(storeEnv, varSetEnv...), remoteStateEnv...), builtinEnv...), hookEnv...)
+	infracostEnv := w.loadInfracostEnv(ctx, log)
+	// Merge order: external secrets → variable sets → remote state → stack env vars → hooks → infracost (last wins).
+	return vcsToken, append(append(append(append(append(storeEnv, varSetEnv...), remoteStateEnv...), builtinEnv...), hookEnv...), infracostEnv...)
+}
+
+// loadInfracostEnv injects INFRACOST_API_KEY (and optionally
+// INFRACOST_PRICING_API_ENDPOINT) when configured in system settings.
+func (w *RunWorker) loadInfracostEnv(ctx context.Context, log *slog.Logger) []string {
+	apiKey, endpoint, err := settings.LoadInfracost(ctx, w.pool)
+	if err != nil {
+		log.Warn("failed to load infracost settings", "err", err)
+		return nil
+	}
+	var env []string
+	if apiKey != "" {
+		env = append(env, "INFRACOST_API_KEY="+apiKey)
+	}
+	if endpoint != "" {
+		env = append(env, "INFRACOST_PRICING_API_ENDPOINT="+endpoint)
+	}
+	return env
 }
 
 // loadHookEnv queries the stack's lifecycle hook scripts and returns them as

@@ -94,8 +94,9 @@ type Settings struct {
 	OIDCGenericTokenURL        string `json:"oidc_generic_token_url,omitempty"`
 	OIDCGenericClientID        string `json:"oidc_generic_client_id,omitempty"`
 	OIDCGenericScope           string `json:"oidc_generic_scope,omitempty"`
-	OIDCAudienceOverride       string `json:"oidc_audience_override,omitempty"`
-	UpdatedAt                  time.Time `json:"updated_at"`
+	OIDCAudienceOverride            string    `json:"oidc_audience_override,omitempty"`
+	InfracostPricingAPIEndpoint     string    `json:"infracost_pricing_api_endpoint,omitempty"`
+	UpdatedAt                       time.Time `json:"updated_at"`
 }
 
 type Handler struct {
@@ -177,7 +178,9 @@ type settingsUpdateReq struct {
 	OIDCGenericTokenURL        *string `json:"oidc_generic_token_url"`
 	OIDCGenericClientID        *string `json:"oidc_generic_client_id"`
 	OIDCGenericScope           *string `json:"oidc_generic_scope"`
-	OIDCAudienceOverride       *string `json:"oidc_audience_override"`
+	OIDCAudienceOverride            *string `json:"oidc_audience_override"`
+	InfracostAPIKey                 *string `json:"infracost_api_key"`
+	InfracostPricingAPIEndpoint     *string `json:"infracost_pricing_api_endpoint"`
 }
 
 // validateSettingsUpdate checks all field constraints for a settings update request.
@@ -252,6 +255,8 @@ func (h *Handler) Update(c echo.Context) error {
 			oidc_generic_client_id           = COALESCE($34, oidc_generic_client_id),
 			oidc_generic_scope               = COALESCE($35, oidc_generic_scope),
 			oidc_audience_override           = COALESCE($36, oidc_audience_override),
+			infracost_api_key                = COALESCE($37, infracost_api_key),
+			infracost_pricing_api_endpoint   = COALESCE($38, infracost_pricing_api_endpoint),
 			updated_at                       = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
@@ -266,7 +271,8 @@ func (h *Handler) Update(c echo.Context) error {
 		req.OIDCVaultAddr, req.OIDCVaultRole, req.OIDCVaultMount,
 		req.OIDCAuthentikURL, req.OIDCAuthentikClientID,
 		req.OIDCGenericTokenURL, req.OIDCGenericClientID, req.OIDCGenericScope,
-		req.OIDCAudienceOverride)
+		req.OIDCAudienceOverride,
+		req.InfracostAPIKey, req.InfracostPricingAPIEndpoint)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -306,6 +312,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(oidc_generic_token_url, ''), COALESCE(oidc_generic_client_id, ''),
 		       COALESCE(oidc_generic_scope, ''),
 		       COALESCE(oidc_audience_override, ''),
+		       COALESCE(infracost_pricing_api_endpoint, ''),
 		       updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
@@ -321,6 +328,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		&s.OIDCAuthentikURL, &s.OIDCAuthentikClientID,
 		&s.OIDCGenericTokenURL, &s.OIDCGenericClientID, &s.OIDCGenericScope,
 		&s.OIDCAudienceOverride,
+		&s.InfracostPricingAPIEndpoint,
 		&s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
@@ -336,6 +344,16 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		}, nil
 	}
 	return &s, nil
+}
+
+// LoadInfracost fetches the Infracost API key and optional pricing endpoint.
+// Used internally by the worker — the key is never exposed over the API.
+func LoadInfracost(ctx context.Context, pool *pgxpool.Pool) (apiKey, pricingEndpoint string, err error) {
+	err = pool.QueryRow(ctx, `
+		SELECT COALESCE(infracost_api_key,''), COALESCE(infracost_pricing_api_endpoint,'')
+		FROM system_settings WHERE id = true
+	`).Scan(&apiKey, &pricingEndpoint)
+	return
 }
 
 // LoadSMTP fetches only the SMTP credentials including the password.

@@ -64,6 +64,10 @@ type Run struct {
 	PlanAdd          *int       `json:"plan_add,omitempty"`
 	PlanChange       *int       `json:"plan_change,omitempty"`
 	PlanDestroy      *int       `json:"plan_destroy,omitempty"`
+	CostAdd          *float64   `json:"cost_add,omitempty"`
+	CostChange       *float64   `json:"cost_change,omitempty"`
+	CostRemove       *float64   `json:"cost_remove,omitempty"`
+	CostCurrency     *string    `json:"cost_currency,omitempty"`
 	HasPlan          bool       `json:"has_plan"`
 	TriggeredByName  string     `json:"triggered_by_name,omitempty"`
 	TriggeredByEmail string     `json:"triggered_by_email,omitempty"`
@@ -126,6 +130,7 @@ func (h *Handler) ListAll(c echo.Context) error {
 		       r.status, r.type, r.trigger,
 		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''), COALESCE(r.commit_message,''),
 		       r.is_drift, r.pr_number, r.pr_url, r.plan_add, r.plan_change, r.plan_destroy,
+		       r.cost_add, r.cost_change, r.cost_remove, r.cost_currency,
 		       r.queued_at, r.started_at, r.finished_at,
 		       COUNT(*) OVER () AS total
 		FROM runs r
@@ -147,6 +152,7 @@ func (h *Handler) ListAll(c echo.Context) error {
 			&r.Status, &r.Type, &r.Trigger,
 			&r.CommitSHA, &r.Branch, &r.CommitMessage, &r.IsDrift,
 			&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
+			&r.CostAdd, &r.CostChange, &r.CostRemove, &r.CostCurrency,
 			&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -181,6 +187,7 @@ func (h *Handler) List(c echo.Context) error {
 		SELECT id, stack_id, status, type, trigger,
 		       COALESCE(commit_sha,''), COALESCE(branch,''), COALESCE(commit_message,''),
 		       is_drift, pr_number, pr_url, plan_add, plan_change, plan_destroy,
+		       cost_add, cost_change, cost_remove, cost_currency,
 		       queued_at, started_at, finished_at,
 		       COUNT(*) OVER () AS total
 		FROM runs
@@ -200,6 +207,7 @@ func (h *Handler) List(c echo.Context) error {
 		if err := rows.Scan(&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
 			&r.CommitSHA, &r.Branch, &r.CommitMessage, &r.IsDrift,
 			&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
+			&r.CostAdd, &r.CostChange, &r.CostRemove, &r.CostCurrency,
 			&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
@@ -322,6 +330,7 @@ func (h *Handler) Get(c echo.Context) error {
 		SELECT r.id, r.stack_id, r.status, r.type, r.trigger,
 		       COALESCE(r.commit_sha,''), COALESCE(r.branch,''), COALESCE(r.commit_message,''),
 		       r.is_drift, r.pr_number, r.pr_url, r.plan_add, r.plan_change, r.plan_destroy,
+		       r.cost_add, r.cost_change, r.cost_remove, r.cost_currency,
 		       r.plan_url IS NOT NULL,
 		       COALESCE(tb.name,''), COALESCE(tb.email,''),
 		       COALESCE(ab.name,''), COALESCE(ab.email,''),
@@ -340,6 +349,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger,
 		&r.CommitSHA, &r.Branch, &r.CommitMessage, &r.IsDrift,
 		&r.PRNumber, &r.PRURL, &r.PlanAdd, &r.PlanChange, &r.PlanDestroy,
+		&r.CostAdd, &r.CostChange, &r.CostRemove, &r.CostCurrency,
 		&r.HasPlan,
 		&r.TriggeredByName, &r.TriggeredByEmail,
 		&r.ApprovedByName, &r.ApprovedByEmail,

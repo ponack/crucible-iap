@@ -367,6 +367,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	internal.POST("/runs/:id/plan", runHandler.UploadPlan)
 	internal.GET("/runs/:id/plan", runHandler.DownloadPlanInternal) // apply phase: runner fetches its own plan
 	internal.POST("/runs/:id/plan-summary", runHandler.ReportPlanSummary)
+	internal.POST("/runs/:id/cost", runHandler.ReportCost)
 	internal.POST("/runs/:id/policy-results", runHandler.ReportPolicyResults)
 	internal.GET("/provider-cache", runHandler.ListProviderCache)
 	internal.GET("/provider-cache/*key", runHandler.GetProviderCache)

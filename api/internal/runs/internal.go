@@ -60,6 +60,36 @@ func (h *Handler) ReportStatus(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// ReportCost stores infracost monthly cost deltas reported by the runner
+// after running `infracost breakdown --path plan.json --format json`.
+func (h *Handler) ReportCost(c echo.Context) error {
+	id := c.Param("id")
+
+	tokenRunID, _ := c.Get("runID").(string)
+	if tokenRunID != id {
+		return echo.NewHTTPError(http.StatusForbidden, "token not valid for this run")
+	}
+
+	var req struct {
+		MonthlyCostAdd    float64 `json:"monthly_cost_add"`
+		MonthlyCostChange float64 `json:"monthly_cost_change"`
+		MonthlyCostRemove float64 `json:"monthly_cost_remove"`
+		Currency          string  `json:"currency"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	_, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE runs SET cost_add = $1, cost_change = $2, cost_remove = $3, cost_currency = $4 WHERE id = $5
+	`, req.MonthlyCostAdd, req.MonthlyCostChange, req.MonthlyCostRemove, req.Currency, id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}
+
 // ReportPlanSummary stores the resource change counts reported by the runner
 // after running `tofu show -json`. Counts are used for PR comments.
 func (h *Handler) ReportPlanSummary(c echo.Context) error {

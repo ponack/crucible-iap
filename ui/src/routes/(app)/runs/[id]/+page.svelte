@@ -233,6 +233,16 @@
 						<span class="text-red-400">-{run.plan_destroy ?? 0}</span>
 					</span>
 				{/if}
+				{#if run.cost_add !== undefined || run.cost_change !== undefined || run.cost_remove !== undefined}
+					{@const cur = run.cost_currency ?? 'USD'}
+					{@const fmt = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: cur, maximumFractionDigits: 2 })}
+					<span class="flex items-center gap-1 text-zinc-400 font-mono" title="Infracost monthly estimate">
+						<span class="text-xs text-zinc-600">$/mo</span>
+						{#if (run.cost_add ?? 0) !== 0}<span class="text-green-400">+{fmt(run.cost_add ?? 0)}</span>{/if}
+						{#if (run.cost_change ?? 0) !== 0}<span class="text-yellow-400">~{fmt(run.cost_change ?? 0)}</span>{/if}
+						{#if (run.cost_remove ?? 0) !== 0}<span class="text-red-400">-{fmt(run.cost_remove ?? 0)}</span>{/if}
+					</span>
+				{/if}
 				<span>Trigger: <span class="text-zinc-300">{run.trigger}</span></span>
 				{#if run.triggered_by_name}
 					<span>By: <span class="text-zinc-300">{run.triggered_by_name}</span></span>

@@ -34,6 +34,12 @@
 	let oidcSaved = $state(false);
 	let oidcError = $state<string | null>(null);
 
+	// Infracost settings
+	let infracostForm = $state({ infracost_api_key: '', infracost_pricing_api_endpoint: '' });
+	let savingInfracost = $state(false);
+	let infracostSaved = $state(false);
+	let infracostError = $state<string | null>(null);
+
 	onMount(async () => {
 		system.health().then((h) => (health = h)).catch(() => {});
 		system.settings.get().then((s) => {
@@ -65,6 +71,7 @@
 				oidc_generic_scope: s.oidc_generic_scope ?? '',
 				oidc_audience_override: s.oidc_audience_override ?? ''
 			};
+			infracostForm.infracost_pricing_api_endpoint = s.infracost_pricing_api_endpoint ?? '';
 		}).catch(() => {});
 		loading = false;
 	});
@@ -98,6 +105,26 @@
 			oidcError = (err as Error).message;
 		} finally {
 			savingOIDC = false;
+		}
+	}
+
+	async function saveInfracost(e: SubmitEvent) {
+		e.preventDefault();
+		savingInfracost = true;
+		infracostSaved = false;
+		infracostError = null;
+		try {
+			const payload: Record<string, string> = {};
+			if (infracostForm.infracost_api_key) payload.infracost_api_key = infracostForm.infracost_api_key;
+			if (infracostForm.infracost_pricing_api_endpoint !== undefined) payload.infracost_pricing_api_endpoint = infracostForm.infracost_pricing_api_endpoint;
+			await system.settings.update(payload);
+			infracostForm.infracost_api_key = '';
+			infracostSaved = true;
+			setTimeout(() => (infracostSaved = false), 3000);
+		} catch (err) {
+			infracostError = (err as Error).message;
+		} finally {
+			savingInfracost = false;
 		}
 	}
 
@@ -391,6 +418,46 @@
 			</div>
 		</form>
 	</div>
+	{/if}
+
+	<!-- Infracost -->
+	{#if auth.isAdmin}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
+			<div class="px-6 py-4">
+				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Infracost</p>
+				<p class="text-xs text-zinc-600">Cost estimation via <span class="font-mono">infracost breakdown</span> run post-plan. Set an API key to enable.</p>
+			</div>
+			<form class="px-6 py-5 space-y-4" onsubmit={saveInfracost}>
+				<div class="space-y-1.5">
+					<label class="field-label" for="infracost-api-key">
+						API key <span class="font-normal text-zinc-500">(write-only — leave blank to keep current)</span>
+					</label>
+					<input id="infracost-api-key" type="password" class="field-input font-mono text-sm"
+						bind:value={infracostForm.infracost_api_key}
+						placeholder="ico-••••••••••••••••••••••••••••••••" autocomplete="off" />
+				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="infracost-endpoint">
+						Pricing API endpoint <span class="font-normal text-zinc-500">(optional — for self-hosted)</span>
+					</label>
+					<input id="infracost-endpoint" class="field-input font-mono text-sm"
+						bind:value={infracostForm.infracost_pricing_api_endpoint}
+						placeholder="https://pricing.api.infracost.io" />
+				</div>
+				{#if infracostError}
+					<p class="text-xs text-red-400">{infracostError}</p>
+				{/if}
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingInfracost}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingInfracost ? 'Saving…' : 'Save Infracost settings'}
+					</button>
+					{#if infracostSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			</form>
+		</div>
 	{/if}
 
 	<!-- Instance info -->
