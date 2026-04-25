@@ -32,7 +32,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 | **State & runners** | OpenTofu, Terraform, Ansible, and Pulumi. Built-in Terraform HTTP backend on MinIO (zero config) or per-stack S3 / GCS / Azure Blob overrides. Each run in a fresh, read-only, capability-dropped Docker container — cosign-signed, digest-pinned runner image. |
 | **Secrets & identity** | Per-stack OIDC workload identity federation with AWS, GCP, Azure, Vault, Authentik, or any OIDC IdP — no static cloud credentials. Encrypted stack env vars + reusable variable sets. External secret stores: AWS Secrets Manager, Vault KV v2, Bitwarden, Vaultwarden. See [`docs/security.md`](docs/security.md) for crypto details. |
 | **Auth & access** | SSO via OIDC (Authentik, Okta, GitHub, Keycloak, anything OIDC) with PKCE, or single-operator local auth. Org-level RBAC (viewer / member / admin) with automatic IdP group → role mapping on login. Per-stack `viewer` / `approver` membership and service-account API tokens for CI. Rate-limited, hardened login. |
-| **Observability** | Embedded Grafana on `/monitoring` (8 panels, 30 s refresh). Prometheus + Grafana shipped in-box. Per-stack Slack, Gotify, ntfy, and email notifications. Webhook delivery log with full payload inspection. |
+| **Observability** | Embedded Grafana on `/monitoring` (8 panels, 30 s refresh). Prometheus + Grafana shipped in-box. Per-stack Slack, Gotify, ntfy, and email notifications. Webhook delivery log with full payload inspection. Outgoing webhooks (HMAC-signed HTTP POST) for PagerDuty, ServiceNow, or custom tooling. Infracost monthly cost delta surfaced in every run. |
 | **Deployment** | Single `docker compose up` — Caddy, API, Worker, UI, PostgreSQL, MinIO, Prometheus, Grafana. Let's Encrypt TLS via Caddy or the `external-proxy` profile for nginx / Traefik / your own Caddy. Optional bundled Authentik IdP. Built-in Terraform module registry and stack templates. |
 
 Full feature list with security/crypto specifics: [`docs/operator-guide.md`](docs/operator-guide.md) and [`docs/security.md`](docs/security.md).
@@ -333,7 +333,7 @@ cd api && go test -race ./...
 - [x] Terraform module registry — private module registry backed by MinIO; implements the Terraform Module Registry Protocol v1 (`/.well-known/terraform.json` discovery, versions, download, archive, search); publish via UI upload or git-tag auto-publish; README auto-extracted from archive and rendered as markdown; download count tracked; yank individual versions; service account tokens authenticate the Terraform CLI via `~/.terraformrc`
 - [x] Resource explorer — browse Terraform state resources in the UI with filtering by type and address
 - [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
-- [ ] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
+- [x] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [x] Fine-grained RBAC — per-stack viewer/approver roles in addition to the org-wide admin/member/viewer hierarchy; restricted stacks hidden from non-members
 - [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
 - [x] Custom run hooks — per-stack pre/post-plan and pre/post-apply bash scripts; configured in the stack settings UI, injected as env vars, executed inside the runner container; a non-zero exit fails the run
@@ -351,9 +351,9 @@ cd api && go test -race ./...
 - [x] Scheduled runs — cron-based plan, apply, or destroy runs per stack independent of code pushes; standard 5-field cron expressions (`0 2 * * *` = 2 am daily); next run time shown inline; worker polls every minute and enqueues the appropriate run type automatically
 - [x] Stack locking / maintenance mode — per-stack flag that prevents new runs from being queued; operators set it before manual cloud console changes and release it when done; prevents race conditions during incident response; lock reason shown as an amber banner on the stack page
 - [x] Run annotations — free-text operator note on any run ("deployed for hotfix", "reverting per oncall"); closes the audit gap between who triggered a run and why; inline click-to-edit on the run detail page
-- [ ] Generic outgoing webhooks — fire arbitrary HTTP POST on run state changes to PagerDuty, ServiceNow, Jira, or custom tooling; HMAC-signed, configurable per event type, delivery log with retry
+- [x] Generic outgoing webhooks — fire arbitrary HTTP POST on run state changes to PagerDuty, ServiceNow, Jira, or custom tooling; HMAC-signed, configurable per event type, delivery log with retry
 - [x] SSO group → role mapping — automatically assign org roles from IdP group claims on every login; eliminates manual invite management for large teams on Authentik, Okta, Keycloak, or GitHub
-- [ ] Cost estimation — integrate Infracost (self-hosted server supported) to surface per-run monthly cost delta alongside the plan summary
+- [x] Cost estimation — integrate Infracost (self-hosted server supported) to surface per-run monthly cost delta alongside the plan summary
 - [ ] IaC security scanning — built-in Checkov / Trivy scan post-plan; findings surfaced as structured results in the run detail alongside OPA policy output; configurable severity threshold to block apply
 - [ ] Private provider registry — extend the existing module registry to serve custom Terraform providers; critical for air-gapped deployments and teams distributing internal providers
 - [ ] Per-stack run concurrency cap — limit a specific stack to N concurrent runs (typically 1 for production); currently only a global cap exists
