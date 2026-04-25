@@ -462,6 +462,10 @@ export interface Run {
 	plan_add?: number;
 	plan_change?: number;
 	plan_destroy?: number;
+	cost_add?: number;
+	cost_change?: number;
+	cost_remove?: number;
+	cost_currency?: string;
 	has_plan?: boolean;
 	triggered_by_name?: string;
 	triggered_by_email?: string;
@@ -737,6 +741,8 @@ export interface SystemSettings {
 	oidc_generic_client_id?: string;
 	oidc_generic_scope?: string;
 	oidc_audience_override?: string;
+	infracost_api_key?: string; // write-only — never returned by GET, only sent on update
+	infracost_pricing_api_endpoint?: string;
 	updated_at: string;
 }
 
