@@ -17,6 +17,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/worker"
 )
@@ -802,6 +803,128 @@ func (h *Handler) ReportPolicyResults(c echo.Context) error {
 	}
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+// ── IaC scan results ──────────────────────────────────────────────────────────
+
+// RunScanResult is one finding from a Checkov or Trivy IaC security scan.
+type RunScanResult struct {
+	ID        string    `json:"id"`
+	RunID     string    `json:"run_id"`
+	Tool      string    `json:"tool"`
+	Severity  string    `json:"severity"`
+	CheckID   string    `json:"check_id"`
+	CheckName string    `json:"check_name"`
+	Resource  string    `json:"resource"`
+	Filename  string    `json:"filename"`
+	LineStart *int      `json:"line_start,omitempty"`
+	LineEnd   *int      `json:"line_end,omitempty"`
+	Passed    bool      `json:"passed"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// severityRank maps severity labels to integers for threshold comparison.
+var severityRank = map[string]int{"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1, "UNKNOWN": 0}
+
+// ScanResults returns all IaC security scan findings for a run.
+// GET /api/v1/runs/:id/scan-results
+func (h *Handler) ScanResults(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var exists bool
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM runs r JOIN stacks s ON s.id = r.stack_id
+			WHERE r.id = $1 AND s.org_id = $2
+		)
+	`, id, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT id, run_id, tool, severity, check_id, check_name,
+		       resource, filename, line_start, line_end, passed, created_at
+		FROM run_scan_results
+		WHERE run_id = $1
+		ORDER BY
+			CASE severity WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END,
+			passed, check_id
+	`, id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+
+	var out []RunScanResult
+	for rows.Next() {
+		var r RunScanResult
+		if err := rows.Scan(
+			&r.ID, &r.RunID, &r.Tool, &r.Severity, &r.CheckID, &r.CheckName,
+			&r.Resource, &r.Filename, &r.LineStart, &r.LineEnd, &r.Passed, &r.CreatedAt,
+		); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		out = append(out, r)
+	}
+	if out == nil {
+		out = []RunScanResult{}
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// ReportScanResults is called by the runner after a Checkov or Trivy scan.
+// Stores findings and returns {"blocked": true} if any failed finding meets or
+// exceeds the configured severity threshold, signalling the runner to exit non-zero.
+// POST /api/v1/internal/runs/:id/scan-results
+func (h *Handler) ReportScanResults(c echo.Context) error {
+	id := c.Param("id")
+
+	tokenRunID, _ := c.Get("runID").(string)
+	if tokenRunID != id {
+		return echo.NewHTTPError(http.StatusForbidden, "token not valid for this run")
+	}
+
+	var findings []struct {
+		Tool      string `json:"tool"`
+		Severity  string `json:"severity"`
+		CheckID   string `json:"check_id"`
+		CheckName string `json:"check_name"`
+		Resource  string `json:"resource"`
+		Filename  string `json:"filename"`
+		LineStart *int   `json:"line_start"`
+		LineEnd   *int   `json:"line_end"`
+		Passed    bool   `json:"passed"`
+	}
+	if err := c.Bind(&findings); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	for _, f := range findings {
+		if _, err := h.pool.Exec(c.Request().Context(), `
+			INSERT INTO run_scan_results
+				(run_id, tool, severity, check_id, check_name, resource, filename, line_start, line_end, passed)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		`, id, f.Tool, f.Severity, f.CheckID, f.CheckName, f.Resource, f.Filename, f.LineStart, f.LineEnd, f.Passed); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+	}
+
+	// Load the configured severity threshold and check whether any failed finding blocks.
+	threshold, _, err := settings.LoadScanSettings(c.Request().Context(), h.pool)
+	if err != nil {
+		// If settings unavailable, default to not blocking so scans are non-fatal.
+		return c.JSON(http.StatusOK, map[string]bool{"blocked": false})
+	}
+	thresholdRank := severityRank[threshold]
+	blocked := false
+	for _, f := range findings {
+		if !f.Passed && severityRank[f.Severity] >= thresholdRank {
+			blocked = true
+			break
+		}
+	}
+	return c.JSON(http.StatusOK, map[string]bool{"blocked": blocked})
 }
 
 // TriggerDrift creates a manual proposed+drift run for the given stack.

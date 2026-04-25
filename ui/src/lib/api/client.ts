@@ -494,6 +494,21 @@ export interface RunPolicyResult {
 	evaluated_at: string;
 }
 
+export interface RunScanResult {
+	id: string;
+	run_id: string;
+	tool: string;
+	severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN';
+	check_id: string;
+	check_name: string;
+	resource: string;
+	filename: string;
+	line_start?: number;
+	line_end?: number;
+	passed: boolean;
+	created_at: string;
+}
+
 export const runs = {
 	listAll: (offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
 		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
@@ -530,6 +545,7 @@ export const runs = {
 			body: JSON.stringify({ annotation })
 		}),
 	policyResults: (id: string) => request<RunPolicyResult[]>(`/runs/${id}/policy-results`),
+	scanResults: (id: string) => request<RunScanResult[]>(`/runs/${id}/scan-results`),
 	downloadPlan: async (id: string): Promise<Blob> => {
 		const headers: Record<string, string> = {};
 		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
@@ -743,6 +759,8 @@ export interface SystemSettings {
 	oidc_audience_override?: string;
 	infracost_api_key?: string; // write-only — never returned by GET, only sent on update
 	infracost_pricing_api_endpoint?: string;
+	scan_tool?: 'none' | 'checkov' | 'trivy';
+	scan_severity_threshold?: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
 	updated_at: string;
 }
 

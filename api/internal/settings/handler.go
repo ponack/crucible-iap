@@ -96,6 +96,8 @@ type Settings struct {
 	OIDCGenericScope           string `json:"oidc_generic_scope,omitempty"`
 	OIDCAudienceOverride            string    `json:"oidc_audience_override,omitempty"`
 	InfracostPricingAPIEndpoint     string    `json:"infracost_pricing_api_endpoint,omitempty"`
+	ScanTool                        string    `json:"scan_tool,omitempty"`
+	ScanSeverityThreshold           string    `json:"scan_severity_threshold,omitempty"`
 	UpdatedAt                       time.Time `json:"updated_at"`
 }
 
@@ -181,6 +183,8 @@ type settingsUpdateReq struct {
 	OIDCAudienceOverride            *string `json:"oidc_audience_override"`
 	InfracostAPIKey                 *string `json:"infracost_api_key"`
 	InfracostPricingAPIEndpoint     *string `json:"infracost_pricing_api_endpoint"`
+	ScanTool                        *string `json:"scan_tool"`
+	ScanSeverityThreshold           *string `json:"scan_severity_threshold"`
 }
 
 // validateSettingsUpdate checks all field constraints for a settings update request.
@@ -202,6 +206,18 @@ func validateSettingsUpdate(req *settingsUpdateReq) error {
 		valid := map[string]bool{"aws": true, "gcp": true, "azure": true, "vault": true, "authentik": true, "generic": true}
 		if !valid[*req.OIDCProvider] {
 			return fmt.Errorf("oidc_provider must be aws, gcp, azure, vault, authentik, or generic")
+		}
+	}
+	if req.ScanTool != nil {
+		valid := map[string]bool{"none": true, "checkov": true, "trivy": true}
+		if !valid[*req.ScanTool] {
+			return fmt.Errorf("scan_tool must be none, checkov, or trivy")
+		}
+	}
+	if req.ScanSeverityThreshold != nil {
+		valid := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true}
+		if !valid[*req.ScanSeverityThreshold] {
+			return fmt.Errorf("scan_severity_threshold must be CRITICAL, HIGH, MEDIUM, or LOW")
 		}
 	}
 	return nil
@@ -257,6 +273,8 @@ func (h *Handler) Update(c echo.Context) error {
 			oidc_audience_override           = COALESCE($36, oidc_audience_override),
 			infracost_api_key                = COALESCE($37, infracost_api_key),
 			infracost_pricing_api_endpoint   = COALESCE($38, infracost_pricing_api_endpoint),
+			scan_tool                        = COALESCE($39, scan_tool),
+			scan_severity_threshold          = COALESCE($40, scan_severity_threshold),
 			updated_at                       = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
@@ -272,7 +290,8 @@ func (h *Handler) Update(c echo.Context) error {
 		req.OIDCAuthentikURL, req.OIDCAuthentikClientID,
 		req.OIDCGenericTokenURL, req.OIDCGenericClientID, req.OIDCGenericScope,
 		req.OIDCAudienceOverride,
-		req.InfracostAPIKey, req.InfracostPricingAPIEndpoint)
+		req.InfracostAPIKey, req.InfracostPricingAPIEndpoint,
+		req.ScanTool, req.ScanSeverityThreshold)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -313,6 +332,8 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(oidc_generic_scope, ''),
 		       COALESCE(oidc_audience_override, ''),
 		       COALESCE(infracost_pricing_api_endpoint, ''),
+		       COALESCE(scan_tool, 'none'),
+		       COALESCE(scan_severity_threshold, 'HIGH'),
 		       updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
@@ -329,6 +350,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		&s.OIDCGenericTokenURL, &s.OIDCGenericClientID, &s.OIDCGenericScope,
 		&s.OIDCAudienceOverride,
 		&s.InfracostPricingAPIEndpoint,
+		&s.ScanTool, &s.ScanSeverityThreshold,
 		&s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
@@ -353,6 +375,16 @@ func LoadInfracost(ctx context.Context, pool *pgxpool.Pool) (apiKey, pricingEndp
 		SELECT COALESCE(infracost_api_key,''), COALESCE(infracost_pricing_api_endpoint,'')
 		FROM system_settings WHERE id = true
 	`).Scan(&apiKey, &pricingEndpoint)
+	return
+}
+
+// LoadScanSettings fetches the IaC scan tool and severity threshold.
+// Used by the worker (env injection) and the ReportScanResults handler (blocking decision).
+func LoadScanSettings(ctx context.Context, pool *pgxpool.Pool) (tool, threshold string, err error) {
+	err = pool.QueryRow(ctx, `
+		SELECT COALESCE(scan_tool,'none'), COALESCE(scan_severity_threshold,'HIGH')
+		FROM system_settings WHERE id = true
+	`).Scan(&tool, &threshold)
 	return
 }
 

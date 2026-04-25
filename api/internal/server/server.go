@@ -331,6 +331,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/runs/:id/logs", runHandler.Logs)
 	api.GET("/runs/:id/plan", runHandler.DownloadPlan)
 	api.GET("/runs/:id/policy-results", runHandler.PolicyResults)
+	api.GET("/runs/:id/scan-results", runHandler.ScanResults)
 	api.DELETE("/runs/:id", runHandler.Delete, admin)
 	api.PATCH("/runs/:id/annotation", runHandler.Annotate, member)
 
@@ -368,6 +369,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	internal.GET("/runs/:id/plan", runHandler.DownloadPlanInternal) // apply phase: runner fetches its own plan
 	internal.POST("/runs/:id/plan-summary", runHandler.ReportPlanSummary)
 	internal.POST("/runs/:id/cost", runHandler.ReportCost)
+	internal.POST("/runs/:id/scan-results", runHandler.ReportScanResults)
 	internal.POST("/runs/:id/policy-results", runHandler.ReportPolicyResults)
 	internal.GET("/provider-cache", runHandler.ListProviderCache)
 	internal.GET("/provider-cache/*key", runHandler.GetProviderCache)

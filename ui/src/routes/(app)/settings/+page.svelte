@@ -34,6 +34,12 @@
 	let oidcSaved = $state(false);
 	let oidcError = $state<string | null>(null);
 
+	// IaC security scan settings
+	let scanForm = $state<{ scan_tool: 'none' | 'checkov' | 'trivy'; scan_severity_threshold: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' }>({ scan_tool: 'none', scan_severity_threshold: 'HIGH' });
+	let savingScan = $state(false);
+	let scanSaved = $state(false);
+	let scanError = $state<string | null>(null);
+
 	// Infracost settings
 	let infracostForm = $state({ infracost_api_key: '', infracost_pricing_api_endpoint: '' });
 	let savingInfracost = $state(false);
@@ -72,6 +78,10 @@
 				oidc_audience_override: s.oidc_audience_override ?? ''
 			};
 			infracostForm.infracost_pricing_api_endpoint = s.infracost_pricing_api_endpoint ?? '';
+			scanForm = {
+				scan_tool: (s.scan_tool ?? 'none') as 'none' | 'checkov' | 'trivy',
+				scan_severity_threshold: (s.scan_severity_threshold ?? 'HIGH') as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
+			};
 		}).catch(() => {});
 		loading = false;
 	});
@@ -105,6 +115,22 @@
 			oidcError = (err as Error).message;
 		} finally {
 			savingOIDC = false;
+		}
+	}
+
+	async function saveScan(e: SubmitEvent) {
+		e.preventDefault();
+		savingScan = true;
+		scanSaved = false;
+		scanError = null;
+		try {
+			await system.settings.update(scanForm);
+			scanSaved = true;
+			setTimeout(() => (scanSaved = false), 3000);
+		} catch (err) {
+			scanError = (err as Error).message;
+		} finally {
+			savingScan = false;
 		}
 	}
 
@@ -418,6 +444,50 @@
 			</div>
 		</form>
 	</div>
+	{/if}
+
+	<!-- IaC security scanning -->
+	{#if auth.isAdmin}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
+			<div class="px-6 py-4">
+				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">IaC security scanning</p>
+				<p class="text-xs text-zinc-600">Run Checkov or Trivy post-plan. Findings surfaced in the run detail view. Set a severity threshold to block apply on critical issues.</p>
+			</div>
+			<form class="px-6 py-5 space-y-4" onsubmit={saveScan}>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="scan-tool">Scan tool</label>
+						<select id="scan-tool" class="field-input" bind:value={scanForm.scan_tool}>
+							<option value="none">Disabled</option>
+							<option value="checkov">Checkov</option>
+							<option value="trivy">Trivy</option>
+						</select>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="scan-threshold">Block on severity</label>
+						<select id="scan-threshold" class="field-input" bind:value={scanForm.scan_severity_threshold}
+							disabled={scanForm.scan_tool === 'none'}>
+							<option value="CRITICAL">CRITICAL only</option>
+							<option value="HIGH">HIGH and above</option>
+							<option value="MEDIUM">MEDIUM and above</option>
+							<option value="LOW">LOW and above</option>
+						</select>
+					</div>
+				</div>
+				{#if scanError}
+					<p class="text-xs text-red-400">{scanError}</p>
+				{/if}
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingScan}
+						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingScan ? 'Saving…' : 'Save scan settings'}
+					</button>
+					{#if scanSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			</form>
+		</div>
 	{/if}
 
 	<!-- Infracost -->

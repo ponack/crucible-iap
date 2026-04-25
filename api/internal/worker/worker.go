@@ -245,8 +245,9 @@ func (w *RunWorker) loadRunEnv(ctx context.Context, log *slog.Logger, stackID, a
 	}
 	hookEnv := w.loadHookEnv(ctx, log, stackID)
 	infracostEnv := w.loadInfracostEnv(ctx, log)
-	// Merge order: external secrets → variable sets → remote state → stack env vars → hooks → infracost (last wins).
-	return vcsToken, append(append(append(append(append(storeEnv, varSetEnv...), remoteStateEnv...), builtinEnv...), hookEnv...), infracostEnv...)
+	scanEnv := w.loadScanEnv(ctx, log)
+	// Merge order: external secrets → variable sets → remote state → stack env vars → hooks → infracost → scan (last wins).
+	return vcsToken, append(append(append(append(append(append(storeEnv, varSetEnv...), remoteStateEnv...), builtinEnv...), hookEnv...), infracostEnv...), scanEnv...)
 }
 
 // loadInfracostEnv injects INFRACOST_API_KEY (and optionally
@@ -265,6 +266,23 @@ func (w *RunWorker) loadInfracostEnv(ctx context.Context, log *slog.Logger) []st
 		env = append(env, "INFRACOST_PRICING_API_ENDPOINT="+endpoint)
 	}
 	return env
+}
+
+// loadScanEnv injects CRUCIBLE_SCAN_TOOL and CRUCIBLE_SCAN_SEVERITY_THRESHOLD
+// when IaC security scanning is configured in system settings.
+func (w *RunWorker) loadScanEnv(ctx context.Context, log *slog.Logger) []string {
+	tool, threshold, err := settings.LoadScanSettings(ctx, w.pool)
+	if err != nil {
+		log.Warn("failed to load scan settings", "err", err)
+		return nil
+	}
+	if tool == "" || tool == "none" {
+		return nil
+	}
+	return []string{
+		"CRUCIBLE_SCAN_TOOL=" + tool,
+		"CRUCIBLE_SCAN_SEVERITY_THRESHOLD=" + threshold,
+	}
 }
 
 // loadHookEnv queries the stack's lifecycle hook scripts and returns them as
