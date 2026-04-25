@@ -339,6 +339,27 @@ export const stacks = {
 			request<{ run_id: string }>(`/stacks/${stackID}/webhook-deliveries/${deliveryID}/redeliver`, { method: 'POST' })
 	},
 
+	outgoingWebhooks: {
+		list: (stackID: string) =>
+			request<OutgoingWebhook[]>(`/stacks/${stackID}/outgoing-webhooks`),
+		create: (stackID: string, data: { url: string; event_types: string[]; headers: Record<string, string>; with_secret: boolean }) =>
+			request<OutgoingWebhook>(`/stacks/${stackID}/outgoing-webhooks`, {
+				method: 'POST',
+				body: JSON.stringify(data)
+			}),
+		update: (stackID: string, whID: string, data: { url?: string; event_types?: string[]; headers?: Record<string, string>; is_active?: boolean }) =>
+			request<null>(`/stacks/${stackID}/outgoing-webhooks/${whID}`, {
+				method: 'PATCH',
+				body: JSON.stringify(data)
+			}),
+		rotateSecret: (stackID: string, whID: string) =>
+			request<{ secret: string }>(`/stacks/${stackID}/outgoing-webhooks/${whID}/rotate-secret`, { method: 'POST' }),
+		delete: (stackID: string, whID: string) =>
+			request<null>(`/stacks/${stackID}/outgoing-webhooks/${whID}`, { method: 'DELETE' }),
+		deliveries: (stackID: string, whID: string) =>
+			request<OutgoingWebhookDelivery[]>(`/stacks/${stackID}/outgoing-webhooks/${whID}/deliveries`)
+	},
+
 	remoteState: {
 		list: (stackID: string) =>
 			request<RemoteStateSource[]>(`/stacks/${stackID}/remote-state-sources`),
@@ -852,6 +873,29 @@ export const org = {
 		delete: (id: string) => request<null>(`/org/sso-group-maps/${id}`, { method: 'DELETE' })
 	}
 };
+
+// ── Outgoing webhooks ─────────────────────────────────────────────────────────
+
+export interface OutgoingWebhook {
+	id: string;
+	url: string;
+	event_types: string[];
+	headers: Record<string, string>;
+	is_active: boolean;
+	has_secret: boolean;
+	created_at: string;
+	secret?: string; // only present on creation or secret rotation
+}
+
+export interface OutgoingWebhookDelivery {
+	id: string;
+	event_type: string;
+	attempt: number;
+	status_code?: number;
+	error?: string;
+	run_id?: string;
+	delivered_at: string;
+}
 
 // ── Stack templates ───────────────────────────────────────────────────────────
 

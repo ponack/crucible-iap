@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ponack/crucible-iap/internal/outgoing"
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/vault"
 )
@@ -235,6 +236,7 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 				n.planEmailBody(d))
 		}
 	}
+	outgoing.Dispatch(ctx, n.pool, n.vault, runID, "plan_complete", n.baseURL)
 }
 
 // RunFinished is called when a run reaches a terminal status (finished or failed).
@@ -264,6 +266,7 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 	if contains(d.notifyEvents, event) {
 		n.sendRunPushNotifications(ctx, d, success)
 	}
+	outgoing.Dispatch(ctx, n.pool, n.vault, runID, event, n.baseURL)
 }
 
 // sendRunPushNotifications dispatches run-result notifications to all configured
