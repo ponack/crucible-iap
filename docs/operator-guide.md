@@ -73,6 +73,34 @@ OIDC_REDIRECT_URL=https://crucible.example.com/auth/callback
 
 Both can be enabled simultaneously.
 
+### SSO group → role mapping
+
+When OIDC is configured, Crucible reads the `groups` claim from the ID token on every login and automatically provisions org membership based on pre-configured group maps.
+
+**How it works:**
+
+1. Your IdP includes a `groups` claim in the ID token (a JSON array of strings). Configure your IdP application to include it — in Authentik this is done with a property mapping; in Okta via a Group Profile attribute; in Keycloak it is sent automatically when `groups` scope is requested.
+2. In **Settings → Organization → SSO Group Mapping** (admin-only), add one or more `group claim → role` entries.
+3. On each login Crucible matches the user's token groups against all orgs' maps. For each matching org the user receives the highest mapped role. If a user matches `platform-team → admin` and `everyone → viewer` in the same org, they get `admin`.
+4. Mappings are **authoritative on every login** — if a group map is later changed or removed, the next login re-evaluates and can downgrade a previously elevated role.
+5. Manual invites and direct role edits continue to work. Invited users who are also covered by a group map will have their role updated by the map on next login.
+
+**Authentik example** — send groups in the ID token:
+
+1. In Authentik, navigate to your Crucible OAuth2/OIDC provider → **Property mappings**.
+2. Add the built-in **authentik default OAuth Mapping: OpenID 'groups'** mapping (or create a custom one with expression `return user.ak_groups.values_list("name", flat=True)`).
+3. The `groups` claim will be included in all ID tokens automatically — no extra scope needed.
+
+**Keycloak example:**
+
+1. In your Crucible client, go to **Client scopes → Add client scope → groups** (built-in).
+2. The claim is sent under the `groups` key with full group path strings (e.g. `/platform-team`). Enter the exact path string in the Crucible group map.
+
+**Okta example:**
+
+1. In your OIDC app, go to **Sign On → OpenID Connect ID Token → Groups claim**. Set the claim name to `groups` and a filter (e.g. `Matches regex .*`).
+2. Enter the Okta group names exactly as they appear in the claim.
+
 ### 3. Start
 
 ```bash
