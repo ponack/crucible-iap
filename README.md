@@ -354,7 +354,7 @@ cd api && go test -race ./...
 - [x] Generic outgoing webhooks — fire arbitrary HTTP POST on run state changes to PagerDuty, ServiceNow, Jira, or custom tooling; HMAC-signed, configurable per event type, delivery log with retry
 - [x] SSO group → role mapping — automatically assign org roles from IdP group claims on every login; eliminates manual invite management for large teams on Authentik, Okta, Keycloak, or GitHub
 - [x] Cost estimation — integrate Infracost (self-hosted server supported) to surface per-run monthly cost delta alongside the plan summary
-- [ ] IaC security scanning — built-in Checkov / Trivy scan post-plan; findings surfaced as structured results in the run detail alongside OPA policy output; configurable severity threshold to block apply
+- [x] IaC security scanning — built-in Checkov / Trivy scan post-plan; findings surfaced as structured results in the run detail alongside OPA policy output; configurable severity threshold to block apply
 - [ ] Private provider registry — extend the existing module registry to serve custom Terraform providers; critical for air-gapped deployments and teams distributing internal providers
 - [ ] Per-stack run concurrency cap — limit a specific stack to N concurrent runs (typically 1 for production); currently only a global cap exists
 - [ ] Self-service infrastructure blueprints — parameterized stack creation with named user-facing input fields rendered as a form; platform teams publish blueprints, app teams self-serve environments without touching stack config
