@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -189,9 +190,10 @@ func (h *Handler) Callback(c echo.Context) error {
 	}
 
 	var idClaims struct {
-		Email   string `json:"email"`
-		Name    string `json:"name"`
-		Picture string `json:"picture"`
+		Email   string   `json:"email"`
+		Name    string   `json:"name"`
+		Picture string   `json:"picture"`
+		Groups  []string `json:"groups"`
 	}
 	if err := idToken.Claims(&idClaims); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to parse claims")
@@ -201,6 +203,7 @@ func (h *Handler) Callback(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to provision user")
 	}
+	applyGroupMappings(c.Request().Context(), h.pool, userID, idClaims.Groups)
 
 	accessToken, err := h.issueAccessToken(userID, orgID, idClaims.Email, idClaims.Name)
 	if err != nil {
@@ -641,6 +644,57 @@ func (h *Handler) upsertUser(ctx context.Context, email, name, avatarURL string)
 	}
 
 	return userID, orgID, tx.Commit(ctx)
+}
+
+// applyGroupMappings looks up org_sso_group_maps for each group in the IdP
+// groups claim and upserts organization_members with the highest mapped role per
+// org. Failures are logged and silently ignored so they never block login.
+func applyGroupMappings(ctx context.Context, pool *pgxpool.Pool, userID string, groups []string) {
+	if len(groups) == 0 {
+		return
+	}
+	rows, err := pool.Query(ctx, `
+		SELECT org_id, role FROM org_sso_group_maps WHERE group_claim = ANY($1)
+	`, groups)
+	if err != nil {
+		slog.Warn("sso group mapping query failed", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	bestRole := map[string]string{} // org_id → highest role
+	for rows.Next() {
+		var orgID, role string
+		if err := rows.Scan(&orgID, &role); err != nil {
+			continue
+		}
+		if existing, ok := bestRole[orgID]; !ok || roleRank(role) > roleRank(existing) {
+			bestRole[orgID] = role
+		}
+	}
+	rows.Close()
+
+	for orgID, role := range bestRole {
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO organization_members (org_id, user_id, role)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (org_id, user_id) DO UPDATE SET role = EXCLUDED.role
+		`, orgID, userID, role); err != nil {
+			slog.Warn("sso group mapping upsert failed", "org_id", orgID, "err", err)
+		}
+	}
+}
+
+func roleRank(role string) int {
+	switch role {
+	case "admin":
+		return 3
+	case "member":
+		return 2
+	case "viewer":
+		return 1
+	}
+	return 0
 }
 
 func randomString(n int) (string, error) {

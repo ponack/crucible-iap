@@ -810,6 +810,13 @@ export interface OrgDetail {
 	slug: string;
 }
 
+export interface OrgGroupMap {
+	id: string;
+	group_claim: string;
+	role: 'admin' | 'member' | 'viewer';
+	created_at: string;
+}
+
 export const org = {
 	me: () => request<{ role: string }>('/org/me'),
 	get: () => request<OrgDetail>('/org'),
@@ -834,6 +841,15 @@ export const org = {
 		revoke: (inviteID: string) => request<null>(`/org/invites/${inviteID}`, { method: 'DELETE' }),
 		accept: (token: string) =>
 			request<{ org_id: string; role: string }>(`/invites/${token}/accept`, { method: 'POST' })
+	},
+	groupMaps: {
+		list: () => request<OrgGroupMap[]>('/org/sso-group-maps'),
+		create: (group_claim: string, role: string) =>
+			request<OrgGroupMap>('/org/sso-group-maps', {
+				method: 'POST',
+				body: JSON.stringify({ group_claim, role })
+			}),
+		delete: (id: string) => request<null>(`/org/sso-group-maps/${id}`, { method: 'DELETE' })
 	}
 };
 

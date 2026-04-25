@@ -193,6 +193,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.PATCH("/org", orgHandler.UpdateOrg, admin)
 	api.POST("/auth/switch-org", authHandler.SwitchOrg)
 
+	// SSO group → role mappings
+	api.GET("/org/sso-group-maps", orgHandler.ListGroupMaps, admin)
+	api.POST("/org/sso-group-maps", orgHandler.CreateGroupMap, admin)
+	api.DELETE("/org/sso-group-maps/:id", orgHandler.DeleteGroupMap, admin)
+
 	// Policies
 	api.POST("/policies/validate", policyHandler.Validate)
 	api.GET("/policies", policyHandler.List)
