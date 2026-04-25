@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount, onDestroy } from 'svelte';
-	import { runs, type Run, type RunPolicyResult } from '$lib/api/client';
+	import { runs, type Run, type RunPolicyResult, type RunScanResult } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
 	const runID = $derived(page.params.id as string);
@@ -15,6 +15,8 @@
 	let editingAnnotation = $state(false);
 	let annotationDraft = $state('');
 	let policyResults = $state<RunPolicyResult[]>([]);
+	let scanResults = $state<RunScanResult[]>([]);
+	let scanExpanded = $state(false);
 
 	let logEl = $state<HTMLElement | undefined>(undefined);
 	let sse: EventSource | null = null;
@@ -33,6 +35,7 @@
 		loading = false;
 		startSSE();
 		runs.policyResults(runID).then((r) => (policyResults = r)).catch(() => {});
+		runs.scanResults(runID).then((r) => (scanResults = r)).catch(() => {});
 	});
 
 	onDestroy(() => sse?.close());
@@ -369,6 +372,58 @@
 					</div>
 				{/each}
 			</div>
+		</div>
+	{/if}
+
+	<!-- IaC security scan results -->
+	{#if scanResults.length > 0}
+		{@const failed = scanResults.filter((r) => !r.passed)}
+		{@const tool = scanResults[0]?.tool ?? 'scan'}
+		{@const severityColour: Record<string, string> = {
+			CRITICAL: 'text-red-400 bg-red-950/50 border-red-900',
+			HIGH: 'text-orange-400 bg-orange-950/50 border-orange-900',
+			MEDIUM: 'text-yellow-400 bg-yellow-950/50 border-yellow-900',
+			LOW: 'text-zinc-400 bg-zinc-800/50 border-zinc-700',
+			UNKNOWN: 'text-zinc-500 bg-zinc-900 border-zinc-800'
+		}}
+		{@const counts = ['CRITICAL','HIGH','MEDIUM','LOW'].map((s) => ({
+			s, n: failed.filter((r) => r.severity === s).length
+		})).filter((x) => x.n > 0)}
+		<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-3 space-y-2">
+			<button class="w-full text-left" onclick={() => (scanExpanded = !scanExpanded)}>
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<p class="text-xs font-medium text-zinc-500 uppercase tracking-wide">Security scan ({tool})</p>
+						{#each counts as { s, n }}
+							<span class="text-xs px-1.5 py-0.5 rounded border font-mono {severityColour[s] ?? severityColour.UNKNOWN}">
+								{n} {s}
+							</span>
+						{/each}
+						{#if failed.length === 0}
+							<span class="text-xs text-green-400">✓ No failures</span>
+						{/if}
+					</div>
+					<span class="text-zinc-600 text-xs">{scanExpanded ? '▲' : '▼'} {scanResults.length} checks</span>
+				</div>
+			</button>
+			{#if scanExpanded}
+				<div class="space-y-1 pt-1">
+					{#each scanResults.filter((r) => !r.passed) as r}
+						<div class="flex items-start gap-2 rounded border px-3 py-2 text-xs {severityColour[r.severity] ?? severityColour.UNKNOWN}">
+							<span class="font-mono shrink-0">{r.severity}</span>
+							<span class="font-mono text-zinc-500 shrink-0">{r.check_id}</span>
+							<span class="flex-1">{r.check_name}</span>
+							{#if r.resource}<span class="font-mono text-zinc-500 shrink-0">{r.resource}</span>{/if}
+							{#if r.filename}
+								<span class="font-mono text-zinc-600 shrink-0">{r.filename}{r.line_start ? `:${r.line_start}` : ''}</span>
+							{/if}
+						</div>
+					{/each}
+					{#if failed.length === 0}
+						<p class="text-xs text-green-400 px-1">All {scanResults.length} checks passed.</p>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	{/if}
 
