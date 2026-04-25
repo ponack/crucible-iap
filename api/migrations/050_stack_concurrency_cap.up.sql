@@ -1,0 +1,1 @@
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS max_concurrent_runs INT DEFAULT NULL;

@@ -26,7 +26,8 @@
 		auto_apply: false, drift_detection: false, drift_schedule: '', auto_remediate_drift: false,
 		scheduled_destroy_at: '',
 		plan_schedule: '', apply_schedule: '', destroy_schedule: '',
-		pre_plan_hook: '', post_plan_hook: '', pre_apply_hook: '', post_apply_hook: ''
+		pre_plan_hook: '', post_plan_hook: '', pre_apply_hook: '', post_apply_hook: '',
+		max_concurrent_runs: 0
 	});
 
 	// Token creation
@@ -314,7 +315,8 @@
 			pre_plan_hook: stack.pre_plan_hook ?? '',
 			post_plan_hook: stack.post_plan_hook ?? '',
 			pre_apply_hook: stack.pre_apply_hook ?? '',
-			post_apply_hook: stack.post_apply_hook ?? ''
+			post_apply_hook: stack.post_apply_hook ?? '',
+			max_concurrent_runs: stack.max_concurrent_runs ?? 0
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -1273,6 +1275,12 @@
 					</div>
 				</div>
 				<p class="text-xs text-zinc-600">Hooks run inside the runner container with full access to stack env vars. A non-zero exit fails the run.</p>
+			</div>
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-max-concurrent">Max concurrent runs <span class="font-normal text-zinc-500">(0 = unlimited)</span></label>
+				<input id="edit-max-concurrent" type="number" min="0" max="99" class="field-input w-32"
+					bind:value={form.max_concurrent_runs} placeholder="0" />
+				<p class="text-xs text-zinc-600">Set to 1 to ensure this stack only runs one job at a time (recommended for production).</p>
 			</div>
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}

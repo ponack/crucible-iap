@@ -105,7 +105,8 @@ type Stack struct {
 	PrePlanHook         *string    `json:"pre_plan_hook,omitempty"`
 	PostPlanHook        *string    `json:"post_plan_hook,omitempty"`
 	PreApplyHook        *string    `json:"pre_apply_hook,omitempty"`
-	PostApplyHook       *string    `json:"post_apply_hook,omitempty"`
+	PostApplyHook        *string    `json:"post_apply_hook,omitempty"`
+	MaxConcurrentRuns    *int       `json:"max_concurrent_runs,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -287,6 +288,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.pre_plan_hook, s.post_plan_hook, s.pre_apply_hook, s.post_apply_hook,
 		       COALESCE(s.plan_schedule,''), COALESCE(s.apply_schedule,''), COALESCE(s.destroy_schedule,''),
 		       s.plan_next_run_at, s.apply_next_run_at, s.destroy_next_run_at,
+		       s.max_concurrent_runs,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -307,6 +309,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
 		&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
 		&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt,
+		&s.MaxConcurrentRuns,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -343,6 +346,7 @@ type updateStackReq struct {
 	PostPlanHook       *string `json:"post_plan_hook"`
 	PreApplyHook       *string `json:"pre_apply_hook"`
 	PostApplyHook      *string `json:"post_apply_hook"`
+	MaxConcurrentRuns  *int    `json:"max_concurrent_runs"`
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -391,6 +395,13 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	for _, f := range boolFields {
 		if f.v != nil {
 			add(f.col, *f.v)
+		}
+	}
+	if r.MaxConcurrentRuns != nil {
+		if *r.MaxConcurrentRuns <= 0 {
+			add("max_concurrent_runs", nil) // 0 = unlimited
+		} else {
+			add("max_concurrent_runs", *r.MaxConcurrentRuns)
 		}
 	}
 	if r.ScheduledDestroyAt != nil {
@@ -458,7 +469,8 @@ func (h *Handler) Update(c echo.Context) error {
 		          scheduled_destroy_at, created_at, updated_at,
 		          pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
 		          COALESCE(plan_schedule,''), COALESCE(apply_schedule,''), COALESCE(destroy_schedule,''),
-		          plan_next_run_at, apply_next_run_at, destroy_next_run_at
+		          plan_next_run_at, apply_next_run_at, destroy_next_run_at,
+		          max_concurrent_runs
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -469,7 +481,8 @@ func (h *Handler) Update(c echo.Context) error {
 			&s.AutoRemediateDrift, &s.IsDisabled, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
 			&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
 			&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
-			&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt); err != nil {
+			&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt,
+			&s.MaxConcurrentRuns); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.JSON(http.StatusOK, s)

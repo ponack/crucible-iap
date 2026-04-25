@@ -17,6 +17,9 @@
 	let policyResults = $state<RunPolicyResult[]>([]);
 	let scanResults = $state<RunScanResult[]>([]);
 	let scanExpanded = $state(false);
+	let explanation = $state<string | null>(null);
+	let explaining = $state(false);
+	let explainError = $state<string | null>(null);
 
 	let logEl = $state<HTMLElement | undefined>(undefined);
 	let sse: EventSource | null = null;
@@ -116,6 +119,20 @@
 			alert((e as Error).message);
 		} finally {
 			acting = null;
+		}
+	}
+
+	async function explainFailure() {
+		explaining = true;
+		explainError = null;
+		explanation = null;
+		try {
+			const r = await runs.explain(runID);
+			explanation = r.explanation;
+		} catch (e) {
+			explainError = (e as Error).message;
+		} finally {
+			explaining = false;
 		}
 	}
 
@@ -342,6 +359,12 @@
 					{acting === 'cancel' ? 'Canceling…' : 'Cancel'}
 				</button>
 			{/if}
+			{#if run.status === 'failed'}
+				<button onclick={explainFailure} disabled={explaining}
+					class="border border-indigo-900 hover:border-indigo-700 text-indigo-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+					{explaining ? 'Analysing…' : '✦ Explain failure'}
+				</button>
+			{/if}
 		</div>
 	</div>
 
@@ -423,6 +446,18 @@
 						<p class="text-xs text-green-400 px-1">All {scanResults.length} checks passed.</p>
 					{/if}
 				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- AI explanation panel -->
+	{#if explanation || explainError}
+		<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-4 space-y-2">
+			<p class="text-xs font-medium text-indigo-400 uppercase tracking-wide">✦ AI failure analysis</p>
+			{#if explainError}
+				<p class="text-xs text-red-400">{explainError}</p>
+			{:else if explanation}
+				<div class="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">{explanation}</div>
 			{/if}
 		</div>
 	{/if}

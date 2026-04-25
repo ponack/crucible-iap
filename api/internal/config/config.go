@@ -60,6 +60,9 @@ type Config struct {
 	// crucible-runner network don't need to traverse the public internet.
 	// If empty, falls back to the URL derived from the incoming HTTP request.
 	RunnerAPIURL string `mapstructure:"RUNNER_API_URL"`
+
+	// AI run troubleshooting — opt-in via ANTHROPIC_API_KEY
+	AnthropicAPIKey string `mapstructure:"ANTHROPIC_API_KEY"`
 }
 
 func Load() (*Config, error) {
