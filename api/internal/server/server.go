@@ -21,6 +21,7 @@ import (
 	cruciblemw "github.com/ponack/crucible-iap/internal/middleware"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/orgs"
+	"github.com/ponack/crucible-iap/internal/outgoing"
 	"github.com/ponack/crucible-iap/internal/policies"
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
@@ -119,6 +120,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	settingsHandler := settings.NewHandler(s.pool, s.cfg, n)
 	webhookHandler := webhooks.NewHandler(s.pool, q)
 	orgHandler := orgs.NewHandler(s.pool)
+	outgoingHandler := outgoing.NewHandler(s.pool, v)
 	envVarHandler := envvars.NewHandler(s.pool, v)
 	varSetHandler := varsets.NewHandler(s.pool, v)
 	depsHandler := deps.NewHandler(s.pool)
@@ -238,6 +240,14 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stacks/:id/webhook-deliveries", webhookHandler.ListDeliveries)
 	api.GET("/stacks/:id/webhook-deliveries/:deliveryID/payload", webhookHandler.GetDeliveryPayload)
 	api.POST("/stacks/:id/webhook-deliveries/:deliveryID/redeliver", webhookHandler.Redeliver, member)
+
+	// Outgoing webhooks (generic HTTP POST on run events)
+	api.GET("/stacks/:id/outgoing-webhooks", outgoingHandler.List)
+	api.POST("/stacks/:id/outgoing-webhooks", outgoingHandler.Create, member)
+	api.PATCH("/stacks/:id/outgoing-webhooks/:whID", outgoingHandler.Update, member)
+	api.POST("/stacks/:id/outgoing-webhooks/:whID/rotate-secret", outgoingHandler.RotateSecret, member)
+	api.DELETE("/stacks/:id/outgoing-webhooks/:whID", outgoingHandler.Delete, member)
+	api.GET("/stacks/:id/outgoing-webhooks/:whID/deliveries", outgoingHandler.ListDeliveries)
 
 	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)

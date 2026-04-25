@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -98,6 +98,18 @@
 	let loadingDeliveries = $state(false);
 	let expandedDeliveryID = $state<string | null>(null);
 	let deliveryPayloads = $state<Record<string, unknown>>({});
+
+	// Outgoing webhooks
+	let outgoingWebhooks = $state<OutgoingWebhook[]>([]);
+	let newOWURL = $state('');
+	let newOWEvents = $state<string[]>(['plan_complete', 'run_finished', 'run_failed']);
+	let newOWWithSecret = $state(true);
+	let newOWHeaders = $state('');
+	let addingOW = $state(false);
+	let owError = $state<string | null>(null);
+	let owRevealedSecret = $state<string | null>(null);
+	let owDeliveries = $state<Record<string, OutgoingWebhookDelivery[]>>({});
+	let expandedOWID = $state<string | null>(null);
 
 	// Variable sets
 	let stackVarSets = $state<StackVarSetRef[]>([]);
@@ -276,6 +288,9 @@
 
 		// Load state resources independently — no state yet is normal.
 		stacks.state.resources(stackID).then(r => (stateResources = r)).catch(() => {});
+
+		// Load outgoing webhooks independently.
+		stacks.outgoingWebhooks.list(stackID).then(r => (outgoingWebhooks = r)).catch(() => {});
 	});
 
 	function resetForm() {
@@ -900,6 +915,71 @@
 
 	function driftScheduleLabel(val: string | undefined) {
 		return driftScheduleOptions.find((o) => o.value === (val ?? ''))?.label ?? val ?? '—';
+	}
+
+	function parseHeaders(raw: string): Record<string, string> {
+		const result: Record<string, string> = {};
+		for (const line of raw.split('\n')) {
+			const colon = line.indexOf(':');
+			if (colon === -1) continue;
+			const key = line.slice(0, colon).trim();
+			const val = line.slice(colon + 1).trim();
+			if (key) result[key] = val;
+		}
+		return result;
+	}
+
+	async function addOutgoingWebhook(e: Event) {
+		e.preventDefault();
+		if (!newOWURL.trim()) return;
+		addingOW = true;
+		owError = null;
+		owRevealedSecret = null;
+		try {
+			const created = await stacks.outgoingWebhooks.create(stackID, {
+				url: newOWURL.trim(),
+				event_types: newOWEvents,
+				headers: parseHeaders(newOWHeaders),
+				with_secret: newOWWithSecret
+			});
+			outgoingWebhooks = [...outgoingWebhooks, created];
+			if (created.secret) owRevealedSecret = created.secret;
+			newOWURL = '';
+			newOWHeaders = '';
+			newOWEvents = ['plan_complete', 'run_finished', 'run_failed'];
+			newOWWithSecret = true;
+		} catch (err) {
+			owError = (err as Error).message;
+		} finally {
+			addingOW = false;
+		}
+	}
+
+	async function toggleOWActive(wh: OutgoingWebhook) {
+		await stacks.outgoingWebhooks.update(stackID, wh.id, { is_active: !wh.is_active });
+		outgoingWebhooks = outgoingWebhooks.map(w => w.id === wh.id ? { ...w, is_active: !wh.is_active } : w);
+	}
+
+	async function deleteOW(id: string) {
+		await stacks.outgoingWebhooks.delete(stackID, id);
+		outgoingWebhooks = outgoingWebhooks.filter(w => w.id !== id);
+	}
+
+	async function rotateOWSecret(id: string) {
+		const res = await stacks.outgoingWebhooks.rotateSecret(stackID, id);
+		owRevealedSecret = res.secret;
+	}
+
+	async function toggleOWDeliveries(id: string) {
+		if (expandedOWID === id) {
+			expandedOWID = null;
+			return;
+		}
+		expandedOWID = id;
+		if (!owDeliveries[id]) {
+			const d = await stacks.outgoingWebhooks.deliveries(stackID, id);
+			owDeliveries = { ...owDeliveries, [id]: d };
+		}
 	}
 </script>
 
@@ -2154,6 +2234,138 @@
 				</table>
 			</div>
 		{/if}
+	</section>
+
+	<!-- Outgoing webhooks -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Outgoing webhooks</h2>
+		<p class="text-xs text-zinc-500">
+			Send a signed HTTP POST to an external URL on run events. Use this to integrate with PagerDuty, ServiceNow, or any custom endpoint.
+		</p>
+
+		{#if owRevealedSecret}
+			<div class="bg-amber-950/40 border border-amber-800/50 rounded-xl px-4 py-3 space-y-1">
+				<p class="text-xs text-amber-400">New signing secret — copy it now, it won't be shown again:</p>
+				<div class="flex items-center gap-2">
+					<code class="flex-1 text-xs text-amber-200 font-mono break-all">{owRevealedSecret}</code>
+					<button onclick={() => navigator.clipboard.writeText(owRevealedSecret!)} class="shrink-0 text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 px-2 py-1 rounded">Copy</button>
+				</div>
+				<button onclick={() => (owRevealedSecret = null)} class="text-xs text-amber-700 hover:text-amber-500">Dismiss</button>
+			</div>
+		{/if}
+
+		{#if outgoingWebhooks.length > 0}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<tbody class="divide-y divide-zinc-800">
+						{#each outgoingWebhooks as wh (wh.id)}
+							<tr class="hover:bg-zinc-900/50 transition-colors">
+								<td class="px-4 py-3 font-mono text-zinc-300 text-xs break-all max-w-xs">{wh.url}</td>
+								<td class="px-4 py-3 text-xs text-zinc-500">{wh.event_types.join(', ')}</td>
+								<td class="px-4 py-3">
+									<span class="text-xs {wh.is_active ? 'text-green-400' : 'text-zinc-600'}">{wh.is_active ? 'active' : 'paused'}</span>
+								</td>
+								<td class="px-4 py-3 text-xs text-right">
+									<div class="flex items-center justify-end gap-3">
+										<button onclick={() => toggleOWDeliveries(wh.id)} class="text-zinc-500 hover:text-zinc-300 text-xs">
+											{expandedOWID === wh.id ? 'hide log' : 'log'}
+										</button>
+										<button onclick={() => toggleOWActive(wh)} class="text-zinc-500 hover:text-zinc-300 text-xs">
+											{wh.is_active ? 'pause' : 'resume'}
+										</button>
+										<button onclick={() => rotateOWSecret(wh.id)} class="text-zinc-500 hover:text-zinc-300 text-xs">rotate secret</button>
+										<button onclick={() => deleteOW(wh.id)} class="text-red-500 hover:text-red-400 text-xs">delete</button>
+									</div>
+								</td>
+							</tr>
+							{#if expandedOWID === wh.id}
+								<tr>
+									<td colspan="4" class="bg-zinc-950 px-4 py-3">
+										{#if owDeliveries[wh.id]}
+											{#if owDeliveries[wh.id].length === 0}
+												<p class="text-xs text-zinc-600">No deliveries yet.</p>
+											{:else}
+												<table class="w-full text-xs">
+													<thead class="text-zinc-500">
+														<tr>
+															<th class="text-left py-1">Time</th>
+															<th class="text-left py-1">Event</th>
+															<th class="text-left py-1">Attempt</th>
+															<th class="text-left py-1">Status</th>
+															<th class="text-left py-1">Error</th>
+														</tr>
+													</thead>
+													<tbody class="divide-y divide-zinc-900">
+														{#each owDeliveries[wh.id] as d (d.id)}
+															<tr>
+																<td class="py-1 text-zinc-500 whitespace-nowrap">{fmtDate(d.delivered_at)}</td>
+																<td class="py-1 text-zinc-400">{d.event_type}</td>
+																<td class="py-1 text-zinc-500">{d.attempt}</td>
+																<td class="py-1">
+																	{#if d.status_code && d.status_code < 300}
+																		<span class="text-green-400">{d.status_code}</span>
+																	{:else if d.status_code}
+																		<span class="text-red-400">{d.status_code}</span>
+																	{:else}
+																		<span class="text-zinc-600">—</span>
+																	{/if}
+																</td>
+																<td class="py-1 text-red-400 font-mono">{d.error ?? ''}</td>
+															</tr>
+														{/each}
+													</tbody>
+												</table>
+											{/if}
+										{:else}
+											<p class="text-xs text-zinc-600">Loading…</p>
+										{/if}
+									</td>
+								</tr>
+							{/if}
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+
+		<!-- Add form -->
+		<div class="border border-zinc-800 rounded-xl p-4 space-y-3">
+			<p class="text-xs text-zinc-500 font-medium">Add outgoing webhook</p>
+			<form onsubmit={addOutgoingWebhook} class="space-y-3">
+				<div class="space-y-1">
+					<label class="text-xs text-zinc-400" for="ow-url">URL</label>
+					<input id="ow-url" type="url" bind:value={newOWURL} placeholder="https://example.com/hook" required
+						class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+				</div>
+				<div class="space-y-1">
+					<p class="text-xs text-zinc-400">Events</p>
+					<div class="flex gap-4">
+						{#each ['plan_complete', 'run_finished', 'run_failed'] as ev}
+							<label class="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
+								<input type="checkbox" bind:group={newOWEvents} value={ev} class="accent-indigo-500" />
+								{ev.replace('_', ' ')}
+							</label>
+						{/each}
+					</div>
+				</div>
+				<div class="space-y-1">
+					<label class="text-xs text-zinc-400" for="ow-headers">Extra headers <span class="text-zinc-600">(optional, one per line: Key: Value)</span></label>
+					<textarea id="ow-headers" bind:value={newOWHeaders} rows="2" placeholder="Authorization: Bearer token123"
+						class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-xs rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+				</div>
+				<label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+					<input type="checkbox" bind:checked={newOWWithSecret} class="accent-indigo-500" />
+					Generate HMAC signing secret <span class="text-zinc-600">(adds <code class="text-zinc-300">X-Crucible-Signature</code> header)</span>
+				</label>
+				{#if owError}
+					<p class="text-xs text-red-400">{owError}</p>
+				{/if}
+				<button type="submit" disabled={addingOW || newOWEvents.length === 0}
+					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+					{addingOW ? 'Adding…' : 'Add webhook'}
+				</button>
+			</form>
+		</div>
 	</section>
 
 	<!-- Recent runs -->
