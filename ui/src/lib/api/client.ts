@@ -133,6 +133,7 @@ export interface Stack {
 	post_plan_hook?: string;
 	pre_apply_hook?: string;
 	post_apply_hook?: string;
+	max_concurrent_runs?: number;
 	created_at: string;
 	updated_at: string;
 }
@@ -546,6 +547,7 @@ export const runs = {
 		}),
 	policyResults: (id: string) => request<RunPolicyResult[]>(`/runs/${id}/policy-results`),
 	scanResults: (id: string) => request<RunScanResult[]>(`/runs/${id}/scan-results`),
+	explain: (id: string) => request<{ explanation: string }>(`/runs/${id}/explain`, { method: 'POST' }),
 	downloadPlan: async (id: string): Promise<Blob> => {
 		const headers: Record<string, string> = {};
 		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;

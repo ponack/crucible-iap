@@ -146,6 +146,19 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		return w.failRun(ctx, orgID, args.RunID, fmt.Errorf("%s", msg))
 	}
 
+	var maxConcurrent *int
+	var activeRuns int
+	_ = w.pool.QueryRow(ctx, `
+		SELECT max_concurrent_runs,
+		       (SELECT COUNT(*) FROM runs
+		        WHERE stack_id = $1 AND id != $2
+		        AND status NOT IN ('finished','failed','canceled','discarded'))
+		FROM stacks WHERE id = $1
+	`, args.StackID, args.RunID).Scan(&maxConcurrent, &activeRuns)
+	if maxConcurrent != nil && activeRuns >= *maxConcurrent {
+		return w.failRun(ctx, orgID, args.RunID, fmt.Errorf("stack concurrency cap (%d) reached", *maxConcurrent))
+	}
+
 	if err := w.setStatus(ctx, orgID, args.RunID, "preparing", nil); err != nil {
 		return err
 	}

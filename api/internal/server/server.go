@@ -332,6 +332,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/runs/:id/plan", runHandler.DownloadPlan)
 	api.GET("/runs/:id/policy-results", runHandler.PolicyResults)
 	api.GET("/runs/:id/scan-results", runHandler.ScanResults)
+	api.POST("/runs/:id/explain", runHandler.ExplainFailure)
 	api.DELETE("/runs/:id", runHandler.Delete, admin)
 	api.PATCH("/runs/:id/annotation", runHandler.Annotate, member)
 
