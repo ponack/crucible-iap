@@ -359,7 +359,7 @@ cd api && go test -race ./...
 - [x] Per-stack run concurrency cap — set `max_concurrent_runs` on any stack; worker enforces the cap at job start and fails the run immediately if the limit is reached; 0 / unset = unlimited
 - [ ] Self-service infrastructure blueprints — parameterized stack creation with named user-facing input fields rendered as a form; platform teams publish blueprints, app teams self-serve environments without touching stack config
 - [x] OPA policy test playground — standalone `/policies/test` page; pick any saved policy, paste synthetic JSON, run it and see allow/deny/warn/trigger results with optional OPA evaluation trace; genuine differentiator — neither Spacelift nor TF Cloud has this built in
-- [ ] PR preview environments — auto-create a stack from a template when a PR opens, auto-destroy when it closes; branch name drives workspace isolation; pairs with stack dependencies for full per-PR environment chains
+- [x] PR preview environments — auto-create a stack from a template when a PR opens, auto-destroy when it closes; branch name drives workspace isolation; pairs with stack dependencies for full per-PR environment chains
 - [x] AI run troubleshooting — one-click "Explain failure" on failed runs; sends log context to the Claude API and returns a structured root-cause explanation and suggested fix; opt-in via `ANTHROPIC_API_KEY`
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
