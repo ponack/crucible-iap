@@ -149,13 +149,7 @@ func (h *Handler) Receive(c echo.Context) error {
 
 	h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "triggered", "", &runID)
 
-	// PR preview: on open/sync, spin up a preview stack from the configured template.
-	if event.prNumber > 0 && event.runType == "proposed" {
-		if err := h.maybeSpawnPreview(ctx, orgID, stackID, event, apiURL); err != nil {
-			// Non-fatal: source stack run is already queued; log but don't fail.
-			_ = err
-		}
-	}
+	go func() { _ = h.maybeSpawnPreview(context.Background(), orgID, stackID, event, apiURL) }()
 
 	ctxJSON, _ := json.Marshal(map[string]any{
 		"trigger": event.trigger,
@@ -435,6 +429,9 @@ func (h *Handler) handlePRClose(ctx context.Context, c echo.Context, orgID, stac
 // template (if pr_preview_enabled) and queues a tracked run on it. Idempotent:
 // if a preview stack already exists for this PR, it just queues a new run.
 func (h *Handler) maybeSpawnPreview(ctx context.Context, orgID, sourceStackID string, event *webhookEvent, apiURL string) error {
+	if event.runType != "proposed" || event.prNumber == 0 {
+		return nil
+	}
 	// Load source stack's preview config.
 	var enabled bool
 	var templateID *string

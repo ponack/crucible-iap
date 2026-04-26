@@ -419,16 +419,7 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 			add("max_concurrent_runs", *r.MaxConcurrentRuns)
 		}
 	}
-	if r.PRPreviewEnabled != nil {
-		add("pr_preview_enabled", *r.PRPreviewEnabled)
-	}
-	if r.PRPreviewTemplateID != nil {
-		if *r.PRPreviewTemplateID == "" {
-			add("pr_preview_template_id", nil)
-		} else {
-			add("pr_preview_template_id", *r.PRPreviewTemplateID)
-		}
-	}
+	r.addPRPreviewSets(add)
 	if r.ScheduledDestroyAt != nil {
 		if *r.ScheduledDestroyAt == "" {
 			add("scheduled_destroy_at", nil)
@@ -468,6 +459,19 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 		}
 	}
 	return sets, args, nil
+}
+
+func (r *updateStackReq) addPRPreviewSets(add func(string, any)) {
+	if r.PRPreviewEnabled != nil {
+		add("pr_preview_enabled", *r.PRPreviewEnabled)
+	}
+	if r.PRPreviewTemplateID != nil {
+		if *r.PRPreviewTemplateID == "" {
+			add("pr_preview_template_id", nil)
+		} else {
+			add("pr_preview_template_id", *r.PRPreviewTemplateID)
+		}
+	}
 }
 
 func (h *Handler) Update(c echo.Context) error {
