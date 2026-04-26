@@ -102,6 +102,11 @@ func (h *Handler) Receive(c echo.Context) error {
 			moduleNamespace, moduleName, moduleProvider)
 	}
 
+	// PR close: destroy preview stack then skip queuing a run on the source stack.
+	if event.prClosed {
+		return h.handlePRClose(ctx, c, orgID, stackID, forge, eventType, deliveryID, payload, event)
+	}
+
 	// Tracked runs only fire on the configured branch; PR runs always proceed.
 	if event.runType == "tracked" && event.branch != repoBranch {
 		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "branch_mismatch", nil)
@@ -143,6 +148,14 @@ func (h *Handler) Receive(c echo.Context) error {
 	}
 
 	h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "triggered", "", &runID)
+
+	// PR preview: on open/sync, spin up a preview stack from the configured template.
+	if event.prNumber > 0 && event.runType == "proposed" {
+		if err := h.maybeSpawnPreview(ctx, orgID, stackID, event, apiURL); err != nil {
+			// Non-fatal: source stack run is already queued; log but don't fail.
+			_ = err
+		}
+	}
 
 	ctxJSON, _ := json.Marshal(map[string]any{
 		"trigger": event.trigger,
@@ -357,6 +370,181 @@ func (h *Handler) RotateSecret(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"webhook_secret": secret})
 }
 
+// ── PR preview environments ───────────────────────────────────────────────────
+
+// handlePRClose queues a destroy run on the preview stack for this PR (if one
+// exists) and marks it for deletion after the destroy succeeds.
+func (h *Handler) handlePRClose(ctx context.Context, c echo.Context, orgID, stackID, forge, eventType, deliveryID string, payload json.RawMessage, event *webhookEvent) error {
+	var previewStackID string
+	err := h.pool.QueryRow(ctx, `
+		SELECT id FROM stacks
+		WHERE preview_source_stack_id = $1 AND preview_pr_number = $2 AND org_id = $3
+	`, stackID, event.prNumber, orgID).Scan(&previewStackID)
+	if err != nil {
+		// No preview stack — nothing to do.
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "no_preview_stack", nil)
+		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "no preview stack"})
+	}
+
+	// Load preview stack config for the runner.
+	var tool, repoURL, repoBranch, projectRoot string
+	var runnerImage *string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT tool, repo_url, repo_branch, project_root, runner_image
+		FROM stacks WHERE id = $1
+	`, previewStackID).Scan(&tool, &repoURL, &repoBranch, &projectRoot, &runnerImage); err != nil {
+		return fmt.Errorf("load preview stack: %w", err)
+	}
+
+	// Mark for deletion after destroy.
+	_, _ = h.pool.Exec(ctx, `UPDATE stacks SET delete_after_destroy = true WHERE id = $1`, previewStackID)
+
+	var runID string
+	if err := h.pool.QueryRow(ctx, `
+		INSERT INTO runs (stack_id, status, type, trigger, branch, pr_number, pr_url)
+		VALUES ($1, 'queued', 'destroy'::run_type, 'pull_request'::run_trigger, $2, $3, $4)
+		RETURNING id
+	`, previewStackID, emptyToNil(event.branch), intToNil(event.prNumber), emptyToNil(event.prURL)).Scan(&runID); err != nil {
+		return fmt.Errorf("insert destroy run: %w", err)
+	}
+
+	img := ""
+	if runnerImage != nil {
+		img = *runnerImage
+	}
+	apiURL := c.Scheme() + "://" + c.Request().Host
+	if _, err := h.q.EnqueueRun(ctx, queue.RunJobArgs{
+		RunID:       runID,
+		StackID:     previewStackID,
+		Tool:        tool,
+		RunnerImage: img,
+		RepoURL:     repoURL,
+		RepoBranch:  repoBranch,
+		ProjectRoot: projectRoot,
+		RunType:     "destroy",
+		APIURL:      apiURL,
+	}); err != nil {
+		return fmt.Errorf("enqueue destroy: %w", err)
+	}
+
+	h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "triggered", "", &runID)
+	return c.JSON(http.StatusCreated, map[string]string{"run_id": runID, "status": "preview_destroy_queued"})
+}
+
+// maybeSpawnPreview creates a preview stack from the source stack's configured
+// template (if pr_preview_enabled) and queues a tracked run on it. Idempotent:
+// if a preview stack already exists for this PR, it just queues a new run.
+func (h *Handler) maybeSpawnPreview(ctx context.Context, orgID, sourceStackID string, event *webhookEvent, apiURL string) error {
+	// Load source stack's preview config.
+	var enabled bool
+	var templateID *string
+	var sourceSlug string
+	var vcsIntegrationID *string
+	var vcsTokenEnc *string
+	var vcsBaseURL string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT pr_preview_enabled, pr_preview_template_id, slug,
+		       vcs_integration_id, vcs_token_enc, COALESCE(vcs_base_url,'')
+		FROM stacks WHERE id = $1
+	`, sourceStackID).Scan(&enabled, &templateID, &sourceSlug, &vcsIntegrationID, &vcsTokenEnc, &vcsBaseURL); err != nil || !enabled || templateID == nil {
+		return nil
+	}
+
+	// Check for existing preview stack for this PR.
+	var previewStackID string
+	err := h.pool.QueryRow(ctx, `
+		SELECT id FROM stacks
+		WHERE preview_source_stack_id = $1 AND preview_pr_number = $2
+	`, sourceStackID, event.prNumber).Scan(&previewStackID)
+	if err != nil {
+		// No existing preview stack — create one from the template.
+		var tool, toolVersion, repoURL, projectRoot, vcsProvider string
+		var runnerImage *string
+		var autoApply bool
+		if err := h.pool.QueryRow(ctx, `
+			SELECT tool, COALESCE(tool_version,''), repo_url, project_root,
+			       runner_image, auto_apply, vcs_provider
+			FROM stack_templates WHERE id = $1 AND org_id = $2
+		`, *templateID, orgID).Scan(&tool, &toolVersion, &repoURL, &projectRoot,
+			&runnerImage, &autoApply, &vcsProvider); err != nil {
+			return fmt.Errorf("load template: %w", err)
+		}
+
+		secret, err := generateWebhookSecret()
+		if err != nil {
+			return err
+		}
+		name := fmt.Sprintf("%s-pr-%d", sourceSlug, event.prNumber)
+		slug := name
+
+		if err := h.pool.QueryRow(ctx, `
+			INSERT INTO stacks (
+				org_id, slug, name, tool, tool_version, repo_url, repo_branch, project_root,
+				runner_image, auto_apply, vcs_provider, vcs_base_url, vcs_integration_id, vcs_token_enc,
+				webhook_secret, is_preview, preview_source_stack_id, preview_pr_number,
+				preview_pr_url, preview_branch, delete_after_destroy
+			) VALUES (
+				$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+				true,$16,$17,$18,$19,false
+			)
+			ON CONFLICT (org_id, slug) DO UPDATE SET updated_at = now()
+			RETURNING id
+		`, orgID, slug, name, tool, toolVersion, repoURL, event.branch, projectRoot,
+			runnerImage, autoApply, vcsProvider, vcsBaseURL, vcsIntegrationID, vcsTokenEnc,
+			secret, sourceStackID, event.prNumber, emptyToNil(event.prURL), event.branch,
+		).Scan(&previewStackID); err != nil {
+			return fmt.Errorf("create preview stack: %w", err)
+		}
+	}
+
+	// Queue a tracked run on the preview stack.
+	var tool, repoURL, projectRoot string
+	var runnerImage *string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT tool, repo_url, project_root, runner_image FROM stacks WHERE id = $1
+	`, previewStackID).Scan(&tool, &repoURL, &projectRoot, &runnerImage); err != nil {
+		return fmt.Errorf("reload preview stack: %w", err)
+	}
+
+	var runID string
+	if err := h.pool.QueryRow(ctx, `
+		INSERT INTO runs (stack_id, status, type, trigger, commit_sha, commit_message, branch, pr_number, pr_url)
+		VALUES ($1, 'queued', 'tracked'::run_type, 'pull_request'::run_trigger, $2, $3, $4, $5, $6)
+		RETURNING id
+	`, previewStackID,
+		emptyToNil(event.commitSHA), emptyToNil(event.commitMessage), emptyToNil(event.branch),
+		intToNil(event.prNumber), emptyToNil(event.prURL),
+	).Scan(&runID); err != nil {
+		return fmt.Errorf("insert preview run: %w", err)
+	}
+
+	img := ""
+	if runnerImage != nil {
+		img = *runnerImage
+	}
+	prVars := []string{
+		fmt.Sprintf("PR_NUMBER=%d", event.prNumber),
+		fmt.Sprintf("PR_BRANCH=%s", event.branch),
+		fmt.Sprintf("PR_URL=%s", event.prURL),
+	}
+	if _, err := h.q.EnqueueRun(ctx, queue.RunJobArgs{
+		RunID:        runID,
+		StackID:      previewStackID,
+		Tool:         tool,
+		RunnerImage:  img,
+		RepoURL:      repoURL,
+		RepoBranch:   event.branch,
+		ProjectRoot:  projectRoot,
+		RunType:      "tracked",
+		AutoApply:    true,
+		APIURL:       apiURL,
+		VarOverrides: prVars,
+	}); err != nil {
+		return fmt.Errorf("enqueue preview run: %w", err)
+	}
+	return nil
+}
+
 // ── Delivery logging ──────────────────────────────────────────────────────────
 
 // recordDelivery persists a webhook delivery record. Called synchronously so
@@ -431,6 +619,7 @@ type webhookEvent struct {
 	prNumber      int    // 0 if not a PR/MR event
 	prURL         string // HTML URL of the PR/MR
 	tagName       string // set for tag pushes; mutually exclusive with branch/runType
+	prClosed      bool   // true when PR/MR is closed or merged
 }
 
 var reTagSemver = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
@@ -563,6 +752,14 @@ func parseGitHub(event string, body []byte) (*webhookEvent, error) {
 		if err := json.Unmarshal(body, &e); err != nil {
 			return nil, err
 		}
+		if e.Action == "closed" {
+			return &webhookEvent{
+				prClosed: true,
+				prNumber: e.PullRequest.Number,
+				prURL:    e.PullRequest.HTMLURL,
+				branch:   e.PullRequest.Head.Ref,
+			}, nil
+		}
 		if e.Action != "opened" && e.Action != "synchronize" && e.Action != "reopened" {
 			return nil, nil
 		}
@@ -637,6 +834,14 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 			return nil, err
 		}
 		a := e.ObjectAttributes.Action
+		if a == "close" || a == "merge" {
+			return &webhookEvent{
+				prClosed: true,
+				prNumber: e.ObjectAttributes.IID,
+				prURL:    e.ObjectAttributes.URL,
+				branch:   e.ObjectAttributes.SourceBranch,
+			}, nil
+		}
 		if a != "open" && a != "reopen" && a != "update" {
 			return nil, nil
 		}

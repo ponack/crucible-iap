@@ -1,0 +1,11 @@
+-- PR preview config on source stacks
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS pr_preview_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS pr_preview_template_id UUID REFERENCES stack_templates(id) ON DELETE SET NULL;
+
+-- Preview stack tracking
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS is_preview BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS preview_source_stack_id UUID REFERENCES stacks(id) ON DELETE CASCADE;
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS preview_pr_number INT;
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS preview_pr_url TEXT;
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS preview_branch TEXT;
+ALTER TABLE stacks ADD COLUMN IF NOT EXISTS delete_after_destroy BOOLEAN NOT NULL DEFAULT FALSE;

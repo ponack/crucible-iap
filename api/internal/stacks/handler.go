@@ -107,6 +107,13 @@ type Stack struct {
 	PreApplyHook        *string    `json:"pre_apply_hook,omitempty"`
 	PostApplyHook        *string    `json:"post_apply_hook,omitempty"`
 	MaxConcurrentRuns    *int       `json:"max_concurrent_runs,omitempty"`
+	PRPreviewEnabled     bool       `json:"pr_preview_enabled"`
+	PRPreviewTemplateID  *string    `json:"pr_preview_template_id,omitempty"`
+	IsPreview            bool       `json:"is_preview"`
+	PreviewSourceStackID *string    `json:"preview_source_stack_id,omitempty"`
+	PreviewPRNumber      *int       `json:"preview_pr_number,omitempty"`
+	PreviewPRURL         *string    `json:"preview_pr_url,omitempty"`
+	PreviewBranch        *string    `json:"preview_branch,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -164,6 +171,7 @@ func (h *Handler) List(c echo.Context) error {
 		       %s AS my_stack_role,
 		       %s AS is_restricted,
 		       s.module_namespace, s.module_name, s.module_provider,
+		       s.is_preview,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -194,6 +202,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.UpstreamCount, &s.DownstreamCount,
 			&s.MyStackRole, &s.IsRestricted,
 			&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
+			&s.IsPreview,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -289,6 +298,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE(s.plan_schedule,''), COALESCE(s.apply_schedule,''), COALESCE(s.destroy_schedule,''),
 		       s.plan_next_run_at, s.apply_next_run_at, s.destroy_next_run_at,
 		       s.max_concurrent_runs,
+		       s.pr_preview_enabled, s.pr_preview_template_id,
+		       s.is_preview, s.preview_source_stack_id, s.preview_pr_number, s.preview_pr_url, s.preview_branch,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -310,6 +321,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
 		&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt,
 		&s.MaxConcurrentRuns,
+		&s.PRPreviewEnabled, &s.PRPreviewTemplateID,
+		&s.IsPreview, &s.PreviewSourceStackID, &s.PreviewPRNumber, &s.PreviewPRURL, &s.PreviewBranch,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -346,7 +359,9 @@ type updateStackReq struct {
 	PostPlanHook       *string `json:"post_plan_hook"`
 	PreApplyHook       *string `json:"pre_apply_hook"`
 	PostApplyHook      *string `json:"post_apply_hook"`
-	MaxConcurrentRuns  *int    `json:"max_concurrent_runs"`
+	MaxConcurrentRuns   *int    `json:"max_concurrent_runs"`
+	PRPreviewEnabled    *bool   `json:"pr_preview_enabled"`
+	PRPreviewTemplateID *string `json:"pr_preview_template_id"` // empty string clears
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -402,6 +417,16 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 			add("max_concurrent_runs", nil) // 0 = unlimited
 		} else {
 			add("max_concurrent_runs", *r.MaxConcurrentRuns)
+		}
+	}
+	if r.PRPreviewEnabled != nil {
+		add("pr_preview_enabled", *r.PRPreviewEnabled)
+	}
+	if r.PRPreviewTemplateID != nil {
+		if *r.PRPreviewTemplateID == "" {
+			add("pr_preview_template_id", nil)
+		} else {
+			add("pr_preview_template_id", *r.PRPreviewTemplateID)
 		}
 	}
 	if r.ScheduledDestroyAt != nil {
@@ -470,7 +495,8 @@ func (h *Handler) Update(c echo.Context) error {
 		          pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
 		          COALESCE(plan_schedule,''), COALESCE(apply_schedule,''), COALESCE(destroy_schedule,''),
 		          plan_next_run_at, apply_next_run_at, destroy_next_run_at,
-		          max_concurrent_runs
+		          max_concurrent_runs,
+		          pr_preview_enabled, pr_preview_template_id
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -482,7 +508,8 @@ func (h *Handler) Update(c echo.Context) error {
 			&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
 			&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
 			&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt,
-			&s.MaxConcurrentRuns); err != nil {
+			&s.MaxConcurrentRuns,
+			&s.PRPreviewEnabled, &s.PRPreviewTemplateID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.JSON(http.StatusOK, s)

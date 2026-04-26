@@ -399,6 +399,7 @@ func (w *RunWorker) completeRun(ctx context.Context, log *slog.Logger, orgID str
 		go w.triggerDownstreamStacks(bg, orgID, args)
 	case args.RunType == "destroy":
 		go w.notifier.RunFinished(bg, args.RunID, true)
+		go w.maybeDeletePreviewStack(bg, args.StackID)
 	}
 
 	log.Info("run job complete", "status", finalStatus)
@@ -615,6 +616,17 @@ func (w *RunWorker) setStatus(ctx context.Context, orgID, runID, status string, 
 		OrgID:        orgID,
 	})
 	return nil
+}
+
+// maybeDeletePreviewStack deletes a preview stack after its destroy run succeeds.
+func (w *RunWorker) maybeDeletePreviewStack(ctx context.Context, stackID string) {
+	var deleteAfter bool
+	if err := w.pool.QueryRow(ctx,
+		`SELECT delete_after_destroy FROM stacks WHERE id = $1`, stackID,
+	).Scan(&deleteAfter); err != nil || !deleteAfter {
+		return
+	}
+	_, _ = w.pool.Exec(ctx, `DELETE FROM stacks WHERE id = $1 AND delete_after_destroy = true`, stackID)
 }
 
 func (w *RunWorker) failRun(ctx context.Context, orgID, runID string, cause error) error {
