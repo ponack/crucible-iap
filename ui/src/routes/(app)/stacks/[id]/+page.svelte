@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, stackTemplates, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -27,7 +27,9 @@
 		scheduled_destroy_at: '',
 		plan_schedule: '', apply_schedule: '', destroy_schedule: '',
 		pre_plan_hook: '', post_plan_hook: '', pre_apply_hook: '', post_apply_hook: '',
-		max_concurrent_runs: 0
+		max_concurrent_runs: 0,
+		pr_preview_enabled: false,
+		pr_preview_template_id: ''
 	});
 
 	// Token creation
@@ -116,6 +118,9 @@
 	let stackVarSets = $state<StackVarSetRef[]>([]);
 	let allVarSets = $state<VarSet[]>([]);
 	let attachingVarSet = $state('');
+
+	// PR preview
+	let allTemplates = $state<StackTemplate[]>([]);
 
 	// Dependencies
 	let upstreamDeps = $state<StackDep[]>([]);
@@ -229,6 +234,7 @@
 			orgIntegrations = integrationsRes;
 			stackVarSets = stackVarSetsRes;
 			allVarSets = allVarSetsRes;
+		stackTemplates.list().then(t => (allTemplates = t)).catch(() => {});
 			upstreamDeps = upstreamRes;
 			downstreamDeps = downstreamRes;
 			members = membersRes;
@@ -316,7 +322,9 @@
 			post_plan_hook: stack.post_plan_hook ?? '',
 			pre_apply_hook: stack.pre_apply_hook ?? '',
 			post_apply_hook: stack.post_apply_hook ?? '',
-			max_concurrent_runs: stack.max_concurrent_runs ?? 0
+			max_concurrent_runs: stack.max_concurrent_runs ?? 0,
+			pr_preview_enabled: stack.pr_preview_enabled ?? false,
+			pr_preview_template_id: stack.pr_preview_template_id ?? ''
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -1281,6 +1289,25 @@
 				<input id="edit-max-concurrent" type="number" min="0" max="99" class="field-input w-32"
 					bind:value={form.max_concurrent_runs} placeholder="0" />
 				<p class="text-xs text-zinc-600">Set to 1 to ensure this stack only runs one job at a time (recommended for production).</p>
+			</div>
+			<div class="space-y-3 rounded-lg border border-zinc-800 p-4">
+				<div class="flex items-center gap-3">
+					<input id="edit-pr-preview" type="checkbox" class="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500"
+						bind:checked={form.pr_preview_enabled} />
+					<label class="field-label mb-0" for="edit-pr-preview">PR preview environments</label>
+				</div>
+				{#if form.pr_preview_enabled}
+					<div class="space-y-1.5">
+						<label class="field-label" for="edit-pr-template">Template</label>
+						<select id="edit-pr-template" class="field-input" bind:value={form.pr_preview_template_id}>
+							<option value="">— select a template —</option>
+							{#each allTemplates as t (t.id)}
+								<option value={t.id}>{t.name}</option>
+							{/each}
+						</select>
+						<p class="text-xs text-zinc-600">When a PR opens against this stack's repo, Crucible creates a preview stack from this template using the PR branch, then destroys it when the PR closes.</p>
+					</div>
+				{/if}
 			</div>
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}

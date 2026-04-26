@@ -141,6 +141,9 @@
 									<a href="/stacks/{stack.id}" class="font-medium {stack.is_disabled ? 'text-zinc-500 hover:text-zinc-300' : 'text-white hover:text-indigo-400'}">
 										{stack.name}
 									</a>
+									{#if stack.is_preview}
+										<span class="text-xs px-1.5 py-0.5 rounded bg-violet-950 text-violet-400" title="PR #{stack.preview_pr_number} preview">PR preview</span>
+									{/if}
 									{#if stack.is_disabled}
 										<span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">disabled</span>
 									{/if}

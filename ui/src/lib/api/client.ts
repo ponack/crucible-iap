@@ -134,6 +134,13 @@ export interface Stack {
 	pre_apply_hook?: string;
 	post_apply_hook?: string;
 	max_concurrent_runs?: number;
+	pr_preview_enabled: boolean;
+	pr_preview_template_id?: string;
+	is_preview: boolean;
+	preview_source_stack_id?: string;
+	preview_pr_number?: number;
+	preview_pr_url?: string;
+	preview_branch?: string;
 	created_at: string;
 	updated_at: string;
 }
