@@ -505,17 +505,33 @@ To rotate a compromised token: click **Rotate token** on the pool row. The old t
 
 The agent is a standalone binary published as a Docker image. It requires Docker socket access on the host.
 
-```bash
-docker run --rm \
-  -e CRUCIBLE_API_URL=https://crucible.example.com \
-  -e CRUCIBLE_ORG_ID=<your-org-id> \
-  -e CRUCIBLE_POOL_TOKEN=<token-from-pool-creation> \
-  -e CRUCIBLE_CAPACITY=3 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/ponack/crucible-agent:latest
-```
+The agent ships as a Docker image and has its own config file (`.env.agent`) that is entirely separate from the main Crucible stack's `.env`. Copy `.env.agent.example` to `.env.agent` on the target host and fill in the three required values.
 
 Find your org ID in **Settings → General** or from the URL of any stack page.
+
+#### Option A — Separate host (recommended for isolation)
+
+Copy `docker-compose.agent.yml` and `.env.agent.example` from the Crucible repo to the target host — no other files needed.
+
+```bash
+cp .env.agent.example .env.agent
+# Set CRUCIBLE_API_URL, CRUCIBLE_ORG_ID, CRUCIBLE_POOL_TOKEN
+
+docker compose -f docker-compose.agent.yml up -d
+```
+
+Runner containers spawned by the agent reach the Crucible API via `CRUCIBLE_API_URL` over the network — no special Docker network setup is required.
+
+#### Option B — Same host as Crucible
+
+The main `docker-compose.yml` includes a `worker-agent` profile that adds the agent as a service on the existing `backend` and `runner` networks. `CRUCIBLE_API_URL` is overridden automatically to the internal `http://crucible-api:8080` service name.
+
+```bash
+cp .env.agent.example .env.agent
+# Set CRUCIBLE_ORG_ID and CRUCIBLE_POOL_TOKEN (CRUCIBLE_API_URL is set automatically)
+
+docker compose --profile worker-agent up -d crucible-agent
+```
 
 #### Agent environment variables
 
@@ -560,11 +576,13 @@ Stacks assigned to a deleted pool fall back to the built-in runner automatically
 ### API keeps restarting
 
 Check logs:
+
 ```bash
 docker compose logs crucible-api --tail 50
 ```
 
 Common causes:
+
 - `CRUCIBLE_SECRET_KEY` shorter than 32 characters → extend it
 - `MINIO_ENDPOINT` not reachable → ensure MinIO is healthy: `docker compose ps`
 - `POSTGRES_PASSWORD` mismatch → check `.env` matches the volume's initialised password
@@ -576,6 +594,7 @@ docker compose run --rm crucible-api migrate
 ```
 
 If a migration has partially applied, you may need to roll back manually:
+
 ```bash
 docker compose run --rm crucible-api migrate --down
 ```
@@ -583,11 +602,13 @@ docker compose run --rm crucible-api migrate --down
 ### Runner containers not starting
 
 Verify the Docker socket is mounted on the worker (not the API):
+
 ```bash
 docker compose exec crucible-worker ls /var/run/docker.sock
 ```
 
 Ensure the `crucible-runner` network exists:
+
 ```bash
 docker network ls | grep crucible-runner
 ```
@@ -595,6 +616,7 @@ docker network ls | grep crucible-runner
 ### Grafana shows no data
 
 Verify Prometheus is scraping:
+
 - Open `https://crucible.example.com/grafana`
 - Go to **Explore** → select **Prometheus** datasource → query `up`
 - If no data, check: `docker compose logs prometheus`
