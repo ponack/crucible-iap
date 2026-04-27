@@ -316,7 +316,7 @@ cd api && go test -race ./...
 - [x] Artifact retention policy — configurable retention period for plan files and run logs; deleted on a daily background sweep
 - [x] Org-level notification defaults — pre-fill Slack webhook and VCS provider config for new stacks
 - [x] Intuitive dashboard — landing page showing org-wide health at a glance: active/failed runs, stacks with drift, recent audit events, and inline approve/discard/cancel actions without navigating into individual stacks
-- [ ] External worker agents — additional runner nodes that connect to the primary instance, allowing job execution capacity to be scaled out independently
+- [x] External worker agents — deploy `crucible-agent` on any host with Docker access; agents poll the Crucible API for queued runs, execute them locally, and stream logs back; multiple agents per pool with `FOR UPDATE SKIP LOCKED` claim safety; stacks assign to a pool via Settings → Runner; separate optional binary, not bundled with the main image
 - [x] Stack dependency graph — first-class upstream/downstream relationships with automatic downstream triggers after a successful apply; cycle detection via recursive CTE
 - [x] Variable sets — define a shared group of env vars once and attach to multiple stacks; eliminates repetition across similar stacks
 - [x] Stack templates / blueprints — create new stacks pre-filled from a saved template (tool, repo, branch, project root, auto-apply, drift settings)
