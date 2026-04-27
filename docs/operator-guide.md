@@ -6,10 +6,11 @@
 2. [First-time deployment](#first-time-deployment)
 3. [Configuration reference](#configuration-reference)
 4. [Cloud OIDC workload identity federation](#cloud-oidc-workload-identity-federation)
-5. [Upgrading](#upgrading)
-6. [Backup and restore](#backup-and-restore)
-7. [Monitoring](#monitoring)
-8. [Troubleshooting](#troubleshooting)
+5. [External worker agents](#external-worker-agents)
+6. [Upgrading](#upgrading)
+7. [Backup and restore](#backup-and-restore)
+8. [Monitoring](#monitoring)
+9. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -471,6 +472,86 @@ curl https://crucible.example.com/health
 ```
 
 A `status` of `"degraded"` means the database is unreachable.
+
+---
+
+## External worker agents
+
+By default every run executes inside an ephemeral Docker container on the same host as the Crucible server. **Worker pools** let you offload run execution to one or more external hosts — useful when:
+
+- Runs need network access to private infrastructure not reachable from the Crucible host.
+- You want to isolate blast radius (e.g. production runs on a dedicated host).
+- You need more Docker capacity than the Crucible host can provide.
+
+### How it works
+
+1. You create a **worker pool** in the UI (Settings → Worker Pools) and receive a one-time bearer token.
+2. You run one or more `crucible-agent` processes on any host that has Docker access.
+3. Each agent polls `POST /api/v1/agent/claim` every 5 seconds. When a queued run is available the server marks it `preparing` and returns a job spec.
+4. The agent executes the run in a Docker container (same runner images as the built-in worker), streams logs back in real time, and reports the outcome.
+5. The server drives all post-execution logic — policy evaluation, auto-apply, downstream triggers, drift remediation — exactly as it does for built-in runs.
+
+There is **no server-side limit** on how many agent processes connect to a pool. Multiple agents race for work via `FOR UPDATE SKIP LOCKED`; only one wins each claim. Each agent enforces its own per-process concurrency cap via `CRUCIBLE_CAPACITY`.
+
+### Creating a pool
+
+1. Navigate to **Worker Pools** in the sidebar.
+2. Click **New pool**, enter a name, optional description, and indicative capacity.
+3. Copy the token shown — **it is displayed only once**. Store it in a secrets manager or pass it directly to the agent via the environment.
+
+To rotate a compromised token: click **Rotate token** on the pool row. The old token is invalidated immediately; update all running agents before dismissing the new token.
+
+### Running the agent
+
+The agent is a standalone binary published as a Docker image. It requires Docker socket access on the host.
+
+```bash
+docker run --rm \
+  -e CRUCIBLE_API_URL=https://crucible.example.com \
+  -e CRUCIBLE_ORG_ID=<your-org-id> \
+  -e CRUCIBLE_POOL_TOKEN=<token-from-pool-creation> \
+  -e CRUCIBLE_CAPACITY=3 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/ponack/crucible-agent:latest
+```
+
+Find your org ID in **Settings → General** or from the URL of any stack page.
+
+#### Agent environment variables
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `CRUCIBLE_API_URL` | required | Base URL of your Crucible instance (no trailing slash) |
+| `CRUCIBLE_ORG_ID` | required | UUID of your organisation |
+| `CRUCIBLE_POOL_TOKEN` | required | Bearer token issued when the pool was created |
+| `CRUCIBLE_CAPACITY` | `3` | Maximum number of runs this agent process executes concurrently |
+| `CRUCIBLE_POLL_INTERVAL` | `5s` | How often to poll for new work (Go duration string, e.g. `10s`) |
+| `RUNNER_JOB_TIMEOUT_MINUTES` | `60` | Hard timeout per run |
+| `RUNNER_DEFAULT_IMAGE` | *(server default)* | Override the default runner image for all runs on this agent |
+| `RUNNER_NETWORK` | *(Docker default)* | Docker network name to attach runner containers to |
+| `RUNNER_MEMORY_LIMIT` | *(unlimited)* | Docker memory limit for runner containers (e.g. `2g`) |
+| `RUNNER_CPU_LIMIT` | *(unlimited)* | Docker CPU quota for runner containers (e.g. `1.5`) |
+
+#### Scaling out
+
+Run multiple agent processes against the same pool — on the same host or across several hosts. Each agent claims work independently; there is no coordination required between agents. To increase throughput, either raise `CRUCIBLE_CAPACITY` per agent or add more agent containers.
+
+#### Graceful shutdown
+
+The agent handles `SIGTERM` and `SIGINT`. On signal it stops claiming new work and waits for all in-flight runs to finish before exiting. Kubernetes `preStop` hooks and `docker stop` both trigger this path.
+
+### Assigning a stack to a pool
+
+In the stack's **Settings** tab, scroll to **Runner** and select the pool from the **Worker pool** dropdown. Save. All subsequent runs for that stack are routed to the pool instead of the built-in runner. Set the dropdown back to **Built-in runner (default)** to revert.
+
+Stacks assigned to a deleted pool fall back to the built-in runner automatically (the FK is set to `NULL` on delete).
+
+### Security considerations
+
+- Pool tokens are stored bcrypt-hashed in the database. A stolen database dump does not expose usable tokens.
+- Each claimed run receives a short-lived JWT (valid for the job timeout + 5 minutes) for internal callbacks. The pool token is never forwarded to runner containers.
+- Agents receive decrypted environment variables and VCS tokens at claim time over TLS. Ensure `CRUCIBLE_API_URL` uses HTTPS in production.
+- The agent host must be able to reach `CRUCIBLE_API_URL`. The Crucible server does not initiate outbound connections to agents.
 
 ---
 

@@ -128,6 +128,12 @@ Reverse proxy (Caddy bundled, or nginx / Traefik / your own)
     │           Docker SDK → ephemeral runner container
     │                        (tofu / terraform / ansible / pulumi)
     │
+    │  — or —
+    │
+    │           crucible-agent (external host, any cloud / on-prem)
+    │           polls /api/v1/agent/claim → runs same Docker images
+    │           streams logs back → reports outcome
+    │
     └── /*  →  Crucible UI (SvelteKit SSR)
 ```
 
@@ -139,7 +145,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | -------- | ----------- |
 | **[docs/quickstart.md](docs/quickstart.md)** | **Your first stack in 15 minutes — start here** |
 | [docs/architecture.md](docs/architecture.md) | Component diagram, request flow, security model, DB schema |
-| [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, backup, monitoring, troubleshooting |
+| [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, external worker agents, backup, monitoring, troubleshooting |
 | [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting |
 | [docs/policies.md](docs/policies.md) | Rego policy authoring guide — all policy types, input/output shapes, examples |
 | [docs/policies/README.md](docs/policies/README.md) | Ready-to-use policy templates (no-destroy, blast radius, tags, EC2 allowlist, public access, approval gates, and more) |
