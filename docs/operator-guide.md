@@ -507,12 +507,11 @@ The agent is a standalone binary published as a Docker image. It requires Docker
 
 #### Same host as Crucible (Docker Compose)
 
-If you want to co-locate an agent on the same host as your Crucible stack, the compose file includes a `worker-agent` profile. Add the required vars to `.env`:
+If you want to co-locate an agent on the same host as your Crucible stack, the compose file includes a `worker-agent` profile. It reads agent config from a separate `.env.agent` file so it stays independent of the main stack's `.env`:
 
 ```bash
-CRUCIBLE_AGENT_ORG_ID=<your-org-uuid>
-CRUCIBLE_AGENT_POOL_TOKEN=<token-from-pool-creation>
-CRUCIBLE_AGENT_CAPACITY=3
+cp .env.agent.example .env.agent
+# edit .env.agent — set CRUCIBLE_ORG_ID, CRUCIBLE_POOL_TOKEN, and optionally CRUCIBLE_CAPACITY
 ```
 
 Then start it alongside the rest of the stack:
@@ -521,7 +520,7 @@ Then start it alongside the rest of the stack:
 docker compose --profile worker-agent up -d crucible-agent
 ```
 
-The compose service uses the internal `http://crucible-api:8080` URL automatically — no need to set `CRUCIBLE_API_URL` manually.
+`CRUCIBLE_API_URL` is overridden automatically to the internal `http://crucible-api:8080` service name — no need to set it in `.env.agent` for compose deployments.
 
 #### Remote host
 

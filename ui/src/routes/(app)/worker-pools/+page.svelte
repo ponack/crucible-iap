@@ -215,16 +215,27 @@
 
 	<div class="border border-zinc-800 rounded-xl p-4 space-y-3">
 		<h2 class="text-sm font-medium text-white">Deploying an agent</h2>
-		<p class="text-zinc-500 text-xs">After creating a pool, run the agent binary on any host with Docker access:</p>
-		<pre class="bg-zinc-900 border border-zinc-700 rounded p-3 text-xs text-zinc-300 overflow-x-auto">{`CRUCIBLE_API_URL=https://your-crucible-instance
-CRUCIBLE_ORG_ID=<org-id>
-CRUCIBLE_POOL_TOKEN=<token-from-pool-creation>
-CRUCIBLE_CAPACITY=3
+		<p class="text-zinc-500 text-xs">After creating a pool, deploy the agent on any host with Docker access. It uses its own config file, separate from the main Crucible stack.</p>
 
-docker run --rm \\
-  -e CRUCIBLE_API_URL -e CRUCIBLE_ORG_ID -e CRUCIBLE_POOL_TOKEN -e CRUCIBLE_CAPACITY \\
+		<div class="space-y-1">
+			<p class="text-zinc-400 text-xs font-medium">Option A — Docker Compose (co-located on this host)</p>
+			<pre class="bg-zinc-900 border border-zinc-700 rounded p-3 text-xs text-zinc-300 overflow-x-auto">{`cp .env.agent.example .env.agent
+# Set CRUCIBLE_ORG_ID and CRUCIBLE_POOL_TOKEN in .env.agent
+
+docker compose --profile worker-agent up -d crucible-agent`}</pre>
+		</div>
+
+		<div class="space-y-1">
+			<p class="text-zinc-400 text-xs font-medium">Option B — Standalone on a remote host</p>
+			<pre class="bg-zinc-900 border border-zinc-700 rounded p-3 text-xs text-zinc-300 overflow-x-auto">{`docker run --rm \\
+  -e CRUCIBLE_API_URL=https://your-crucible-instance \\
+  -e CRUCIBLE_ORG_ID=<org-id> \\
+  -e CRUCIBLE_POOL_TOKEN=<token-from-pool-creation> \\
+  -e CRUCIBLE_CAPACITY=3 \\
   -v /var/run/docker.sock:/var/run/docker.sock \\
   ghcr.io/ponack/crucible-agent:latest`}</pre>
-		<p class="text-zinc-600 text-xs">Assign stacks to the pool via <span class="text-zinc-400">Settings → Runner → Worker pool</span> in the stack detail page.</p>
+		</div>
+
+		<p class="text-zinc-600 text-xs">Full configuration reference including all env vars: <span class="text-zinc-400">docs/operator-guide.md → External worker agents</span>. Assign stacks to the pool via <span class="text-zinc-400">Settings → Worker pool</span> in the stack detail page.</p>
 	</div>
 </div>

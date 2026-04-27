@@ -13,8 +13,8 @@ name: crucible-iap
 #   docker compose --profile authentik up -d
 #
 # External worker agent (co-located on this host):
+#   cp .env.agent.example .env.agent  # fill in ORG_ID and POOL_TOKEN
 #   docker compose --profile worker-agent up -d crucible-agent
-#   (set CRUCIBLE_AGENT_ORG_ID, CRUCIBLE_AGENT_POOL_TOKEN in .env first)
 
 services:
 
@@ -138,19 +138,16 @@ services:
     image: ghcr.io/ponack/crucible-agent:latest
     restart: unless-stopped
     profiles: ["worker-agent"]
+    env_file:
+      - path: .env.agent
+        required: false  # skip validation when not using the worker-agent profile
     environment:
-      # Internal service URL — agent and API share the backend network.
+      # Override CRUCIBLE_API_URL from .env.agent — internal service URL is
+      # always correct when agent and API share the backend network.
       CRUCIBLE_API_URL: "http://crucible-api:8080"
-      CRUCIBLE_ORG_ID: "${CRUCIBLE_AGENT_ORG_ID}"
-      CRUCIBLE_POOL_TOKEN: "${CRUCIBLE_AGENT_POOL_TOKEN}"
-      CRUCIBLE_CAPACITY: "${CRUCIBLE_AGENT_CAPACITY:-3}"
       # Runner containers spawned by this agent join crucible-runner so they can
       # reach the API for state backend callbacks, same as the built-in worker.
       RUNNER_NETWORK: "crucible-runner"
-      RUNNER_DEFAULT_IMAGE: "${RUNNER_DEFAULT_IMAGE:-ghcr.io/ponack/crucible-iap-runner:latest}"
-      RUNNER_JOB_TIMEOUT_MINUTES: "${RUNNER_JOB_TIMEOUT_MINUTES:-60}"
-      RUNNER_MEMORY_LIMIT: "${RUNNER_MEMORY_LIMIT:-}"
-      RUNNER_CPU_LIMIT: "${RUNNER_CPU_LIMIT:-}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
