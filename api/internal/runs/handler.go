@@ -19,7 +19,6 @@ import (
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/storage"
-	"github.com/ponack/crucible-iap/internal/worker"
 )
 
 type Handler struct {
@@ -264,18 +263,19 @@ func (h *Handler) Create(c echo.Context) error {
 
 	// Fetch stack details needed to build the job spec; reject if locked.
 	var stack struct {
-		Tool        string
-		RunnerImage string
-		RepoURL     string
-		RepoBranch  string
-		ProjectRoot string
-		IsLocked    bool
-		LockReason  *string
+		Tool         string
+		RunnerImage  string
+		RepoURL      string
+		RepoBranch   string
+		ProjectRoot  string
+		IsLocked     bool
+		LockReason   *string
+		WorkerPoolID *string
 	}
 	if err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, is_locked, lock_reason
+		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, is_locked, lock_reason, worker_pool_id
 		FROM stacks WHERE id = $1
-	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot, &stack.IsLocked, &stack.LockReason); err != nil {
+	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot, &stack.IsLocked, &stack.LockReason, &stack.WorkerPoolID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	if err := lockedError(stack.IsLocked, stack.LockReason); err != nil {
@@ -284,10 +284,10 @@ func (h *Handler) Create(c echo.Context) error {
 
 	var r Run
 	if err := h.pool.QueryRow(c.Request().Context(), `
-		INSERT INTO runs (stack_id, type, trigger, var_overrides)
-		VALUES ($1, $2, 'manual', $3)
+		INSERT INTO runs (stack_id, worker_pool_id, type, trigger, var_overrides)
+		VALUES ($1, $2, $3, 'manual', $4)
 		RETURNING id, stack_id, status, type, trigger, is_drift, queued_at, var_overrides
-	`, stackID, req.Type, varOverrides).Scan(
+	`, stackID, stack.WorkerPoolID, req.Type, varOverrides).Scan(
 		&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger, &r.IsDrift, &r.QueuedAt, &r.VarOverrides); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -295,20 +295,22 @@ func (h *Handler) Create(c echo.Context) error {
 		r.VarOverrides = []string{}
 	}
 
-	apiURL := h.runnerAPIURL(c)
-	if _, err := h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
-		RunID:        r.ID,
-		StackID:      stackID,
-		Tool:         stack.Tool,
-		RunnerImage:  stack.RunnerImage,
-		RepoURL:      stack.RepoURL,
-		RepoBranch:   stack.RepoBranch,
-		ProjectRoot:  stack.ProjectRoot,
-		RunType:      req.Type,
-		APIURL:       apiURL,
-		VarOverrides: varOverrides,
-	}); err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue run: "+err.Error())
+	if stack.WorkerPoolID == nil {
+		apiURL := h.runnerAPIURL(c)
+		if _, err := h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
+			RunID:        r.ID,
+			StackID:      stackID,
+			Tool:         stack.Tool,
+			RunnerImage:  stack.RunnerImage,
+			RepoURL:      stack.RepoURL,
+			RepoBranch:   stack.RepoBranch,
+			ProjectRoot:  stack.ProjectRoot,
+			RunType:      req.Type,
+			APIURL:       apiURL,
+			VarOverrides: varOverrides,
+		}); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue run: "+err.Error())
+		}
 	}
 
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
@@ -418,26 +420,24 @@ func (h *Handler) Confirm(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusConflict, "run cannot be confirmed in its current state")
 	}
 
-	var stack struct {
-		Tool        string
-		RunnerImage string
-		RepoURL     string
-		RepoBranch  string
-		ProjectRoot string
-	}
+	var workerPoolID *string
+	var tool, runnerImage, repoURL, repoBranch, projectRoot string
 	_ = h.pool.QueryRow(c.Request().Context(), `
-		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
+		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, worker_pool_id
 		FROM stacks WHERE id = $1
-	`, r.StackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
+	`, r.StackID).Scan(&tool, &runnerImage, &repoURL, &repoBranch, &projectRoot, &workerPoolID)
 
-	apiURL := h.runnerAPIURL(c)
-	_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
-		RunID: r.ID, StackID: r.StackID,
-		Tool: stack.Tool, RunnerImage: stack.RunnerImage,
-		RepoURL: stack.RepoURL, RepoBranch: stack.RepoBranch, ProjectRoot: stack.ProjectRoot,
-		RunType: "apply", APIURL: apiURL,
-		VarOverrides: r.VarOverrides,
-	})
+	if workerPoolID == nil {
+		apiURL := h.runnerAPIURL(c)
+		_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
+			RunID: r.ID, StackID: r.StackID,
+			Tool: tool, RunnerImage: runnerImage,
+			RepoURL: repoURL, RepoBranch: repoBranch, ProjectRoot: projectRoot,
+			RunType: "apply", APIURL: apiURL,
+			VarOverrides: r.VarOverrides,
+		})
+	}
+	// Pool runs: run is already 'confirmed' — agent picks it up on next claim poll.
 
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
 		ActorID: userID, Action: "run.confirmed", ResourceID: id, ResourceType: "run",
@@ -477,25 +477,22 @@ func (h *Handler) Approve(c echo.Context) error {
 		if _, err := h.pool.Exec(c.Request().Context(), `
 			UPDATE runs SET status = 'confirmed' WHERE id = $1
 		`, id); err == nil {
-			var stack struct {
-				Tool        string
-				RunnerImage string
-				RepoURL     string
-				RepoBranch  string
-				ProjectRoot string
-			}
+			var workerPoolID *string
+			var tool, runnerImage, repoURL, repoBranch, projectRoot string
 			_ = h.pool.QueryRow(c.Request().Context(), `
-				SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
+				SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, worker_pool_id
 				FROM stacks WHERE id = $1
-			`, r.StackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
+			`, r.StackID).Scan(&tool, &runnerImage, &repoURL, &repoBranch, &projectRoot, &workerPoolID)
 
-			_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
-				RunID: r.ID, StackID: r.StackID,
-				Tool: stack.Tool, RunnerImage: stack.RunnerImage,
-				RepoURL: stack.RepoURL, RepoBranch: stack.RepoBranch, ProjectRoot: stack.ProjectRoot,
-				RunType: "apply", APIURL: h.runnerAPIURL(c),
-				VarOverrides: r.VarOverrides,
-			})
+			if workerPoolID == nil {
+				_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
+					RunID: r.ID, StackID: r.StackID,
+					Tool: tool, RunnerImage: runnerImage,
+					RepoURL: repoURL, RepoBranch: repoBranch, ProjectRoot: projectRoot,
+					RunType: "apply", APIURL: h.runnerAPIURL(c),
+					VarOverrides: r.VarOverrides,
+				})
+			}
 		}
 	}
 
@@ -674,7 +671,7 @@ func (h *Handler) Logs(c echo.Context) error {
 	}
 	defer conn.Release()
 
-	channel := worker.RunLogChannel(id)
+	channel := "run_log_" + strings.ReplaceAll(id, "-", "")
 	if _, err := conn.Exec(c.Request().Context(), fmt.Sprintf(`LISTEN "%s"`, channel)); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to subscribe to run log")
 	}

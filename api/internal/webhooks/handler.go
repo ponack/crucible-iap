@@ -55,15 +55,17 @@ func (h *Handler) Receive(c echo.Context) error {
 		moduleNamespace *string
 		moduleName      *string
 		moduleProvider  *string
+		workerPoolID    *string
 	)
 	err := h.pool.QueryRow(ctx, `
 		SELECT org_id, repo_branch, webhook_secret, is_disabled,
 		       tool, repo_url, project_root, runner_image,
-		       module_namespace, module_name, module_provider
+		       module_namespace, module_name, module_provider,
+		       worker_pool_id
 		FROM stacks WHERE id = $1
 	`, stackID).Scan(&orgID, &repoBranch, &webhookSecret, &isDisabled,
 		&tool, &repoURL, &projectRoot, &runnerImage,
-		&moduleNamespace, &moduleName, &moduleProvider)
+		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -120,10 +122,10 @@ func (h *Handler) Receive(c echo.Context) error {
 
 	var runID string
 	err = h.pool.QueryRow(ctx, `
-		INSERT INTO runs (stack_id, status, type, trigger, commit_sha, commit_message, branch, pr_number, pr_url)
-		VALUES ($1, 'queued', $2::run_type, $3::run_trigger, $4, $5, $6, $7, $8)
+		INSERT INTO runs (stack_id, worker_pool_id, status, type, trigger, commit_sha, commit_message, branch, pr_number, pr_url)
+		VALUES ($1, $2, 'queued', $3::run_type, $4::run_trigger, $5, $6, $7, $8, $9)
 		RETURNING id
-	`, stackID, event.runType, event.trigger,
+	`, stackID, workerPoolID, event.runType, event.trigger,
 		emptyToNil(event.commitSHA), emptyToNil(event.commitMessage), emptyToNil(event.branch),
 		intToNil(event.prNumber), emptyToNil(event.prURL),
 	).Scan(&runID)
@@ -132,7 +134,7 @@ func (h *Handler) Receive(c echo.Context) error {
 	}
 
 	apiURL := c.Scheme() + "://" + c.Request().Host
-	if _, err := h.q.EnqueueRun(ctx, queue.RunJobArgs{
+	if err := h.maybeEnqueueRun(ctx, workerPoolID, queue.RunJobArgs{
 		RunID:       runID,
 		StackID:     stackID,
 		Tool:        tool,
@@ -855,6 +857,14 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 	default:
 		return nil, nil
 	}
+}
+
+func (h *Handler) maybeEnqueueRun(ctx context.Context, workerPoolID *string, args queue.RunJobArgs) error {
+	if workerPoolID != nil {
+		return nil
+	}
+	_, err := h.q.EnqueueRun(ctx, args)
+	return err
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

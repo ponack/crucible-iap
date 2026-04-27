@@ -36,9 +36,11 @@ import (
 	"github.com/ponack/crucible-iap/internal/templates"
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/updater"
+	"github.com/ponack/crucible-iap/internal/agent"
 	"github.com/ponack/crucible-iap/internal/varsets"
 	"github.com/ponack/crucible-iap/internal/vault"
 	"github.com/ponack/crucible-iap/internal/webhooks"
+	"github.com/ponack/crucible-iap/internal/workerpools"
 )
 
 type Server struct {
@@ -128,6 +130,8 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	satHandler := serviceaccounts.NewHandler(s.pool)
 	tmplHandler := templates.NewHandler(s.pool)
 	integrationHandler := integrations.NewHandler(s.pool, v)
+	workerPoolHandler := workerpools.NewHandler(s.pool)
+	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
 	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
@@ -270,6 +274,14 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.PUT("/stacks/:id/variable-sets/:vsID", varSetHandler.AttachToStack, member)
 	api.DELETE("/stacks/:id/variable-sets/:vsID", varSetHandler.DetachFromStack, member)
 
+	// Worker pools
+	api.GET("/worker-pools", workerPoolHandler.List)
+	api.POST("/worker-pools", workerPoolHandler.Create, admin)
+	api.GET("/worker-pools/:id", workerPoolHandler.Get)
+	api.PATCH("/worker-pools/:id", workerPoolHandler.Update, admin)
+	api.DELETE("/worker-pools/:id", workerPoolHandler.Delete, admin)
+	api.POST("/worker-pools/:id/rotate-token", workerPoolHandler.RotateToken, admin)
+
 	// Stack templates
 	api.GET("/stack-templates", tmplHandler.List)
 	api.POST("/stack-templates", tmplHandler.Create, member)
@@ -361,6 +373,13 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	regv1.GET("/:namespace/:name/:provider/:version", registryHandler.GetVersion)
 	regv1.GET("/:namespace/:name/:provider/:version/download", registryHandler.Download)
 	regv1.GET("/:namespace/:name/:provider/:version/archive", registryHandler.Archive)
+
+	// ── External worker-agent endpoints (pool bearer token auth) ──────────────
+	agentGroup := e.Group("/api/v1/agent")
+	agentGroup.Use(agentHandler.PoolAuthMiddleware)
+	agentGroup.POST("/claim", agentHandler.Claim)
+	agentGroup.POST("/runs/:runID/log", agentHandler.AppendLog)
+	agentGroup.POST("/runs/:runID/finish", agentHandler.Finish)
 
 	// ── Internal runner callbacks ──────────────────────────────────────────────
 	internal := e.Group("/api/v1/internal")

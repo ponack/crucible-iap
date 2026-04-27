@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, stackTemplates, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, stackTemplates, workerPools, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -29,7 +29,8 @@
 		pre_plan_hook: '', post_plan_hook: '', pre_apply_hook: '', post_apply_hook: '',
 		max_concurrent_runs: 0,
 		pr_preview_enabled: false,
-		pr_preview_template_id: ''
+		pr_preview_template_id: '',
+		worker_pool_id: ''
 	});
 
 	// Token creation
@@ -121,6 +122,7 @@
 
 	// PR preview
 	let allTemplates = $state<StackTemplate[]>([]);
+	let allWorkerPools = $state<WorkerPool[]>([]);
 
 	// Dependencies
 	let upstreamDeps = $state<StackDep[]>([]);
@@ -235,6 +237,7 @@
 			stackVarSets = stackVarSetsRes;
 			allVarSets = allVarSetsRes;
 		stackTemplates.list().then(t => (allTemplates = t)).catch(() => {});
+			workerPools.list().then(r => (allWorkerPools = r.data)).catch(() => {});
 			upstreamDeps = upstreamRes;
 			downstreamDeps = downstreamRes;
 			members = membersRes;
@@ -324,7 +327,8 @@
 			post_apply_hook: stack.post_apply_hook ?? '',
 			max_concurrent_runs: stack.max_concurrent_runs ?? 0,
 			pr_preview_enabled: stack.pr_preview_enabled ?? false,
-			pr_preview_template_id: stack.pr_preview_template_id ?? ''
+			pr_preview_template_id: stack.pr_preview_template_id ?? '',
+			worker_pool_id: stack.worker_pool_id ?? ''
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -1308,6 +1312,16 @@
 						<p class="text-xs text-zinc-600">When a PR opens against this stack's repo, Crucible creates a preview stack from this template using the PR branch, then destroys it when the PR closes.</p>
 					</div>
 				{/if}
+			</div>
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-worker-pool">Worker pool</label>
+				<select id="edit-worker-pool" class="field-input" bind:value={form.worker_pool_id}>
+					<option value="">Built-in runner (default)</option>
+					{#each allWorkerPools as wp (wp.id)}
+						<option value={wp.id}>{wp.name}</option>
+					{/each}
+				</select>
+				<p class="text-xs text-zinc-600">Run this stack's jobs on an external agent pool instead of the built-in Docker runner.</p>
 			</div>
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}

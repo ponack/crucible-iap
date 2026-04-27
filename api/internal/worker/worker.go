@@ -16,7 +16,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/envvars"
 	"github.com/ponack/crucible-iap/internal/notify"
@@ -24,6 +23,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
+	"github.com/ponack/crucible-iap/internal/runs"
 	"github.com/ponack/crucible-iap/internal/secretstore"
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/storage"
@@ -46,6 +46,7 @@ type Dispatcher struct {
 }
 
 func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Client, v *vault.Vault, n *notify.Notifier, q *queue.Client, e *policy.Engine, oidc *oidcprovider.Provider) (*Dispatcher, error) {
+	fin := runs.NewFinalizer(pool, q, n, e)
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &RunWorker{
 		pool:         pool,
@@ -57,6 +58,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		queue:        q,
 		engine:       e,
 		oidcProvider: oidc,
+		finalizer:    fin,
 	})
 	river.AddWorker(workers, &ModulePublishWorker{
 		pool:    pool,
@@ -117,6 +119,7 @@ type RunWorker struct {
 	queue        *queue.Client
 	engine       *policy.Engine
 	oidcProvider *oidcprovider.Provider
+	finalizer    *runs.Finalizer
 }
 
 func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) error {
@@ -335,313 +338,16 @@ func (w *RunWorker) resolveRunnerLimits(ctx context.Context) (memLimit, cpuLimit
 	return sysSettings.RunnerMemoryLimit, sysSettings.RunnerCPULimit, sysSettings.RunnerJobTimeoutMins
 }
 
-// completeRun handles the post-execution state transition and notifications.
-// For tracked/destroy runs it evaluates policies then waits for confirmation (or auto-applies).
-// For proposed and apply runs it marks finished and fires the appropriate notification.
 func (w *RunWorker) completeRun(ctx context.Context, log *slog.Logger, orgID string, args queue.RunJobArgs) error {
-	isPlanPhase := args.RunType == "tracked" || args.RunType == "destroy"
-
-	if isPlanPhase {
-		denied, requiresApproval, err := w.evaluatePlanPolicies(ctx, log, args)
-		if err != nil {
-			log.Warn("policy evaluation failed, proceeding without policy gate", "err", err)
-		}
-		if denied {
-			return w.failRun(ctx, orgID, args.RunID, fmt.Errorf("blocked by policy"))
-		}
-
-		// Auto-apply: only for tracked runs, never for destroy.
-		if args.AutoApply && args.RunType == "tracked" && !requiresApproval {
-			now := time.Now()
-			if _, err := w.pool.Exec(ctx,
-				`UPDATE runs SET status = 'confirmed', approved_by = NULL, approved_at = $1 WHERE id = $2`,
-				now, args.RunID,
-			); err != nil {
-				return w.failRun(ctx, orgID, args.RunID, err)
-			}
-			_, _ = w.queue.EnqueueRun(ctx, queue.RunJobArgs{
-				RunID: args.RunID, StackID: args.StackID,
-				Tool: args.Tool, RunnerImage: args.RunnerImage,
-				RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
-				RunType: "apply", APIURL: args.APIURL,
-				VarOverrides: args.VarOverrides,
-			})
-			log.Info("run job complete (auto-apply queued)")
-			return nil
-		}
-
-		finalStatus := "unconfirmed"
-		if requiresApproval {
-			finalStatus = "pending_approval"
-		}
-		now := time.Now()
-		if err := w.setStatus(ctx, orgID, args.RunID, finalStatus, &now); err != nil {
-			return err
-		}
-		go w.notifier.PlanComplete(context.Background(), args.RunID)
-		log.Info("run job complete", "status", finalStatus)
-		return nil
-	}
-
-	finalStatus := "finished"
-	now := time.Now()
-	if err := w.setStatus(ctx, orgID, args.RunID, finalStatus, &now); err != nil {
-		return err
-	}
-
-	bg := context.Background()
-	switch {
-	case args.RunType == "proposed":
-		go w.notifier.PlanComplete(bg, args.RunID)
-		go w.maybeRemediateDrift(bg, args)
-	case args.RunType == "apply":
-		go w.notifier.RunFinished(bg, args.RunID, true)
-		go w.triggerDownstreamStacks(bg, orgID, args)
-	case args.RunType == "destroy":
-		go w.notifier.RunFinished(bg, args.RunID, true)
-		go w.maybeDeletePreviewStack(bg, args.StackID)
-	}
-
-	log.Info("run job complete", "status", finalStatus)
-	return nil
-}
-
-// maybeRemediateDrift checks whether a just-finished proposed drift run should
-// evaluatePlanPolicies evaluates post_plan and approval policies for the stack attached to
-// this run. Results are persisted to run_policy_results. Returns (denied, requiresApproval, err).
-func (w *RunWorker) evaluatePlanPolicies(ctx context.Context, log *slog.Logger, args queue.RunJobArgs) (denied bool, requiresApproval bool, err error) {
-	if w.engine == nil {
-		return false, false, nil
-	}
-
-	// Fetch run plan summary and stack info for policy input.
-	var runType, runTrigger, stackName, stackSlug string
-	var planAdd, planChange, planDestroy int
-	if err := w.pool.QueryRow(ctx, `
-		SELECT r.type, r.trigger,
-		       COALESCE(r.plan_add, 0), COALESCE(r.plan_change, 0), COALESCE(r.plan_destroy, 0),
-		       s.name, s.slug
-		FROM runs r
-		JOIN stacks s ON s.id = r.stack_id
-		WHERE r.id = $1
-	`, args.RunID).Scan(&runType, &runTrigger, &planAdd, &planChange, &planDestroy, &stackName, &stackSlug); err != nil {
-		return false, false, fmt.Errorf("fetch run context: %w", err)
-	}
-
-	input := map[string]any{
-		"run": map[string]any{
-			"id":            args.RunID,
-			"type":          runType,
-			"trigger":       runTrigger,
-			"plan_add":      planAdd,
-			"plan_change":   planChange,
-			"plan_destroy":  planDestroy,
-		},
-		"stack": map[string]any{
-			"id":   args.StackID,
-			"name": stackName,
-			"slug": stackSlug,
-		},
-	}
-
-	// Query policy IDs applicable to this stack (stack-attached + org-defaults).
-	rows, err := w.pool.Query(ctx, `
-		SELECT DISTINCT p.id
-		FROM policies p
-		JOIN stacks s ON s.id = $1
-		WHERE p.is_active = true
-		  AND p.type = ANY($2)
-		  AND (
-		    EXISTS (SELECT 1 FROM stack_policies sp WHERE sp.stack_id = $1 AND sp.policy_id = p.id)
-		    OR EXISTS (SELECT 1 FROM org_policy_defaults opd WHERE opd.org_id = s.org_id AND opd.policy_id = p.id)
-		  )
-	`, args.StackID, []string{string(policy.TypePostPlan), string(policy.TypeApproval)})
-	if err != nil {
-		return false, false, fmt.Errorf("query stack policies: %w", err)
-	}
-	var policyIDs []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err == nil {
-			policyIDs = append(policyIDs, id)
-		}
-	}
-	rows.Close()
-
-	if len(policyIDs) == 0 {
-		return false, false, nil
-	}
-
-	_, records, err := w.engine.EvaluateByIDs(ctx, policyIDs, input)
-	if err != nil {
-		return false, false, fmt.Errorf("evaluate policies: %w", err)
-	}
-
-	// Persist results and compute aggregate outcome.
-	for _, rec := range records {
-		id := rec.PolicyID
-		_, _ = w.pool.Exec(ctx, `
-			INSERT INTO run_policy_results
-			    (run_id, policy_id, policy_name, policy_type, hook, allow, deny_msgs, warn_msgs, trigger_ids)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '{}')
-		`, args.RunID, id, rec.PolicyName, string(rec.PolicyType), string(rec.PolicyType),
-			rec.Result.Allow, rec.Result.Deny, rec.Result.Warn)
-
-		if !rec.Result.Allow {
-			denied = true
-			log.Info("run blocked by policy", "policy", rec.PolicyName, "deny", rec.Result.Deny)
-		}
-		if rec.Result.RequireApproval {
-			requiresApproval = true
-			log.Info("run requires approval", "policy", rec.PolicyName)
-		}
-	}
-	return denied, requiresApproval, nil
-}
-
-// trigger an auto-apply tracked run to bring infrastructure back into sync.
-func (w *RunWorker) maybeRemediateDrift(ctx context.Context, args queue.RunJobArgs) {
-	var isDrift bool
-	var planAdd, planChange, planDestroy int
-	var autoRemediate bool
-
-	err := w.pool.QueryRow(ctx, `
-		SELECT r.is_drift,
-		       COALESCE(r.plan_add, 0), COALESCE(r.plan_change, 0), COALESCE(r.plan_destroy, 0),
-		       s.auto_remediate_drift
-		FROM runs r
-		JOIN stacks s ON s.id = r.stack_id
-		WHERE r.id = $1
-	`, args.RunID).Scan(&isDrift, &planAdd, &planChange, &planDestroy, &autoRemediate)
-	if err != nil || !isDrift || !autoRemediate || planAdd+planChange+planDestroy == 0 {
-		return
-	}
-
-	var runID string
-	if err := w.pool.QueryRow(ctx, `
-		INSERT INTO runs (stack_id, type, trigger, is_drift)
-		VALUES ($1, 'tracked', 'auto_remediate', true)
-		RETURNING id
-	`, args.StackID).Scan(&runID); err != nil {
-		slog.Error("auto-remediate drift: failed to insert run", "stack_id", args.StackID, "err", err)
-		return
-	}
-
-	if _, err := w.queue.EnqueueRun(ctx, queue.RunJobArgs{
-		RunID: runID, StackID: args.StackID,
-		Tool: args.Tool, RunnerImage: args.RunnerImage,
-		RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
-		RunType: "tracked", AutoApply: true, APIURL: args.APIURL,
-	}); err != nil {
-		slog.Error("auto-remediate drift: failed to enqueue run", "stack_id", args.StackID, "err", err)
-	} else {
-		slog.Info("auto-remediate drift: queued tracked run", "stack_id", args.StackID, "run_id", runID)
-	}
-}
-
-// triggerDownstreamStacks enqueues a tracked run for every downstream stack that
-// has declared the just-applied stack as an upstream dependency.
-func (w *RunWorker) triggerDownstreamStacks(ctx context.Context, orgID string, args queue.RunJobArgs) {
-	type target struct {
-		stackID, tool, runnerImage, repoURL, repoBranch, projectRoot string
-		autoApply                                                    bool
-	}
-
-	rows, err := w.pool.Query(ctx, `
-		SELECT s.id, s.tool, COALESCE(s.runner_image,''), s.repo_url, s.repo_branch, s.project_root, s.auto_apply
-		FROM stack_dependencies d
-		JOIN stacks s ON s.id = d.downstream_id
-		WHERE d.upstream_id = $1 AND s.is_disabled = false AND s.is_locked = false AND s.org_id = $2
-	`, args.StackID, orgID)
-	if err != nil {
-		slog.Error("trigger downstream: query failed", "stack_id", args.StackID, "err", err)
-		return
-	}
-
-	var targets []target
-	for rows.Next() {
-		var t target
-		if err := rows.Scan(&t.stackID, &t.tool, &t.runnerImage, &t.repoURL, &t.repoBranch, &t.projectRoot, &t.autoApply); err != nil {
-			continue
-		}
-		targets = append(targets, t)
-	}
-	rows.Close()
-
-	for _, t := range targets {
-		var runID string
-		if err := w.pool.QueryRow(ctx, `
-			INSERT INTO runs (stack_id, type, trigger)
-			VALUES ($1, 'tracked', 'dependency')
-			RETURNING id
-		`, t.stackID).Scan(&runID); err != nil {
-			slog.Error("trigger downstream: failed to insert run", "stack_id", t.stackID, "err", err)
-			continue
-		}
-		if _, err := w.queue.EnqueueRun(ctx, queue.RunJobArgs{
-			RunID: runID, StackID: t.stackID,
-			Tool: t.tool, RunnerImage: t.runnerImage,
-			RepoURL: t.repoURL, RepoBranch: t.repoBranch, ProjectRoot: t.projectRoot,
-			RunType: "tracked", AutoApply: t.autoApply, APIURL: args.APIURL,
-		}); err != nil {
-			slog.Error("trigger downstream: failed to enqueue run", "stack_id", t.stackID, "err", err)
-		} else {
-			slog.Info("trigger downstream: queued tracked run",
-				"upstream_stack_id", args.StackID, "downstream_stack_id", t.stackID, "run_id", runID)
-		}
-	}
+	return w.finalizer.Complete(ctx, log, orgID, args)
 }
 
 func (w *RunWorker) setStatus(ctx context.Context, orgID, runID, status string, finishedAt *time.Time) error {
-	var err error
-	if finishedAt != nil {
-		_, err = w.pool.Exec(ctx, `
-			UPDATE runs SET status = $1, finished_at = $2 WHERE id = $3
-		`, status, finishedAt, runID)
-	} else {
-		_, err = w.pool.Exec(ctx, `
-			UPDATE runs SET status = $1,
-			       started_at = CASE WHEN started_at IS NULL THEN now() ELSE started_at END
-			WHERE id = $2
-		`, status, runID)
-	}
-	if err != nil {
-		return err
-	}
-	audit.Record(ctx, w.pool, audit.Event{
-		ActorType:    "runner",
-		Action:       "run." + status,
-		ResourceID:   runID,
-		ResourceType: "run",
-		OrgID:        orgID,
-	})
-	return nil
-}
-
-// maybeDeletePreviewStack deletes a preview stack after its destroy run succeeds.
-func (w *RunWorker) maybeDeletePreviewStack(ctx context.Context, stackID string) {
-	var deleteAfter bool
-	if err := w.pool.QueryRow(ctx,
-		`SELECT delete_after_destroy FROM stacks WHERE id = $1`, stackID,
-	).Scan(&deleteAfter); err != nil || !deleteAfter {
-		return
-	}
-	_, _ = w.pool.Exec(ctx, `DELETE FROM stacks WHERE id = $1 AND delete_after_destroy = true`, stackID)
+	return w.finalizer.SetStatus(ctx, orgID, runID, status, finishedAt)
 }
 
 func (w *RunWorker) failRun(ctx context.Context, orgID, runID string, cause error) error {
-	now := time.Now()
-	_, _ = w.pool.Exec(ctx, `
-		UPDATE runs SET status = 'failed', finished_at = $1 WHERE id = $2
-	`, now, runID)
-	audit.Record(ctx, w.pool, audit.Event{
-		ActorType:    "runner",
-		Action:       "run.failed",
-		ResourceID:   runID,
-		ResourceType: "run",
-		OrgID:        orgID,
-	})
-	return cause // returning causes River to record the error and retry/discard
+	return w.finalizer.Fail(ctx, orgID, runID, cause)
 }
 
 // loadRemoteStateEnv queries the remote-state sources for stackID and returns

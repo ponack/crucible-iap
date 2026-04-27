@@ -22,6 +22,8 @@ func NewHandler(pool *pgxpool.Pool, engine *policy.Engine) *Handler {
 	return &Handler{pool: pool, engine: engine}
 }
 
+func (h *Handler) Engine() *policy.Engine { return h.engine }
+
 type PolicyRecord struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
