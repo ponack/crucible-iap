@@ -141,9 +141,34 @@ export interface Stack {
 	preview_pr_number?: number;
 	preview_pr_url?: string;
 	preview_branch?: string;
+	worker_pool_id?: string;
+	worker_pool_name?: string;
 	created_at: string;
 	updated_at: string;
 }
+
+// ── Worker pools ──────────────────────────────────────────────────────────────
+
+export interface WorkerPool {
+	id: string;
+	name: string;
+	description: string;
+	capacity: number;
+	is_disabled: boolean;
+	last_seen_at?: string;
+	created_at: string;
+}
+
+export const workerPools = {
+	list: () => request<Paginated<WorkerPool>>('/worker-pools'),
+	create: (body: { name: string; description?: string; capacity?: number }) =>
+		request<{ pool: WorkerPool; token: string }>('/worker-pools', { method: 'POST', body: JSON.stringify(body) }),
+	get: (id: string) => request<WorkerPool>(`/worker-pools/${id}`),
+	update: (id: string, body: Partial<{ description: string; capacity: number; is_disabled: boolean }>) =>
+		request<void>(`/worker-pools/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+	delete: (id: string) => request<void>(`/worker-pools/${id}`, { method: 'DELETE' }),
+	rotateToken: (id: string) => request<{ token: string }>(`/worker-pools/${id}/rotate-token`, { method: 'POST' })
+};
 
 // ── Org integrations ──────────────────────────────────────────────────────────
 

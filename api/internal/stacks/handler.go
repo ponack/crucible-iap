@@ -114,6 +114,8 @@ type Stack struct {
 	PreviewPRNumber      *int       `json:"preview_pr_number,omitempty"`
 	PreviewPRURL         *string    `json:"preview_pr_url,omitempty"`
 	PreviewBranch        *string    `json:"preview_branch,omitempty"`
+	WorkerPoolID         *string    `json:"worker_pool_id,omitempty"`
+	WorkerPoolName       *string    `json:"worker_pool_name,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -300,11 +302,13 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.max_concurrent_runs,
 		       s.pr_preview_enabled, s.pr_preview_template_id,
 		       s.is_preview, s.preview_source_stack_id, s.preview_pr_number, s.preview_pr_url, s.preview_branch,
+		       s.worker_pool_id, wp.name,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
 		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
+		LEFT JOIN worker_pools wp ON wp.id = s.worker_pool_id
 		WHERE s.id = $1 AND s.org_id = $2
 		  AND `+access.AccessFilterSQL+`
 	`, id, orgID, userID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
@@ -323,6 +327,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.MaxConcurrentRuns,
 		&s.PRPreviewEnabled, &s.PRPreviewTemplateID,
 		&s.IsPreview, &s.PreviewSourceStackID, &s.PreviewPRNumber, &s.PreviewPRURL, &s.PreviewBranch,
+		&s.WorkerPoolID, &s.WorkerPoolName,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -362,6 +367,7 @@ type updateStackReq struct {
 	MaxConcurrentRuns   *int    `json:"max_concurrent_runs"`
 	PRPreviewEnabled    *bool   `json:"pr_preview_enabled"`
 	PRPreviewTemplateID *string `json:"pr_preview_template_id"` // empty string clears
+	WorkerPoolID        *string `json:"worker_pool_id"`         // empty string clears
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -420,6 +426,13 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 		}
 	}
 	r.addPRPreviewSets(add)
+	if r.WorkerPoolID != nil {
+		if *r.WorkerPoolID == "" {
+			add("worker_pool_id", nil)
+		} else {
+			add("worker_pool_id", *r.WorkerPoolID)
+		}
+	}
 	if r.ScheduledDestroyAt != nil {
 		if *r.ScheduledDestroyAt == "" {
 			add("scheduled_destroy_at", nil)

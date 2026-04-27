@@ -128,6 +128,7 @@
 				<a href="/registry" class={navClass('/registry')}>Registry</a>
 				<a href="/variable-sets" class={navClass('/variable-sets')}>Variable Sets</a>
 				<a href="/stack-templates" class={navClass('/stack-templates')}>Templates</a>
+				<a href="/worker-pools" class={navClass('/worker-pools')}>Worker Pools</a>
 				<a href="/audit" class={navClass('/audit')}>Audit Log</a>
 				<a href="/monitoring" class={navClass('/monitoring')}>Monitoring</a>
 				<a href="/settings" class={navClass('/settings')}>Settings</a>
