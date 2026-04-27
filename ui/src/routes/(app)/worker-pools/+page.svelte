@@ -213,29 +213,30 @@
 		</div>
 	{/if}
 
-	<div class="border border-zinc-800 rounded-xl p-4 space-y-3">
-		<h2 class="text-sm font-medium text-white">Deploying an agent</h2>
-		<p class="text-zinc-500 text-xs">After creating a pool, deploy the agent on any host with Docker access. It uses its own config file, separate from the main Crucible stack.</p>
+	<div class="border border-zinc-800 rounded-xl p-4 space-y-4">
+		<div>
+			<h2 class="text-sm font-medium text-white">Deploying an agent</h2>
+			<p class="text-zinc-500 text-xs mt-1">The agent runs on any host with Docker access — your own server, a VM, or bare metal. It is fully independent of the Crucible stack and uses its own config file.</p>
+		</div>
 
-		<div class="space-y-1">
-			<p class="text-zinc-400 text-xs font-medium">Option A — Docker Compose (co-located on this host)</p>
+		<div class="space-y-1.5">
+			<p class="text-zinc-300 text-xs font-medium">Option A — Separate host (recommended)</p>
+			<p class="text-zinc-500 text-xs">Copy <code class="bg-zinc-800 px-1 rounded">docker-compose.agent.yml</code> and <code class="bg-zinc-800 px-1 rounded">.env.agent.example</code> from the Crucible repo to the target host, then:</p>
 			<pre class="bg-zinc-900 border border-zinc-700 rounded p-3 text-xs text-zinc-300 overflow-x-auto">{`cp .env.agent.example .env.agent
-# Set CRUCIBLE_ORG_ID and CRUCIBLE_POOL_TOKEN in .env.agent
+# Edit .env.agent — set CRUCIBLE_API_URL, CRUCIBLE_ORG_ID, CRUCIBLE_POOL_TOKEN
+
+docker compose -f docker-compose.agent.yml up -d`}</pre>
+		</div>
+
+		<div class="space-y-1.5">
+			<p class="text-zinc-300 text-xs font-medium">Option B — Same host as Crucible</p>
+			<p class="text-zinc-500 text-xs">Run the agent alongside the main stack using the <code class="bg-zinc-800 px-1 rounded">worker-agent</code> compose profile. The API URL is wired up automatically.</p>
+			<pre class="bg-zinc-900 border border-zinc-700 rounded p-3 text-xs text-zinc-300 overflow-x-auto">{`cp .env.agent.example .env.agent
+# Edit .env.agent — set CRUCIBLE_ORG_ID and CRUCIBLE_POOL_TOKEN
 
 docker compose --profile worker-agent up -d crucible-agent`}</pre>
 		</div>
 
-		<div class="space-y-1">
-			<p class="text-zinc-400 text-xs font-medium">Option B — Standalone on a remote host</p>
-			<pre class="bg-zinc-900 border border-zinc-700 rounded p-3 text-xs text-zinc-300 overflow-x-auto">{`docker run --rm \\
-  -e CRUCIBLE_API_URL=https://your-crucible-instance \\
-  -e CRUCIBLE_ORG_ID=<org-id> \\
-  -e CRUCIBLE_POOL_TOKEN=<token-from-pool-creation> \\
-  -e CRUCIBLE_CAPACITY=3 \\
-  -v /var/run/docker.sock:/var/run/docker.sock \\
-  ghcr.io/ponack/crucible-agent:latest`}</pre>
-		</div>
-
-		<p class="text-zinc-600 text-xs">Full configuration reference including all env vars: <span class="text-zinc-400">docs/operator-guide.md → External worker agents</span>. Assign stacks to the pool via <span class="text-zinc-400">Settings → Worker pool</span> in the stack detail page.</p>
+		<p class="text-zinc-600 text-xs">Full env var reference and setup guide: <span class="text-zinc-400">docs/operator-guide.md → External worker agents</span>. Assign stacks to this pool via <span class="text-zinc-400">Settings → Worker pool</span> in the stack detail page.</p>
 	</div>
 </div>

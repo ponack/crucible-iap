@@ -505,38 +505,33 @@ To rotate a compromised token: click **Rotate token** on the pool row. The old t
 
 The agent is a standalone binary published as a Docker image. It requires Docker socket access on the host.
 
-#### Same host as Crucible (Docker Compose)
+The agent ships as a Docker image and has its own config file (`.env.agent`) that is entirely separate from the main Crucible stack's `.env`. Copy `.env.agent.example` to `.env.agent` on the target host and fill in the three required values.
 
-If you want to co-locate an agent on the same host as your Crucible stack, the compose file includes a `worker-agent` profile. It reads agent config from a separate `.env.agent` file so it stays independent of the main stack's `.env`:
+Find your org ID in **Settings → General** or from the URL of any stack page.
+
+#### Option A — Separate host (recommended for isolation)
+
+Copy `docker-compose.agent.yml` and `.env.agent.example` from the Crucible repo to the target host — no other files needed.
 
 ```bash
 cp .env.agent.example .env.agent
-# edit .env.agent — set CRUCIBLE_ORG_ID, CRUCIBLE_POOL_TOKEN, and optionally CRUCIBLE_CAPACITY
+# Set CRUCIBLE_API_URL, CRUCIBLE_ORG_ID, CRUCIBLE_POOL_TOKEN
+
+docker compose -f docker-compose.agent.yml up -d
 ```
 
-Then start it alongside the rest of the stack:
+Runner containers spawned by the agent reach the Crucible API via `CRUCIBLE_API_URL` over the network — no special Docker network setup is required.
+
+#### Option B — Same host as Crucible
+
+The main `docker-compose.yml` includes a `worker-agent` profile that adds the agent as a service on the existing `backend` and `runner` networks. `CRUCIBLE_API_URL` is overridden automatically to the internal `http://crucible-api:8080` service name.
 
 ```bash
+cp .env.agent.example .env.agent
+# Set CRUCIBLE_ORG_ID and CRUCIBLE_POOL_TOKEN (CRUCIBLE_API_URL is set automatically)
+
 docker compose --profile worker-agent up -d crucible-agent
 ```
-
-`CRUCIBLE_API_URL` is overridden automatically to the internal `http://crucible-api:8080` service name — no need to set it in `.env.agent` for compose deployments.
-
-#### Remote host
-
-On any other host with Docker access, run the agent directly:
-
-```bash
-docker run --rm \
-  -e CRUCIBLE_API_URL=https://crucible.example.com \
-  -e CRUCIBLE_ORG_ID=<your-org-id> \
-  -e CRUCIBLE_POOL_TOKEN=<token-from-pool-creation> \
-  -e CRUCIBLE_CAPACITY=3 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  ghcr.io/ponack/crucible-agent:latest
-```
-
-Find your org ID in **Settings → General** or from the URL of any stack page.
 
 #### Agent environment variables
 

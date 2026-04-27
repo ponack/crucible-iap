@@ -1,0 +1,23 @@
+name: crucible-agent
+
+# Standalone external worker agent for Crucible IAP.
+#
+# Drop this file and .env.agent on any host with Docker access, fill in
+# CRUCIBLE_API_URL, CRUCIBLE_ORG_ID, and CRUCIBLE_POOL_TOKEN in .env.agent,
+# then run:
+#
+#   docker compose -f docker-compose.agent.yml up -d
+#
+# Create a worker pool first in the Crucible UI (Worker Pools → New pool)
+# to obtain a pool token. Full setup guide:
+#   https://github.com/ponack/crucible-iap/blob/main/docs/operator-guide.md#external-worker-agents
+
+services:
+  crucible-agent:
+    image: ghcr.io/ponack/crucible-agent:latest
+    restart: unless-stopped
+    env_file:
+      - .env.agent
+    volumes:
+      # Docker socket — required to spawn ephemeral runner containers.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
