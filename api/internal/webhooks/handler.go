@@ -134,21 +134,19 @@ func (h *Handler) Receive(c echo.Context) error {
 	}
 
 	apiURL := c.Scheme() + "://" + c.Request().Host
-	if workerPoolID == nil {
-		if _, err := h.q.EnqueueRun(ctx, queue.RunJobArgs{
-			RunID:       runID,
-			StackID:     stackID,
-			Tool:        tool,
-			RunnerImage: img,
-			RepoURL:     repoURL,
-			RepoBranch:  repoBranch,
-			ProjectRoot: projectRoot,
-			RunType:     event.runType,
-			APIURL:      apiURL,
-		}); err != nil {
-			h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "enqueue_failed", nil)
-			return fmt.Errorf("enqueue run: %w", err)
-		}
+	if err := h.maybeEnqueueRun(ctx, workerPoolID, queue.RunJobArgs{
+		RunID:       runID,
+		StackID:     stackID,
+		Tool:        tool,
+		RunnerImage: img,
+		RepoURL:     repoURL,
+		RepoBranch:  repoBranch,
+		ProjectRoot: projectRoot,
+		RunType:     event.runType,
+		APIURL:      apiURL,
+	}); err != nil {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "enqueue_failed", nil)
+		return fmt.Errorf("enqueue run: %w", err)
 	}
 
 	h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "triggered", "", &runID)
@@ -859,6 +857,14 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 	default:
 		return nil, nil
 	}
+}
+
+func (h *Handler) maybeEnqueueRun(ctx context.Context, workerPoolID *string, args queue.RunJobArgs) error {
+	if workerPoolID != nil {
+		return nil
+	}
+	_, err := h.q.EnqueueRun(ctx, args)
+	return err
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

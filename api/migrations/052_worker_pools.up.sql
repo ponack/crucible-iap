@@ -2,7 +2,7 @@
 -- infrastructure instead of the built-in Docker runner.
 CREATE TABLE worker_pools (
     id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id        TEXT        NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    org_id        UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name          TEXT        NOT NULL,
     description   TEXT        NOT NULL DEFAULT '',
     token_hash    TEXT        NOT NULL,

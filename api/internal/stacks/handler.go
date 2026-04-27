@@ -426,13 +426,7 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 		}
 	}
 	r.addPRPreviewSets(add)
-	if r.WorkerPoolID != nil {
-		if *r.WorkerPoolID == "" {
-			add("worker_pool_id", nil)
-		} else {
-			add("worker_pool_id", *r.WorkerPoolID)
-		}
-	}
+	r.addWorkerPoolSet(add)
 	if r.ScheduledDestroyAt != nil {
 		if *r.ScheduledDestroyAt == "" {
 			add("scheduled_destroy_at", nil)
@@ -472,6 +466,17 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 		}
 	}
 	return sets, args, nil
+}
+
+func (r *updateStackReq) addWorkerPoolSet(add func(string, any)) {
+	if r.WorkerPoolID == nil {
+		return
+	}
+	if *r.WorkerPoolID == "" {
+		add("worker_pool_id", nil)
+	} else {
+		add("worker_pool_id", *r.WorkerPoolID)
+	}
 }
 
 func (r *updateStackReq) addPRPreviewSets(add func(string, any)) {
