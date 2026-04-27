@@ -505,6 +505,28 @@ To rotate a compromised token: click **Rotate token** on the pool row. The old t
 
 The agent is a standalone binary published as a Docker image. It requires Docker socket access on the host.
 
+#### Same host as Crucible (Docker Compose)
+
+If you want to co-locate an agent on the same host as your Crucible stack, the compose file includes a `worker-agent` profile. Add the required vars to `.env`:
+
+```bash
+CRUCIBLE_AGENT_ORG_ID=<your-org-uuid>
+CRUCIBLE_AGENT_POOL_TOKEN=<token-from-pool-creation>
+CRUCIBLE_AGENT_CAPACITY=3
+```
+
+Then start it alongside the rest of the stack:
+
+```bash
+docker compose --profile worker-agent up -d crucible-agent
+```
+
+The compose service uses the internal `http://crucible-api:8080` URL automatically — no need to set `CRUCIBLE_API_URL` manually.
+
+#### Remote host
+
+On any other host with Docker access, run the agent directly:
+
 ```bash
 docker run --rm \
   -e CRUCIBLE_API_URL=https://crucible.example.com \
@@ -560,11 +582,13 @@ Stacks assigned to a deleted pool fall back to the built-in runner automatically
 ### API keeps restarting
 
 Check logs:
+
 ```bash
 docker compose logs crucible-api --tail 50
 ```
 
 Common causes:
+
 - `CRUCIBLE_SECRET_KEY` shorter than 32 characters → extend it
 - `MINIO_ENDPOINT` not reachable → ensure MinIO is healthy: `docker compose ps`
 - `POSTGRES_PASSWORD` mismatch → check `.env` matches the volume's initialised password
@@ -576,6 +600,7 @@ docker compose run --rm crucible-api migrate
 ```
 
 If a migration has partially applied, you may need to roll back manually:
+
 ```bash
 docker compose run --rm crucible-api migrate --down
 ```
@@ -583,11 +608,13 @@ docker compose run --rm crucible-api migrate --down
 ### Runner containers not starting
 
 Verify the Docker socket is mounted on the worker (not the API):
+
 ```bash
 docker compose exec crucible-worker ls /var/run/docker.sock
 ```
 
 Ensure the `crucible-runner` network exists:
+
 ```bash
 docker network ls | grep crucible-runner
 ```
@@ -595,6 +622,7 @@ docker network ls | grep crucible-runner
 ### Grafana shows no data
 
 Verify Prometheus is scraping:
+
 - Open `https://crucible.example.com/grafana`
 - Go to **Explore** → select **Prometheus** datasource → query `up`
 - If no data, check: `docker compose logs prometheus`
