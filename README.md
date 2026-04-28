@@ -367,6 +367,7 @@ cd api && go test -race ./...
 - [x] OPA policy test playground — standalone `/policies/test` page; pick any saved policy, paste synthetic JSON, run it and see allow/deny/warn/trigger results with optional OPA evaluation trace; genuine differentiator — neither Spacelift nor TF Cloud has this built in
 - [x] PR preview environments — auto-create a stack from a template when a PR opens, auto-destroy when it closes; branch name drives workspace isolation; pairs with stack dependencies for full per-PR environment chains
 - [x] AI run troubleshooting — one-click "Explain failure" on failed runs; sends log context to the Claude API and returns a structured root-cause explanation and suggested fix; opt-in via `ANTHROPIC_API_KEY`
+- [x] AWS Cloud OIDC session duration default — saving an AWS Cloud OIDC config without specifying a session duration no longer returns a 500; defaults to 3600 s
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
 
