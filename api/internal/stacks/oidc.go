@@ -97,6 +97,11 @@ func (h *Handler) UpsertOIDC(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "provider must be aws, gcp, azure, vault, authentik, or generic")
 	}
 
+	if req.AWSSessionDurationSecs == nil {
+		defaultDuration := 3600
+		req.AWSSessionDurationSecs = &defaultDuration
+	}
+
 	var cfg CloudOIDCConfig
 	err := h.pool.QueryRow(c.Request().Context(), `
 		INSERT INTO stack_cloud_oidc (
