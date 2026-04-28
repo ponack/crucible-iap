@@ -110,6 +110,8 @@ services:
       MINIO_BUCKET_STATE: "${MINIO_BUCKET_STATE:-crucible-state}"
       MINIO_BUCKET_ARTIFACTS: "${MINIO_BUCKET_ARTIFACTS:-crucible-artifacts}"
       MINIO_USE_SSL: "${MINIO_USE_SSL:-false}"
+      # Required for OIDC token minting — sets the JWT issuer claim.
+      CRUCIBLE_BASE_URL: "${CRUCIBLE_BASE_URL}"
       # URL runner containers use to reach the API for state backend callbacks.
       # Must be the internal Docker service name, not the public URL.
       RUNNER_API_URL: "${RUNNER_API_URL:-http://crucible-api:8080}"
