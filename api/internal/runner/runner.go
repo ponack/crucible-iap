@@ -4,8 +4,6 @@
 package runner
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -437,43 +435,6 @@ func oidcEnv(spec JobSpec) []string {
 		return env
 	}
 	return base
-}
-
-// injectOIDCFiles copies the OIDC token (and optional GCP credential config)
-// into /tmp inside the container via CopyToContainer. Must be called after
-// createContainer and before ContainerStart.
-func injectOIDCFiles(ctx context.Context, docker *client.Client, containerID string, spec JobSpec) error {
-	files := map[string][]byte{
-		"oidc-token": []byte(spec.OIDCToken),
-	}
-	if spec.OIDCProvider == "gcp" {
-		credJSON, err := buildGCPCredentials(spec)
-		if err != nil {
-			return err
-		}
-		files["gcp-credentials.json"] = credJSON
-	}
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for name, data := range files {
-		hdr := &tar.Header{
-			Name: name,
-			Mode: 0444,
-			Size: int64(len(data)),
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		if _, err := tw.Write(data); err != nil {
-			return err
-		}
-	}
-	if err := tw.Close(); err != nil {
-		return err
-	}
-
-	return docker.CopyToContainer(ctx, containerID, "/tmp", &buf, container.CopyToContainerOptions{})
 }
 
 // buildGCPCredentials generates the workload identity credential config JSON
