@@ -4,8 +4,6 @@
 package runner
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -200,14 +198,6 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 			container.RemoveOptions{Force: true})
 	}()
 
-	if spec.OIDCToken != "" {
-		if err := injectOIDCFiles(ctx, r.docker, containerID, spec); err != nil {
-			logline(logWriter, "ERROR: failed to inject OIDC token: %v", err)
-			return fmt.Errorf("inject OIDC files: %w", err)
-		}
-		logline(logWriter, "oidc_provider=%s token injected into /tmp", spec.OIDCProvider)
-	}
-
 	if err := r.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
 		logline(logWriter, "ERROR: failed to start container: %v", err)
 		return fmt.Errorf("start container: %w", err)
@@ -379,54 +369,63 @@ func parseCPU(s string) int64 {
 }
 
 // oidcEnv returns cloud-provider-specific env vars for workload identity federation.
+// CRUCIBLE_OIDC_TOKEN carries the raw JWT so the entrypoint can write /tmp/oidc-token
+// before any cloud SDK calls — CopyToContainer cannot target tmpfs on a stopped container.
 // Returns nil when OIDCToken is empty (no federation configured).
 func oidcEnv(spec JobSpec) []string {
 	if spec.OIDCToken == "" {
 		return nil
 	}
+	base := []string{"CRUCIBLE_OIDC_TOKEN=" + spec.OIDCToken}
+	if spec.OIDCProvider == "gcp" {
+		credJSON, err := buildGCPCredentials(spec)
+		if err == nil {
+			base = append(base, "CRUCIBLE_OIDC_GCP_CREDENTIALS="+string(credJSON))
+		}
+	}
 	switch spec.OIDCProvider {
 	case "aws":
-		return []string{
+		return append(base,
 			"AWS_WEB_IDENTITY_TOKEN_FILE=/tmp/oidc-token",
-			"AWS_ROLE_ARN=" + spec.AWSOIDCRoleARN,
+			"AWS_ROLE_ARN="+spec.AWSOIDCRoleARN,
 			fmt.Sprintf("AWS_ROLE_SESSION_NAME=crucible-%s", spec.RunID[:8]),
-		}
+		)
 	case "gcp":
-		return []string{
+		return append(base,
 			"GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-credentials.json",
-		}
+		)
 	case "azure":
-		return []string{
+		return append(base,
 			"AZURE_FEDERATED_TOKEN_FILE=/tmp/oidc-token",
-			"AZURE_CLIENT_ID=" + spec.AzureOIDCClientID,
-			"AZURE_TENANT_ID=" + spec.AzureOIDCTenantID,
-			"AZURE_SUBSCRIPTION_ID=" + spec.AzureOIDCSubscriptionID,
-		}
+			"AZURE_CLIENT_ID="+spec.AzureOIDCClientID,
+			"AZURE_TENANT_ID="+spec.AzureOIDCTenantID,
+			"AZURE_SUBSCRIPTION_ID="+spec.AzureOIDCSubscriptionID,
+		)
 	case "vault":
 		mount := spec.VaultMount
 		if mount == "" {
 			mount = "jwt"
 		}
-		return []string{
+		return append(base,
 			"CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token",
 			"CRUCIBLE_OIDC_PROVIDER=vault",
-			"VAULT_ADDR=" + spec.VaultAddr,
-			"CRUCIBLE_OIDC_VAULT_ROLE=" + spec.VaultRole,
-			"CRUCIBLE_OIDC_VAULT_MOUNT=" + mount,
-		}
+			"VAULT_ADDR="+spec.VaultAddr,
+			"CRUCIBLE_OIDC_VAULT_ROLE="+spec.VaultRole,
+			"CRUCIBLE_OIDC_VAULT_MOUNT="+mount,
+		)
 	case "authentik":
-		return []string{
+		return append(base,
 			"CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token",
 			"CRUCIBLE_OIDC_PROVIDER=authentik",
-			"AUTHENTIK_URL=" + spec.AuthentikURL,
-			"CRUCIBLE_OIDC_AUTHENTIK_CLIENT_ID=" + spec.AuthentikClientID,
-		}
+			"AUTHENTIK_URL="+spec.AuthentikURL,
+			"CRUCIBLE_OIDC_AUTHENTIK_CLIENT_ID="+spec.AuthentikClientID,
+		)
 	case "generic":
-		env := []string{
+		env := append(base,
 			"CRUCIBLE_OIDC_TOKEN_FILE=/tmp/oidc-token",
 			"CRUCIBLE_OIDC_PROVIDER=generic",
-			"CRUCIBLE_OIDC_TOKEN_URL=" + spec.GenericTokenURL,
-		}
+			"CRUCIBLE_OIDC_TOKEN_URL="+spec.GenericTokenURL,
+		)
 		if spec.GenericClientID != "" {
 			env = append(env, "CRUCIBLE_OIDC_CLIENT_ID="+spec.GenericClientID)
 		}
@@ -435,44 +434,7 @@ func oidcEnv(spec JobSpec) []string {
 		}
 		return env
 	}
-	return nil
-}
-
-// injectOIDCFiles copies the OIDC token (and optional GCP credential config)
-// into /tmp inside the container via CopyToContainer. Must be called after
-// createContainer and before ContainerStart.
-func injectOIDCFiles(ctx context.Context, docker *client.Client, containerID string, spec JobSpec) error {
-	files := map[string][]byte{
-		"oidc-token": []byte(spec.OIDCToken),
-	}
-	if spec.OIDCProvider == "gcp" {
-		credJSON, err := buildGCPCredentials(spec)
-		if err != nil {
-			return err
-		}
-		files["gcp-credentials.json"] = credJSON
-	}
-
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for name, data := range files {
-		hdr := &tar.Header{
-			Name: name,
-			Mode: 0444,
-			Size: int64(len(data)),
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		if _, err := tw.Write(data); err != nil {
-			return err
-		}
-	}
-	if err := tw.Close(); err != nil {
-		return err
-	}
-
-	return docker.CopyToContainer(ctx, containerID, "/tmp", &buf, container.CopyToContainerOptions{})
+	return base
 }
 
 // buildGCPCredentials generates the workload identity credential config JSON

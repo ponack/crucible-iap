@@ -428,6 +428,18 @@ run_pulumi() {
     esac
 }
 
+# ── OIDC token files ─────────────────────────────────────────────────────────
+# Written here (inside the running container) rather than injected via
+# CopyToContainer before start — tmpfs /tmp is only writable once running.
+if [[ -n "${CRUCIBLE_OIDC_TOKEN:-}" ]]; then
+    printf '%s' "${CRUCIBLE_OIDC_TOKEN}" > /tmp/oidc-token
+    log "oidc: token written to /tmp/oidc-token"
+fi
+if [[ -n "${CRUCIBLE_OIDC_GCP_CREDENTIALS:-}" ]]; then
+    printf '%s' "${CRUCIBLE_OIDC_GCP_CREDENTIALS}" > /tmp/gcp-credentials.json
+    log "oidc: GCP credentials written to /tmp/gcp-credentials.json"
+fi
+
 # ── VCS authentication ────────────────────────────────────────────────────────
 # If a VCS token is provided, write a .netrc so git picks it up automatically.
 # Supports GitHub, GitLab, Gitea and any host that accepts token-based HTTP auth.
