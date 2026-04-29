@@ -156,6 +156,9 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 
 	logline(logWriter, "--- spawning container %s ---", containerName)
 
+	// Remove any leftover container from a previous failed attempt with the same name.
+	_ = r.docker.ContainerRemove(ctx, containerName, container.RemoveOptions{Force: true})
+
 	// Scoped environment — credentials injected as env vars, never in image.
 	// ExtraEnv (decrypted stack env vars) is appended last so operators can
 	// override tool behaviour without touching the image.

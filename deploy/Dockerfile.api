@@ -13,7 +13,7 @@ RUN go mod download
 
 COPY api/ .
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w -X github.com/ponack/crucible-iap/internal/server.version=${VERSION}" \
+    -ldflags="-s -w -X github.com/ponack/crucible-iap/internal/server.version=${VERSION} -X main.version=${VERSION}" \
     -o /crucible-iap ./cmd/crucible-iap
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
