@@ -70,6 +70,7 @@ restore_provider_cache() {
 
     local count=0
     while IFS= read -r key; do
+        [[ -z "$key" ]] && continue
         local dest="${PROVIDER_CACHE_DIR}/${key}"
         if [[ ! -f "$dest" ]]; then
             mkdir -p "$(dirname "$dest")"
