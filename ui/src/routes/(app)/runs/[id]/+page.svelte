@@ -44,6 +44,8 @@
 	onDestroy(() => sse?.close());
 
 	function startSSE() {
+		sse?.close();
+		sse = null;
 		if (!run) return;
 
 		const token = auth.accessToken;
@@ -90,6 +92,7 @@
 		try {
 			await runs.confirm(runID);
 			run = await runs.get(runID);
+			logLines = [...logLines, '', '─── apply phase ───────────────────────────────────'];
 			startSSE();
 		} catch (e) {
 			alert((e as Error).message);
