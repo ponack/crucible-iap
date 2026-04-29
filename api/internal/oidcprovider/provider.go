@@ -98,12 +98,10 @@ func LoadOrCreate(ctx context.Context, pool *pgxpool.Pool, v *vault.Vault, issue
 // IssueToken mints a signed JWT for the given run context. ttl is typically 1 hour.
 func (p *Provider) IssueToken(claims TokenClaims, ttl time.Duration) (string, error) {
 	now := time.Now()
-	claims.RegisteredClaims = jwt.RegisteredClaims{
-		Issuer:    p.issuer,
-		IssuedAt:  jwt.NewNumericDate(now),
-		NotBefore: jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-	}
+	claims.Issuer = p.issuer
+	claims.IssuedAt = jwt.NewNumericDate(now)
+	claims.NotBefore = jwt.NewNumericDate(now)
+	claims.ExpiresAt = jwt.NewNumericDate(now.Add(ttl))
 	t := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 	t.Header["kid"] = p.kid
 	return t.SignedString(p.privateKey)
