@@ -442,6 +442,7 @@ export interface StackEnvVar {
 	id: string;
 	name: string;
 	is_secret: boolean;
+	value?: string;
 	created_at: string;
 	updated_at: string;
 }
