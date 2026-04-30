@@ -23,6 +23,7 @@
 	let logEl = $state<HTMLElement | undefined>(undefined);
 	let sse: EventSource | null = null;
 	let autoScroll = $state(true);
+	let cancelled = false;
 
 	const terminalStatuses = new Set(['finished', 'failed', 'canceled', 'discarded']);
 
@@ -38,7 +39,7 @@
 		sse?.close();
 		sse = null;
 
-		let cancelled = false;
+		cancelled = false;
 
 		runs.get(id).then((r) => {
 			if (cancelled) return;
@@ -74,7 +75,18 @@
 			if (e.data === '[DONE]') {
 				sse?.close();
 				sse = null;
-				runs.get(id).then((r) => (run = r)).catch(() => {});
+				// Poll until we see a terminal status — the DB write and the NOTIFY
+				// are two separate round-trips, so the fetch might race the commit.
+				const pollFinal = (tries: number) => {
+					runs.get(id).then((r) => {
+						if (cancelled) return;
+						run = r;
+						if (!terminalStatuses.has(r.status) && tries > 0) {
+							setTimeout(() => pollFinal(tries - 1), 500);
+						}
+					}).catch(() => {});
+				};
+				pollFinal(6);
 				return;
 			}
 			logLines = [...logLines, e.data];

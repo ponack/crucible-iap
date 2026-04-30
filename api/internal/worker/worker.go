@@ -224,17 +224,21 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		fmt.Fprintf(logWriter, "\n[crucible] run failed: %v\n", runErr)
 	}
 
-	// Always persist the log, even on failure
-	if err := w.storage.PutLog(ctx, args.RunID, logBuf.Bytes()); err != nil {
+	// Use context.Background() for terminal ops — the River job context may be
+	// cancelled (timeout, shutdown) even after the container exits cleanly, and
+	// a cancellation here would leave the run stuck in a non-terminal status.
+	bg := context.Background()
+
+	if err := w.storage.PutLog(bg, args.RunID, logBuf.Bytes()); err != nil {
 		log.Warn("failed to persist run log", "err", err)
 	}
 
 	if runErr != nil {
-		go w.notifier.RunFinished(context.Background(), args.RunID, false)
-		return w.failRun(ctx, orgID, args.RunID, runErr)
+		go w.notifier.RunFinished(bg, args.RunID, false)
+		return w.failRun(bg, orgID, args.RunID, runErr)
 	}
 
-	return w.completeRun(ctx, log, orgID, args)
+	return w.completeRun(bg, log, orgID, args)
 }
 
 // loadRunEnv gathers all env vars for a run job, logging warnings for non-fatal
