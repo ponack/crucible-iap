@@ -1,6 +1,6 @@
 # Crucible IAP — Infrastructure Automation Platform
 
-![Crucible IAP](assets/crucible-logo-transparent.png)
+<img src="assets/crucible-logo-transparent.png" alt="Crucible IAP" width="160" />
 
 A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible plans it → review → apply. State, policy, and audit trail stay on your own infrastructure.
 
