@@ -244,6 +244,9 @@ func (r *Runner) createContainer(ctx context.Context, spec JobSpec, img, contain
 				// Staging area for provider zip downloads before extraction.
 				// OpenTofu writes here before moving binaries into /workspace.
 				"/tmp": "size=536870912,mode=0777,exec",
+				// OpenTofu/Terraform write ~/.terraform.d (credentials, plugin
+				// cache config) at startup; read-only rootfs blocks this.
+				"/home/runner": "size=104857600,mode=0755",
 			},
 			// Override with RUNNER_NETWORK env var (network must exist before first run).
 			NetworkMode: container.NetworkMode(r.cfg.RunnerNetwork),

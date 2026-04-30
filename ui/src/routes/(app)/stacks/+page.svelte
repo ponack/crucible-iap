@@ -148,8 +148,10 @@
 										<span class="text-xs px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">disabled</span>
 									{/if}
 									{#if stack.upstream_count > 0 || stack.downstream_count > 0}
-										<span class="text-xs text-zinc-600 font-mono"
-											title="↑{stack.upstream_count} upstream · ↓{stack.downstream_count} downstream">
+										{@const upNames = stack.upstream_stacks?.map((s) => s.name).join(', ')}
+										{@const downNames = stack.downstream_stacks?.map((s) => s.name).join(', ')}
+										{@const tip = [upNames ? `needs: ${upNames}` : '', downNames ? `needed by: ${downNames}` : ''].filter(Boolean).join(' · ')}
+										<span class="text-xs text-zinc-600 font-mono" title={tip}>
 											{[stack.upstream_count > 0 ? `↑${stack.upstream_count}` : '', stack.downstream_count > 0 ? `↓${stack.downstream_count}` : ''].filter(Boolean).join(' ')}
 										</span>
 									{/if}

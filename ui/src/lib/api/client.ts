@@ -126,6 +126,8 @@ export interface Stack {
 	last_run_at?: string;
 	upstream_count: number;
 	downstream_count: number;
+	upstream_stacks: { id: string; name: string }[];
+	downstream_stacks: { id: string; name: string }[];
 	module_namespace?: string;
 	module_name?: string;
 	module_provider?: string;
