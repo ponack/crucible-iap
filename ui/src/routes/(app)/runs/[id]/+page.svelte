@@ -27,18 +27,28 @@
 
 	const terminalStatuses = new Set(['finished', 'failed', 'canceled', 'discarded']);
 
-	onMount(async () => {
-		try {
-			run = await runs.get(runID);
-		} catch (e) {
+	$effect(() => {
+		const id = runID;
+		// Reset state for the new run whenever the route param changes.
+		run = null;
+		logLines = [];
+		loading = true;
+		error = null;
+		policyResults = [];
+		scanResults = [];
+		sse?.close();
+		sse = null;
+
+		runs.get(id).then((r) => {
+			run = r;
+			loading = false;
+			startSSE();
+			runs.policyResults(id).then((r2) => (policyResults = r2)).catch(() => {});
+			runs.scanResults(id).then((r2) => (scanResults = r2)).catch(() => {});
+		}).catch((e) => {
 			error = (e as Error).message;
 			loading = false;
-			return;
-		}
-		loading = false;
-		startSSE();
-		runs.policyResults(runID).then((r) => (policyResults = r)).catch(() => {});
-		runs.scanResults(runID).then((r) => (scanResults = r)).catch(() => {});
+		});
 	});
 
 	onDestroy(() => sse?.close());
