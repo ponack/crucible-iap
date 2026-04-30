@@ -98,14 +98,16 @@ save_provider_cache() {
     while IFS= read -r file; do
         local key="${file#"${PROVIDER_CACHE_DIR}"/}"
         if ! grep -qxF "$key" <<< "${_PROVIDER_CACHE_KEYS}"; then
-            if curl -sf -X PUT \
+            local http_code
+            http_code=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
                 -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
                 -H "Content-Type: application/octet-stream" \
                 --data-binary "@${file}" \
-                "${CRUCIBLE_API_URL}/api/v1/internal/provider-cache/${key}"; then
+                "${CRUCIBLE_API_URL}/api/v1/internal/provider-cache/${key}")
+            if [[ "${http_code}" == "204" ]]; then
                 count=$(( count + 1 ))
             else
-                log "warn: failed to cache provider ${key}"
+                log "warn: failed to cache provider ${key} (HTTP ${http_code})"
             fi
         fi
     done < <(find "${PROVIDER_CACHE_DIR}" -type f)

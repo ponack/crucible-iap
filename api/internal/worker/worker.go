@@ -139,7 +139,9 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 	var orgID string
 	var isLocked bool
 	var lockReason *string
-	_ = w.pool.QueryRow(ctx, `SELECT org_id, is_locked, lock_reason FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID, &isLocked, &lockReason)
+	if err := w.pool.QueryRow(ctx, `SELECT org_id, is_locked, lock_reason FROM stacks WHERE id = $1`, args.StackID).Scan(&orgID, &isLocked, &lockReason); err != nil {
+		return w.failRun(ctx, "", args.RunID, fmt.Errorf("load stack: %w", err))
+	}
 
 	if isLocked {
 		msg := "stack is locked"
@@ -418,8 +420,13 @@ func (w *pgNotifyWriter) Write(p []byte) (int, error) {
 		line, err := w.buf.ReadString('\n')
 		if line != "" {
 			payload := strings.TrimRight(line, "\n")
-			if len(payload) > 7900 {
-				payload = payload[:7900] + "...[truncated]"
+			if len(payload) > 7887 {
+				// Backtrack to a valid UTF-8 character boundary before truncating.
+				end := 7887
+				for end > 0 && payload[end]&0xC0 == 0x80 {
+					end--
+				}
+				payload = payload[:end] + "...[truncated]"
 			}
 			_, _ = w.pool.Exec(context.Background(), "SELECT pg_notify($1, $2)", channel, payload)
 		}

@@ -124,7 +124,7 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		image = r.cfg.RunnerDefaultImage
 	}
 
-	containerName := fmt.Sprintf("crucible-run-%s", spec.RunID[:8])
+	containerName := fmt.Sprintf("crucible-run-%s-%s", spec.RunID[:8], spec.RunType)
 
 	// Write a preamble so the user can see exactly what the runner is launching.
 	vcsAuth := "none (public repo)"
