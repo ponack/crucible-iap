@@ -91,7 +91,7 @@
 		<!-- Sidebar -->
 		<aside class="w-56 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col">
 			<div class="px-4 py-4 border-b border-zinc-800 flex items-center gap-2.5">
-				<img src="/mark-dark.png" alt="" class="h-7 w-7 flex-shrink-0" />
+				<img src="/mark.png" alt="" class="h-7 w-7 flex-shrink-0" />
 				<div class="flex flex-col leading-none">
 					<span class="font-semibold text-white tracking-tight text-sm">Crucible</span>
 					<span class="text-[10px] text-zinc-500 uppercase tracking-widest">IAP</span>
