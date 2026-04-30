@@ -2,6 +2,7 @@
 package stacks
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -220,55 +221,61 @@ func (h *Handler) List(c echo.Context) error {
 		out = append(out, s)
 	}
 
-	// Fetch dependency names for all stacks in the page in two queries.
-	if len(out) > 0 {
-		ids := make([]string, len(out))
-		idx := make(map[string]int, len(out))
-		for i, s := range out {
-			ids[i] = s.ID
-			idx[s.ID] = i
-		}
+	h.populateDependencyNames(c.Request().Context(), out)
 
-		depRows, err := h.pool.Query(c.Request().Context(), `
-			SELECT d.downstream_id, d.upstream_id, u.name
-			FROM stack_dependencies d
-			JOIN stacks u ON u.id = d.upstream_id
-			WHERE d.downstream_id = ANY($1)
-		`, ids)
-		if err == nil {
-			defer depRows.Close()
-			for depRows.Next() {
-				var downID, upID, upName string
-				if err := depRows.Scan(&downID, &upID, &upName); err != nil {
-					continue
-				}
-				if i, ok := idx[downID]; ok {
-					out[i].UpstreamStacks = append(out[i].UpstreamStacks, StackRef{ID: upID, Name: upName})
-				}
+	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
+}
+
+// populateDependencyNames fills UpstreamStacks and DownstreamStacks on each
+// entry with the names of connected stacks, using two bulk queries.
+func (h *Handler) populateDependencyNames(ctx context.Context, stacks []Stack) {
+	if len(stacks) == 0 {
+		return
+	}
+	ids := make([]string, len(stacks))
+	idx := make(map[string]int, len(stacks))
+	for i, s := range stacks {
+		ids[i] = s.ID
+		idx[s.ID] = i
+	}
+
+	upRows, err := h.pool.Query(ctx, `
+		SELECT d.downstream_id, d.upstream_id, u.name
+		FROM stack_dependencies d
+		JOIN stacks u ON u.id = d.upstream_id
+		WHERE d.downstream_id = ANY($1)
+	`, ids)
+	if err == nil {
+		defer upRows.Close()
+		for upRows.Next() {
+			var downID, upID, upName string
+			if err := upRows.Scan(&downID, &upID, &upName); err != nil {
+				continue
 			}
-		}
-
-		downRows, err := h.pool.Query(c.Request().Context(), `
-			SELECT d.upstream_id, d.downstream_id, ds.name
-			FROM stack_dependencies d
-			JOIN stacks ds ON ds.id = d.downstream_id
-			WHERE d.upstream_id = ANY($1)
-		`, ids)
-		if err == nil {
-			defer downRows.Close()
-			for downRows.Next() {
-				var upID, downID, downName string
-				if err := downRows.Scan(&upID, &downID, &downName); err != nil {
-					continue
-				}
-				if i, ok := idx[upID]; ok {
-					out[i].DownstreamStacks = append(out[i].DownstreamStacks, StackRef{ID: downID, Name: downName})
-				}
+			if i, ok := idx[downID]; ok {
+				stacks[i].UpstreamStacks = append(stacks[i].UpstreamStacks, StackRef{ID: upID, Name: upName})
 			}
 		}
 	}
 
-	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
+	downRows, err := h.pool.Query(ctx, `
+		SELECT d.upstream_id, d.downstream_id, ds.name
+		FROM stack_dependencies d
+		JOIN stacks ds ON ds.id = d.downstream_id
+		WHERE d.upstream_id = ANY($1)
+	`, ids)
+	if err == nil {
+		defer downRows.Close()
+		for downRows.Next() {
+			var upID, downID, downName string
+			if err := downRows.Scan(&upID, &downID, &downName); err != nil {
+				continue
+			}
+			if i, ok := idx[upID]; ok {
+				stacks[i].DownstreamStacks = append(stacks[i].DownstreamStacks, StackRef{ID: downID, Name: downName})
+			}
+		}
+	}
 }
 
 func (h *Handler) Create(c echo.Context) error {
