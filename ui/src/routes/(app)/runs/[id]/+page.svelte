@@ -23,7 +23,6 @@
 	let logEl = $state<HTMLElement | undefined>(undefined);
 	let sse: EventSource | null = null;
 	let autoScroll = $state(true);
-	let cancelled = false;
 
 	const terminalStatuses = new Set(['finished', 'failed', 'canceled', 'discarded']);
 
@@ -39,13 +38,17 @@
 		sse?.close();
 		sse = null;
 
-		cancelled = false;
+		// Local flag — captured by all closures for this effect run.
+		// Must stay local: hoisting to module scope breaks the closure so a
+		// fast navigate (A → B) sets cancelled=false before A's callbacks fire,
+		// causing stale data from A to overwrite B's freshly loaded run.
+		let cancelled = false;
 
 		runs.get(id).then((r) => {
 			if (cancelled) return;
 			run = r;
 			loading = false;
-			startSSE(id);
+			startSSE(id, () => cancelled);
 			runs.policyResults(id).then((r2) => { if (!cancelled) policyResults = r2; }).catch(() => {});
 			runs.scanResults(id).then((r2) => { if (!cancelled) scanResults = r2; }).catch(() => {});
 		}).catch((e) => {
@@ -54,7 +57,6 @@
 			loading = false;
 		});
 
-		// Cleanup runs when runID changes or component is destroyed.
 		return () => {
 			cancelled = true;
 			sse?.close();
@@ -62,7 +64,7 @@
 		};
 	});
 
-	function startSSE(id: string) {
+	function startSSE(id: string, isCancelled: () => boolean) {
 		sse?.close();
 		sse = null;
 		if (!run) return;
@@ -79,7 +81,7 @@
 				// are two separate round-trips, so the fetch might race the commit.
 				const pollFinal = (tries: number) => {
 					runs.get(id).then((r) => {
-						if (cancelled) return;
+						if (isCancelled()) return;
 						run = r;
 						if (!terminalStatuses.has(r.status) && tries > 0) {
 							setTimeout(() => pollFinal(tries - 1), 500);
@@ -99,8 +101,7 @@
 		sse.onerror = () => {
 			sse?.close();
 			sse = null;
-			// Refresh run status — the connection may have dropped at end of run
-			// before [DONE] was delivered (e.g. network blip or proxy timeout).
+			if (isCancelled()) return;
 			runs.get(id).then((r) => (run = r)).catch(() => {});
 		};
 	}
@@ -123,7 +124,7 @@
 			await runs.confirm(runID);
 			run = await runs.get(runID);
 			logLines = [...logLines, '', '─── apply phase ───────────────────────────────────'];
-			startSSE(runID);
+			startSSE(runID, () => false);
 		} catch (e) {
 			alert((e as Error).message);
 		} finally {
