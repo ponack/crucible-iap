@@ -58,74 +58,68 @@ Configurable destroy-at timestamp on any stack. A background scheduler fires a d
 
 Crucible acts as its own OIDC identity provider. Each run receives a short-lived signed JWT. Configure per-stack or set an org-level default in Settings → General to exchange it for temporary AWS, GCP, or Azure credentials.
 
+### Scheduled Runs ✓
+
+Cron-based plan, apply, or destroy runs per stack, independent of code pushes. Standard 5-field cron expressions (`0 2 * * *` = 2 am daily). Next run time shown inline on the stack page. Worker polls every minute and enqueues the appropriate run type automatically. Disabled stacks skip scheduled triggers.
+
+### Stack Locking / Maintenance Mode ✓
+
+Per-stack flag that prevents new runs from being queued. Operators set it before making manual cloud console changes or during incident response; unset when done. Lock reason shown as an amber banner on the stack page. Audit event recorded on lock and unlock. Worker checks the flag before dequeuing and fails the run immediately with the lock reason as the error message.
+
+### Run Annotations / Operator Notes ✓
+
+Free-text operator note on any run ("deployed for the Q2 hotfix", "reverting due to oncall alert #1234"). Closes the audit gap between who triggered a run and why. Inline click-to-edit on the run detail page. Included in outgoing webhook payloads.
+
+### Generic Outgoing Webhooks ✓
+
+Fire arbitrary HTTP POST to a configured URL on run state changes — covers PagerDuty, ServiceNow, Jira, custom CMDBs, and internal tooling. HMAC-SHA256 signed, configurable per event type, delivery log with up to 3 retry attempts and exponential backoff. Managed per-stack in Settings → Notifications.
+
+### SSO Group → Role Mapping ✓
+
+Automatically assign org roles from IdP group claims on every login. Eliminates manual invite management for teams on Authentik, Okta, Keycloak, or GitHub. Role is re-evaluated from fresh token claims on each login — not cached. Configured in Settings → Members.
+
+### Cost Estimation ✓
+
+Infracost integration surfaces per-run monthly cost delta (`+$12.40/mo`, `-$3.20/mo`) alongside the plan summary. Self-hosted Infracost pricing server supported. Configure `INFRACOST_API_KEY` (or `INFRACOST_PRICING_API_ENDPOINT`) in Settings → General; runner injects the key automatically.
+
+### IaC Security Scanning ✓
+
+Built-in Checkov / Trivy scan runs post-plan. Findings surfaced as structured results in the run detail alongside OPA policy output — not just log lines. Configurable severity threshold to block apply on CRITICAL findings. Scan tool and threshold configured in Settings → General.
+
+### Per-Stack Run Concurrency Cap ✓
+
+`max_concurrent_runs` INT column on stacks (null = unlimited). Worker enforces the cap at job start and fails the run immediately if the limit is reached. Configured in stack settings alongside runner image overrides. Useful for production stacks where concurrent applies would conflict.
+
+### OPA Policy Test Playground ✓
+
+Standalone `/policies/test` page: pick any saved policy, paste synthetic JSON, run it and see allow/deny/warn/trigger results with optional OPA evaluation trace. Sample payloads pre-filled per policy type. No stack attachment or real run required.
+
+### PR Preview Environments ✓
+
+Auto-create a stack from a designated template when a PR opens; auto-destroy when the PR closes or merges. Branch name drives workspace isolation. Pairs with stack dependencies for full per-PR environment chains (networking → compute → app). PR comment posted with the preview environment URL on creation.
+
+### External Worker Agents ✓
+
+Lightweight `crucible-agent` binary deploys on any host with Docker access. Agents poll the Crucible API for queued runs, execute them locally, and stream logs back. Multiple agents per pool with `FOR UPDATE SKIP LOCKED` claim safety. Stacks assign to a pool via Settings → Runner. Separate optional binary, not bundled with the main image.
+
+### AI Run Troubleshooting ✓
+
+One-click "Explain failure" on failed runs. Sends log context to the Claude API and returns a structured root-cause explanation and suggested fix. Opt-in per org via `ANTHROPIC_API_KEY` in `.env`. Log content truncated before sending; state file contents never sent.
+
 ---
 
 ## Near Term
 
-### Scheduled Runs
+### Dark / Light Mode Switcher
 
-Beyond drift detection, allow arbitrary runs (plan, apply, or destroy) to be triggered on a cron schedule. Drift always creates a `proposed` run — this feature would allow `tracked` or `proposed` runs on any schedule without a code push.
-
-**Use cases:** nightly applies to keep environments fresh, morning plan-only checks to surface drift before the team starts work, weekend scheduled destroys for dev environments.
+User-selectable UI theme with a toggle in the sidebar or user settings, defaulting to the system preference (`prefers-color-scheme`). Dark mode is currently hardcoded.
 
 **Implementation notes:**
 
-- New `stack_schedules` table: `stack_id`, `cron_expression`, `run_type`, `enabled`
-- Extend the drift scheduler goroutine (or separate goroutine) to evaluate cron expressions
-- UI: schedule management section on stack detail page, similar to drift detection settings
-- Cron expression validated on save; standard 5-field format (`minute hour dom month dow`)
-- Disabled stacks skip scheduled triggers
-
-### Stack Locking / Maintenance Mode
-
-A per-stack flag that prevents new runs from being queued. Operators set it before making manual cloud console changes or during incident response; unset it when done.
-
-**Why it matters:** Without locking, a push during a manual console intervention creates a race condition between the runner and the operator's in-progress changes. Spacelift and TF Cloud both expose this as a first-class operation.
-
-**Implementation notes:**
-
-- `is_locked` boolean column on `stacks` with an optional `lock_reason` TEXT
-- API: `POST /stacks/:id/lock` and `DELETE /stacks/:id/lock` (admin/operator only)
-- Worker checks `is_locked` before dequeuing a run job; returns a clear error message
-- UI: prominent lock badge on the stack header; lock/unlock button for admins
-- Audit event recorded on lock and unlock
-
-### Run Annotations / Operator Notes
-
-Allow operators to leave a free-text note on any run — "deployed for the Q2 hotfix", "reverting due to oncall alert #1234", "manual apply to fix drift after console change".
-
-**Why it matters:** The audit log records who triggered what, but not *why*. A one-line annotation field closes this gap without requiring an external ticketing integration. Useful for incident retrospectives and compliance reviews.
-
-**Implementation notes:**
-
-- `annotation` TEXT column on `runs`, nullable
-- `PATCH /api/v1/runs/:id` to set/update it (operator role required on the stack)
-- Shown in the run detail header and the runs list tooltip
-- Included in audit events and any outgoing webhook payloads
-
-### Generic Outgoing Webhooks
-
-Fire an arbitrary HTTP POST to a configured URL on run state changes. Currently Crucible supports Slack, Gotify, ntfy, and SMTP — but teams also need PagerDuty, ServiceNow, Jira, custom CMDBs, and internal tooling.
-
-**Implementation notes:**
-
-- New `outgoing_webhooks` table: `stack_id` (nullable for org-level), `url`, `secret` (HMAC), `event_types[]`, `headers` (JSONB for custom auth headers)
-- Payload: same shape as existing Slack notifications + full run object
-- HMAC-SHA256 signature header (same pattern as inbound webhooks)
-- Delivery log with retry (up to 3 attempts, exponential backoff)
-- UI: manage in Settings → Notifications alongside existing channels
-
-### SSO Group → Role Mapping
-
-Automatically assign org roles and stack roles based on IdP group membership. Eliminates manual invite management for teams with many stacks and frequently-changing rosters.
-
-**Implementation notes:**
-
-- Map IdP claims (e.g. `groups` array in OIDC token) to Crucible org roles
-- Config in Settings → Members: list of `{ claim_value: "platform-team", role: "admin" }` mappings
-- Applied on every login — role is re-evaluated from fresh token claims, not cached
-- Per-stack group mapping: assign a stack role to all members of an IdP group
-- Works with any OIDC provider that includes group claims (Authentik, Okta, Keycloak, GitHub teams via custom claims)
+- Detect system preference via `window.matchMedia('(prefers-color-scheme: dark)')` on load; persist override in `localStorage`
+- Toggle stored preference via a button in the sidebar footer
+- Drive theme via a `data-theme` attribute on `<html>` and CSS custom properties (or Tailwind's `darkMode: 'class'` strategy)
+- No backend changes needed — purely client-side preference
 
 ---
 
@@ -141,29 +135,6 @@ Export the full instance configuration as a single compressed archive and import
 
 **Conflict strategy:** import skips existing objects by name/slug by default; `--overwrite` replaces them.
 
-### Cost Estimation
-
-Integrate Infracost to surface estimated monthly cost delta alongside the plan summary (`+$12.40/mo`, `-$3.20/mo`). Infracost has a self-hosted server option that aligns with Crucible's self-hosted philosophy.
-
-**Implementation notes:**
-
-- Run `infracost breakdown --path <plan-json>` in the runner container post-plan
-- Parse JSON output and store `cost_add`, `cost_change`, `cost_remove` on the run
-- Surface in the run header alongside `+N ~N -N` plan delta badge
-- Requires `INFRACOST_API_KEY` (or self-hosted server URL) set on the stack or as an org default
-
-### IaC Security Scanning
-
-Run Checkov (or Trivy) against the plan or workspace before apply. Surface findings as structured policy results — not just log lines — so they appear in the run detail alongside OPA results.
-
-**Implementation notes:**
-
-- Execute `checkov --directory . --output json` as part of the post-plan step
-- Parse findings into `run_policy_results` rows (one per finding, policy_type=`security`)
-- UI: dedicated security findings section in the run detail, collapsible by severity
-- Block apply on CRITICAL findings (configurable threshold per stack)
-- Works as an alternative or complement to OPA policies
-
 ### Private Provider Registry
 
 Extend the existing module registry (already shipping) to serve custom Terraform providers. Critical for air-gapped deployments that cannot reach registry.terraform.io and for teams distributing internal providers.
@@ -175,17 +146,6 @@ Extend the existing module registry (already shipping) to serve custom Terraform
 - Upload via UI or API (same pattern as modules)
 - `terraform_provider_mirror` block in `~/.terraformrc` to point at Crucible
 - Signing: support GPG key upload per provider namespace for `terraform providers lock`
-
-### Per-Stack Run Concurrency Cap
-
-Allow limiting a specific stack to N concurrent runs (typically 1 for production stacks). Currently only a global cap exists.
-
-**Implementation notes:**
-
-- `max_concurrent_runs` INT column on `stacks`, nullable (null = use global setting)
-- Worker checks active run count for the stack before dequeuing
-- UI: field in stack settings alongside the runner image override
-- Useful for production stacks where concurrent applies would conflict, and for slow stacks that should not consume the global quota
 
 ### Self-Service Infrastructure Blueprints
 
@@ -200,18 +160,6 @@ Parameterized stack creation with a visible input form. Like stack templates, bu
 - UI: public blueprint catalog page; fill form → creates stack in one click
 - Input values rendered as `TF_VAR_*` env vars or injected into the stack's env var set
 
-### OPA Policy Test UI
-
-Write a synthetic run payload and evaluate it against a saved policy inline — see deny/warn/pass output without attaching the policy to a stack and waiting for a real run.
-
-**Why it matters:** Currently policy authors are blind until a real run hits. A test UI dramatically reduces authoring friction and prevents "attach policy → trigger run → see error → fix → repeat" cycles. Neither Spacelift nor TF Cloud has this built in — it would be a genuine differentiator.
-
-**Implementation notes:**
-
-- `POST /api/v1/policies/:id/eval` — accepts a JSON body matching the policy input schema, returns evaluation result
-- UI: "Test policy" panel on the policy detail page with a JSON editor pre-filled with a realistic example payload
-- Example payload populated from the most recent real run that hit this policy (if any)
-
 ---
 
 ## Long Term / Speculative
@@ -221,37 +169,6 @@ Write a synthetic run payload and evaluate it against a saved policy inline — 
 - PostgreSQL connection pooling (PgBouncer)
 - Stateless API — run multiple API instances behind a load balancer
 - Remote Docker host support for runner containers (not just local socket)
-
-### External Worker Agents
-
-Lightweight agent binary that connects to the primary instance and executes jobs locally on the agent host. Decouples runner capacity from the API host; no Docker socket on the central server required. Pull-based model (agent polls for work) so no public ingress is needed on the agent.
-
-### PR Preview Environments
-
-Automatically create a stack (from a designated template) when a PR is opened; automatically destroy it when the PR is closed or merged. Branch name drives workspace isolation.
-
-**Why it matters:** Feature branch testing without manual environment management. Teams get a fresh, isolated environment per PR with zero ops overhead. Spacelift and env0 both offer this. Particularly powerful when combined with stack dependencies (networking → compute → app per PR).
-
-**Implementation notes:**
-
-- New webhook event type: `pr_opened`, `pr_closed`, `pr_merged`
-- Stack setting: "preview environment template" — points to a blueprint or template
-- On `pr_opened`: clone template → create stack named `preview-<pr-number>`, set branch to PR head
-- On `pr_closed`/`pr_merged`: queue a destroy run, then delete the stack after destroy completes
-- PR comment with preview environment URL posted on stack creation
-
-### AI Run Troubleshooting
-
-When a run fails, offer a one-click "Explain failure" button that sends the run log and plan artifact to the Claude API and returns a structured explanation: root cause, suggested fix, and relevant documentation links.
-
-**Why it matters:** Terraform/OpenTofu error messages are often cryptic. Spacelift Intelligence does this. For Crucible, this is a natural integration given the platform already has all run context in one place.
-
-**Implementation notes:**
-
-- `POST /api/v1/runs/:id/explain` — server-side call to Claude API with run log as context
-- Streamed response displayed in the run detail page (same SSE infrastructure as log streaming)
-- Opt-in per org (requires `ANTHROPIC_API_KEY` in `.env`)
-- Log content truncated/summarised before sending; state file contents never sent
 
 ### Policy-as-Code GitOps
 
