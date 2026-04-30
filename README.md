@@ -1,6 +1,6 @@
 # Crucible IAP — Infrastructure Automation Platform
 
-![Crucible IAP](assets/CrucibleIAP_master_TRANSPARENT.png)
+![Crucible IAP](assets/crucible-logo-transparent.png)
 
 A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible plans it → review → apply. State, policy, and audit trail stay on your own infrastructure.
 
@@ -152,6 +152,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/team-setup.md](docs/guides/team-setup.md) | Org roles, per-stack RBAC, approval policies, recommended starter policy set |
 | [docs/guides/aws.md](docs/guides/aws.md) | AWS credentials, S3 remote state backend, minimal IAM role, recommended AWS policies |
+| [docs/guides/aws-nuke.md](docs/guides/aws-nuke.md) | Automated AWS sandbox account cleanup with aws-nuke — three-stack setup, dry-run verification, and a self-resetting demo loop |
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 | [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
 | [docs/guides/pulumi.md](docs/guides/pulumi.md) | End-to-end guide: running Pulumi programs with preview → confirm → up and built-in MinIO state backend |
@@ -308,7 +309,7 @@ cd api && go test -race ./...
 - [x] Structured `/health` endpoint (DB status, version, uptime)
 - [x] Policy management UI + drift detection scheduling
 - [x] Operator documentation + security hardening guide
-- [x] Stack-level environment variables — AES-256-GCM encrypted at rest, injected into runner containers
+- [x] Stack-level environment variables — AES-256-GCM encrypted at rest, injected into runner containers; plain (non-secret) values are shown inline in the UI with per-row Edit/Replace actions; secret values remain write-only
 - [x] PR/MR feedback — plan summary comments and commit status checks on GitHub and GitLab
 - [x] Slack notifications — configurable per-stack event subscriptions
 - [x] Gotify notifications — per-stack Gotify server URL + encrypted app token; fires on plan complete, run succeeded/failed
