@@ -51,6 +51,11 @@ func NewHandler(pool *pgxpool.Pool, v *vaultpkg.Vault, n *notify.Notifier) *Hand
 	return &Handler{pool: pool, vault: v, notifier: n}
 }
 
+type StackRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type Stack struct {
 	ID                   string     `json:"id"`
 	OrgID                string     `json:"org_id"`
@@ -99,6 +104,8 @@ type Stack struct {
 	LastRunAt            *time.Time `json:"last_run_at,omitempty"`
 	UpstreamCount        int        `json:"upstream_count"`
 	DownstreamCount      int        `json:"downstream_count"`
+	UpstreamStacks       []StackRef `json:"upstream_stacks"`
+	DownstreamStacks     []StackRef `json:"downstream_stacks"`
 	ModuleNamespace      *string    `json:"module_namespace,omitempty"`
 	ModuleName          *string    `json:"module_name,omitempty"`
 	ModuleProvider      *string    `json:"module_provider,omitempty"`
@@ -208,8 +215,59 @@ func (h *Handler) List(c echo.Context) error {
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
+		s.UpstreamStacks = []StackRef{}
+		s.DownstreamStacks = []StackRef{}
 		out = append(out, s)
 	}
+
+	// Fetch dependency names for all stacks in the page in two queries.
+	if len(out) > 0 {
+		ids := make([]string, len(out))
+		idx := make(map[string]int, len(out))
+		for i, s := range out {
+			ids[i] = s.ID
+			idx[s.ID] = i
+		}
+
+		depRows, err := h.pool.Query(c.Request().Context(), `
+			SELECT d.downstream_id, d.upstream_id, u.name
+			FROM stack_dependencies d
+			JOIN stacks u ON u.id = d.upstream_id
+			WHERE d.downstream_id = ANY($1)
+		`, ids)
+		if err == nil {
+			defer depRows.Close()
+			for depRows.Next() {
+				var downID, upID, upName string
+				if err := depRows.Scan(&downID, &upID, &upName); err != nil {
+					continue
+				}
+				if i, ok := idx[downID]; ok {
+					out[i].UpstreamStacks = append(out[i].UpstreamStacks, StackRef{ID: upID, Name: upName})
+				}
+			}
+		}
+
+		downRows, err := h.pool.Query(c.Request().Context(), `
+			SELECT d.upstream_id, d.downstream_id, ds.name
+			FROM stack_dependencies d
+			JOIN stacks ds ON ds.id = d.downstream_id
+			WHERE d.upstream_id = ANY($1)
+		`, ids)
+		if err == nil {
+			defer downRows.Close()
+			for downRows.Next() {
+				var upID, downID, downName string
+				if err := downRows.Scan(&upID, &downID, &downName); err != nil {
+					continue
+				}
+				if i, ok := idx[upID]; ok {
+					out[i].DownstreamStacks = append(out[i].DownstreamStacks, StackRef{ID: downID, Name: downName})
+				}
+			}
+		}
+	}
+
 	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
 }
 
