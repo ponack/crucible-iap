@@ -183,3 +183,14 @@ Single Crucible instance hosting multiple isolated organizations. Needed for MSP
 ### Pulumi Stack References
 
 First-class cross-stack output sharing for Pulumi stacks using `StackReference`, rather than the `terraform_remote_state` workaround. Requires Pulumi state backend awareness and token scoping per stack reference.
+
+### Dark / Light Mode Switcher
+
+User-selectable UI theme with a toggle in the nav or settings, defaulting to the system preference (`prefers-color-scheme`). Dark mode is currently hardcoded.
+
+**Implementation notes:**
+
+- Detect system preference via `window.matchMedia('(prefers-color-scheme: dark)')` on load; persist override in `localStorage`
+- Toggle stored preference via a button in the sidebar or user settings
+- Drive theme via a `data-theme` attribute on `<html>` and CSS custom properties (or Tailwind's `darkMode: 'class'` strategy)
+- No backend changes needed — purely client-side preference
