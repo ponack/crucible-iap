@@ -63,7 +63,7 @@
 <div class="min-h-screen bg-zinc-950 flex items-center justify-center p-4">
 	<div class="w-full max-w-sm space-y-6">
 		<div class="text-center">
-			<img src="/logo-dark.png" alt="Crucible" class="h-8 mx-auto mb-6" />
+			<img src="/logo.png" alt="Crucible" class="h-8 mx-auto mb-6" />
 		</div>
 
 		{#if notFound}

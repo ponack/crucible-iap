@@ -64,7 +64,7 @@
 <div class="min-h-screen w-screen flex items-center justify-center bg-[#1a2e2a]">
 	<div class="w-full max-w-sm space-y-8">
 		<div class="text-center">
-			<img src="/logo-dark.png" alt="Crucible IAP" class="mx-auto h-36 w-auto" />
+			<img src="/logo.png" alt="Crucible IAP" class="mx-auto h-36 w-auto" />
 		</div>
 
 		<div class="bg-zinc-900/80 border border-zinc-700 rounded-xl p-8 space-y-4">
