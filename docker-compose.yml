@@ -66,6 +66,9 @@ services:
       LOCAL_AUTH_ENABLED: "${LOCAL_AUTH_ENABLED:-false}"
       LOCAL_AUTH_EMAIL: "${LOCAL_AUTH_EMAIL:-}"
       LOCAL_AUTH_PASSWORD: "${LOCAL_AUTH_PASSWORD:-}"
+      # URL baked into runner jobs so containers reach the API directly,
+      # bypassing any external reverse proxy.
+      RUNNER_API_URL: "${RUNNER_API_URL:-http://crucible-api:8080}"
     healthcheck:
       test: ["CMD", "/crucible-iap", "health"]
       interval: 30s
