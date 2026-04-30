@@ -287,7 +287,9 @@ func (r *Runner) streamAndWait(ctx context.Context, containerID, runID string, t
 		slog.Warn("log stream interrupted", "run_id", runID, "err", err)
 	}
 
-	statusCh, errCh := r.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+	// ContainerWait must use a fresh context — the job context (ctx) may already
+	// be cancelled if the timeout fired, which would cause an immediate error.
+	statusCh, errCh := r.docker.ContainerWait(context.Background(), containerID, container.WaitConditionNotRunning)
 	select {
 	case status := <-statusCh:
 		if status.StatusCode != 0 {
