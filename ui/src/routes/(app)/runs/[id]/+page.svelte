@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { onMount, onDestroy } from 'svelte';
 	import { runs, type Run, type RunPolicyResult, type RunScanResult } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 
@@ -39,34 +38,43 @@
 		sse?.close();
 		sse = null;
 
+		let cancelled = false;
+
 		runs.get(id).then((r) => {
+			if (cancelled) return;
 			run = r;
 			loading = false;
-			startSSE();
-			runs.policyResults(id).then((r2) => (policyResults = r2)).catch(() => {});
-			runs.scanResults(id).then((r2) => (scanResults = r2)).catch(() => {});
+			startSSE(id);
+			runs.policyResults(id).then((r2) => { if (!cancelled) policyResults = r2; }).catch(() => {});
+			runs.scanResults(id).then((r2) => { if (!cancelled) scanResults = r2; }).catch(() => {});
 		}).catch((e) => {
+			if (cancelled) return;
 			error = (e as Error).message;
 			loading = false;
 		});
+
+		// Cleanup runs when runID changes or component is destroyed.
+		return () => {
+			cancelled = true;
+			sse?.close();
+			sse = null;
+		};
 	});
 
-	onDestroy(() => sse?.close());
-
-	function startSSE() {
+	function startSSE(id: string) {
 		sse?.close();
 		sse = null;
 		if (!run) return;
 
 		const token = auth.accessToken;
 		// EventSource doesn't support headers — use query param for token
-		sse = new EventSource(`/api/v1/runs/${runID}/logs?token=${token}`);
+		sse = new EventSource(`/api/v1/runs/${id}/logs?token=${token}`);
 
 		sse.onmessage = (e) => {
 			if (e.data === '[DONE]') {
 				sse?.close();
 				sse = null;
-				runs.get(runID).then((r) => (run = r)).catch(() => {});
+				runs.get(id).then((r) => (run = r)).catch(() => {});
 				return;
 			}
 			logLines = [...logLines, e.data];
@@ -81,7 +89,7 @@
 			sse = null;
 			// Refresh run status — the connection may have dropped at end of run
 			// before [DONE] was delivered (e.g. network blip or proxy timeout).
-			runs.get(runID).then((r) => (run = r)).catch(() => {});
+			runs.get(id).then((r) => (run = r)).catch(() => {});
 		};
 	}
 
@@ -103,7 +111,7 @@
 			await runs.confirm(runID);
 			run = await runs.get(runID);
 			logLines = [...logLines, '', '─── apply phase ───────────────────────────────────'];
-			startSSE();
+			startSSE(runID);
 		} catch (e) {
 			alert((e as Error).message);
 		} finally {
