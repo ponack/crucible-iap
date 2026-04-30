@@ -250,9 +250,11 @@ func (h *Handler) UploadPlan(c echo.Context) error {
 	}
 
 	planKey := "plans/" + id + ".tfplan"
-	_, _ = h.pool.Exec(c.Request().Context(), `
+	if _, err := h.pool.Exec(c.Request().Context(), `
 		UPDATE runs SET plan_url = $1, plan_hmac = $2 WHERE id = $3
-	`, planKey, h.planHMAC(body), id)
+	`, planKey, h.planHMAC(body), id); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to record plan metadata")
+	}
 
 	return c.NoContent(http.StatusNoContent)
 }
