@@ -15,11 +15,13 @@ import (
 	"github.com/ponack/crucible-iap/internal/vault"
 )
 
-// EnvVarMeta is what the API returns — name and metadata only, never the value.
+// EnvVarMeta is what the API returns. For plain (non-secret) vars the Value
+// field is populated; for secret vars it is omitted.
 type EnvVarMeta struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	IsSecret  bool      `json:"is_secret"`
+	Value     *string   `json:"value,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -39,7 +41,7 @@ func (h *Handler) List(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
 
 	rows, err := h.pool.Query(c.Request().Context(), `
-		SELECT id, name, is_secret, created_at, updated_at
+		SELECT id, name, is_secret, value_enc, created_at, updated_at
 		FROM stack_env_vars
 		WHERE stack_id = $1 AND org_id = $2
 		ORDER BY name
@@ -52,8 +54,16 @@ func (h *Handler) List(c echo.Context) error {
 	vars := []EnvVarMeta{}
 	for rows.Next() {
 		var v EnvVarMeta
-		if err := rows.Scan(&v.ID, &v.Name, &v.IsSecret, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		var enc []byte
+		if err := rows.Scan(&v.ID, &v.Name, &v.IsSecret, &enc, &v.CreatedAt, &v.UpdatedAt); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "scan error")
+		}
+		if !v.IsSecret {
+			plain, err := h.vault.Decrypt(stackID, enc)
+			if err == nil {
+				s := string(plain)
+				v.Value = &s
+			}
 		}
 		vars = append(vars, v)
 	}

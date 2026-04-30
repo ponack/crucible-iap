@@ -63,6 +63,7 @@
 	let newEnvValue = $state('');
 	let newEnvSecret = $state(true);
 	let savingEnv = $state(false);
+	let envValueInput = $state<HTMLInputElement | null>(null);
 
 	// Notifications
 	let notifVCSToken = $state('');
@@ -571,6 +572,16 @@
 		} finally {
 			savingEnv = false;
 		}
+	}
+
+	function editEnvVar(ev: StackEnvVar) {
+		newEnvName = ev.name;
+		newEnvValue = ev.is_secret ? '' : (ev.value ?? '');
+		newEnvSecret = ev.is_secret;
+		setTimeout(() => {
+			envValueInput?.focus();
+			envValueInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		}, 0);
 	}
 
 	async function deleteEnvVar(name: string) {
@@ -1552,7 +1563,7 @@
 	<!-- Environment variables -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Environment variables</h2>
-		<p class="text-xs text-zinc-500">Values are encrypted at rest and injected into runner containers. They are write-only — existing values cannot be read back.</p>
+		<p class="text-xs text-zinc-500">Values are encrypted at rest and injected into runner containers. Secret values are write-only and cannot be read back; plain values are visible here.</p>
 
 		{#if envVars.length > 0}
 			<div class="border border-zinc-800 rounded-xl overflow-hidden">
@@ -1561,6 +1572,7 @@
 						<tr>
 							<th class="text-left px-4 py-2">Name</th>
 							<th class="text-left px-4 py-2">Type</th>
+							<th class="text-left px-4 py-2">Value</th>
 							<th class="text-left px-4 py-2">Last updated</th>
 							<th class="px-4 py-2"></th>
 						</tr>
@@ -1571,15 +1583,26 @@
 								<td class="px-4 py-2.5 font-mono text-xs text-zinc-200">{ev.name}</td>
 								<td class="px-4 py-2.5">
 									{#if ev.is_secret}
-										<span class="text-xs text-zinc-500" title="Value is masked — cannot be read back">🔒 secret</span>
+										<span class="text-xs text-zinc-500">secret</span>
 									{:else}
 										<span class="text-xs text-zinc-400">plain</span>
 									{/if}
 								</td>
+								<td class="px-4 py-2.5 font-mono text-xs">
+									{#if ev.is_secret}
+										<span class="text-zinc-600">••••••••</span>
+									{:else}
+										<span class="text-zinc-300">{ev.value ?? ''}</span>
+									{/if}
+								</td>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs">{fmtDate(ev.updated_at)}</td>
 								<td class="px-4 py-2.5 text-right">
-									<button onclick={() => deleteEnvVar(ev.name)}
-										class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+									<div class="flex items-center justify-end gap-3">
+										<button onclick={() => editEnvVar(ev)}
+											class="text-xs text-zinc-500 hover:text-zinc-300">{ev.is_secret ? 'Replace' : 'Edit'}</button>
+										<button onclick={() => deleteEnvVar(ev.name)}
+											class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+									</div>
 								</td>
 							</tr>
 						{/each}
@@ -1593,7 +1616,7 @@
 		<form onsubmit={saveEnvVar} class="space-y-2">
 			<div class="flex items-center gap-2 flex-wrap">
 				<input id="env-name" class="field-input w-40 font-mono text-xs" bind:value={newEnvName} placeholder="NAME" autocomplete="off" />
-				<input id="env-value" class="field-input w-56" type={newEnvSecret ? 'password' : 'text'} bind:value={newEnvValue} placeholder="value" autocomplete="new-password" />
+				<input id="env-value" class="field-input w-56" type={newEnvSecret ? 'password' : 'text'} bind:value={newEnvValue} bind:this={envValueInput} placeholder="value" autocomplete="new-password" />
 				<label class="flex items-center gap-1.5 cursor-pointer text-xs text-zinc-400 select-none" for="env-secret">
 					<input id="env-secret" type="checkbox" bind:checked={newEnvSecret} />
 					Secret
