@@ -1,13 +1,34 @@
 @import 'tailwindcss';
 
+@utility bg-page {
+	background-color: var(--page-bg);
+}
+
 @layer base {
 	:root {
 		--radius: 0.5rem;
+		--page-bg: #1a2e2a;
+	}
+
+	/* Light theme: flip the zinc scale so all existing dark classes render as light */
+	:root.light {
+		--page-bg: #f0faf8;
+		--color-zinc-950: oklch(98.4% .002 286.375);
+		--color-zinc-900: oklch(96.7% .001 286.375);
+		--color-zinc-800: oklch(92% .004 286.32);
+		--color-zinc-700: oklch(87.1% .006 286.286);
+		--color-zinc-600: oklch(70.5% .015 286.067);
+		--color-zinc-400: oklch(44.2% .017 285.786);
+		--color-zinc-300: oklch(37% .013 285.805);
+		--color-zinc-200: oklch(27.4% .006 286.033);
+		--color-zinc-100: oklch(21% .006 285.885);
+		--color-zinc-50: oklch(14.1% .005 285.823);
+		--color-white: oklch(14.1% .005 285.823);
 	}
 
 	html,
 	body {
-		background-color: #1a2e2a;
+		background-color: var(--page-bg);
 		color: var(--color-zinc-100);
 		min-height: 100%;
 	}

@@ -13,6 +13,18 @@
 	let mounted = $state(false);
 	const myOrgs = orgListStore;
 	let switchingOrg = $state(false);
+	let theme = $state<'dark' | 'light'>('dark');
+
+	function applyTheme(t: 'dark' | 'light') {
+		theme = t;
+		document.documentElement.classList.remove('dark', 'light');
+		document.documentElement.classList.add(t);
+		localStorage.setItem('theme', t);
+	}
+
+	function toggleTheme() {
+		applyTheme(theme === 'dark' ? 'light' : 'dark');
+	}
 
 	const isAuthRoute = $derived(
 		page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/auth')
@@ -24,6 +36,8 @@
 	);
 
 	onMount(async () => {
+		// Sync theme state from the class already set by the anti-FOUC script.
+		theme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
 		// Silently restore session from the httpOnly refresh cookie.
 		// Must complete before setting mounted so the loading spinner covers the round-trip.
 		if (!isAuthRoute && !auth.isAuthenticated) {
@@ -83,7 +97,7 @@
 {#if isAuthRoute}
 	{@render children()}
 {:else if !mounted || auth.loading}
-	<div class="flex h-screen items-center justify-center bg-[#1a2e2a]">
+	<div class="flex h-screen items-center justify-center bg-page">
 		<span class="text-zinc-400 text-sm">Loading…</span>
 	</div>
 {:else}
@@ -135,6 +149,19 @@
 			</nav>
 			<div class="px-4 py-3 border-t border-zinc-800 flex items-center gap-2">
 				<span class="text-xs text-zinc-500 truncate flex-1" title={auth.user?.email}>{auth.user?.email}</span>
+				<button onclick={toggleTheme} title="Toggle theme" class="text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">
+					{#if theme === 'dark'}
+						<!-- Sun: switch to light -->
+						<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+						</svg>
+					{:else}
+						<!-- Moon: switch to dark -->
+						<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+						</svg>
+					{/if}
+				</button>
 				<button onclick={logout} class="text-xs text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">Sign out</button>
 			</div>
 		</aside>

@@ -61,7 +61,7 @@
 	}
 </script>
 
-<div class="min-h-screen w-screen flex items-center justify-center bg-[#1a2e2a]">
+<div class="min-h-screen w-screen flex items-center justify-center bg-page">
 	<div class="w-full max-w-sm space-y-8">
 		<div class="text-center">
 			<img src="/logo.png" alt="Crucible IAP" class="mx-auto h-36 w-auto" />
