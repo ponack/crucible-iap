@@ -16,6 +16,7 @@ A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible pl
 [![CI](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml/badge.svg)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
 [![Latest Release](https://img.shields.io/github/v/release/ponack/crucible-iap)](https://github.com/ponack/crucible-iap/releases/latest)
 [![Go Report Card](https://goreportcard.com/badge/github.com/ponack/crucible-iap/api)](https://goreportcard.com/report/github.com/ponack/crucible-iap/api)
+[![zizmor](https://img.shields.io/badge/zizmor-passing-brightgreen)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
 ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)
 ![Status: Beta](https://img.shields.io/badge/status-beta-blue)
 
@@ -146,7 +147,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | **[docs/quickstart.md](docs/quickstart.md)** | **Your first stack in 15 minutes — start here** |
 | [docs/architecture.md](docs/architecture.md) | Component diagram, request flow, security model, DB schema |
 | [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, external worker agents, backup, monitoring, troubleshooting |
-| [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting |
+| [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting. GitHub Actions workflows audited with [zizmor](https://github.com/zizmorcore/zizmor) on every PR. |
 | [docs/policies.md](docs/policies.md) | Rego policy authoring guide — all policy types, input/output shapes, examples |
 | [docs/policies/README.md](docs/policies/README.md) | Ready-to-use policy templates (no-destroy, blast radius, tags, EC2 allowlist, public access, approval gates, and more) |
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
