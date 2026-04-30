@@ -2,6 +2,19 @@
 <html lang="en" class="dark">
 	<head>
 		<meta charset="utf-8" />
+		<!-- Resolve theme before first paint to avoid flash of wrong theme -->
+		<script>
+			(function () {
+				try {
+					var s = localStorage.getItem('theme');
+					var d = window.matchMedia('(prefers-color-scheme: dark)').matches;
+					var t = s || (d ? 'dark' : 'light');
+					var h = document.documentElement;
+					h.classList.remove('dark', 'light');
+					h.classList.add(t);
+				} catch (e) {}
+			})();
+		</script>
 		<link rel="icon" href="%sveltekit.assets%/favicon.ico" sizes="16x16 32x32 48x48" type="image/x-icon" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.png" sizes="64x64" type="image/png" />
 		<link rel="apple-touch-icon" href="%sveltekit.assets%/icon-256.png" />
@@ -14,7 +27,7 @@
 		<meta name="twitter:image" content="%sveltekit.assets%/social-preview.png" />
 		%sveltekit.head%
 	</head>
-	<body class="bg-zinc-950 text-zinc-100 antialiased" data-sveltekit-preload-data="hover">
+	<body class="antialiased" data-sveltekit-preload-data="hover">
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>
