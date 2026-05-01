@@ -153,6 +153,8 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/team-setup.md](docs/guides/team-setup.md) | Org roles, per-stack RBAC, approval policies, recommended starter policy set |
 | [docs/guides/aws.md](docs/guides/aws.md) | AWS credentials, S3 remote state backend, minimal IAM role, recommended AWS policies |
+| [docs/guides/gcp.md](docs/guides/gcp.md) | GCP credentials, GCS remote state backend, Workload Identity Federation, minimal IAM roles |
+| [docs/guides/azure.md](docs/guides/azure.md) | Azure credentials, Blob Storage remote state, federated identity, minimal role assignments |
 | [docs/guides/aws-nuke.md](docs/guides/aws-nuke.md) | Automated AWS sandbox account cleanup with aws-nuke — three-stack setup, dry-run verification, and a self-resetting demo loop |
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 | [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
