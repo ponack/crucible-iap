@@ -157,6 +157,8 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 | [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
 | [docs/guides/pulumi.md](docs/guides/pulumi.md) | End-to-end guide: running Pulumi programs with preview → confirm → up and built-in MinIO state backend |
+| [docs/guides/cloudflare.md](docs/guides/cloudflare.md) | Managing Cloudflare infrastructure as code — bootstrap with cf-terraforming, Crucible stack setup, OPA policies |
+| [docs/guides/spacelift-migration.md](docs/guides/spacelift-migration.md) | Migrating from Spacelift to Crucible — concept mapping, state migration paths, worked Cloudflare IaC example |
 
 ## Connecting a Git repository
 
