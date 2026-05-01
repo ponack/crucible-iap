@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/audit"
@@ -466,7 +467,6 @@ func (h *Handler) Deploy(c echo.Context) error {
 		req.Values = map[string]string{}
 	}
 
-	// Load the blueprint (must be published).
 	var b Blueprint
 	err := h.pool.QueryRow(c.Request().Context(), `
 		SELECT id, name, description, tool, tool_version, repo_url, repo_branch,
@@ -491,18 +491,8 @@ func (h *Handler) Deploy(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
-	// Validate required params.
-	for _, p := range params {
-		if p.Required {
-			v := strings.TrimSpace(req.Values[p.Name])
-			if v == "" {
-				v = strings.TrimSpace(p.DefaultValue)
-			}
-			if v == "" {
-				return echo.NewHTTPError(http.StatusBadRequest, "required param missing: "+p.Name)
-			}
-		}
+	if err := validateRequiredParams(params, req.Values); err != nil {
+		return err
 	}
 
 	secret, err := randomHex(32)
@@ -516,54 +506,13 @@ func (h *Handler) Deploy(c echo.Context) error {
 	}
 	defer tx.Rollback(c.Request().Context()) //nolint:errcheck
 
-	slug := slugify(req.StackName)
-
-	// Create the stack, recording which blueprint it came from.
-	var stackID string
-	err = tx.QueryRow(c.Request().Context(), `
-		INSERT INTO stacks
-		  (org_id, slug, name, description, tool, tool_version, repo_url, repo_branch,
-		   project_root, runner_image, auto_apply, drift_detection, drift_schedule,
-		   auto_remediate_drift, vcs_provider, created_by, webhook_secret,
-		   blueprint_id, blueprint_name)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
-		RETURNING id
-	`, orgID, slug, req.StackName, b.Description, b.Tool, b.ToolVersion, b.RepoURL,
-		b.RepoBranch, b.ProjectRoot, b.RunnerImage, b.AutoApply,
-		b.DriftDetection, b.DriftSchedule, b.AutoRemediateDrift, b.VCSProvider,
-		userID, secret, b.ID, b.Name,
-	).Scan(&stackID)
+	stackID, err := h.insertStack(c, tx, orgID, userID, secret, req.StackName, b)
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") {
-			return echo.NewHTTPError(http.StatusConflict, "a stack with that name already exists")
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, "failed to create stack")
+		return err
 	}
-
-	// Insert env vars for each param that has a value.
-	for _, p := range params {
-		val := req.Values[p.Name]
-		if val == "" {
-			val = p.DefaultValue
-		}
-		if val == "" {
-			continue
-		}
-		envKey := p.EnvPrefix + p.Name
-		enc, err := h.vault.Encrypt(stackID, []byte(val))
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed for: "+envKey)
-		}
-		if _, err := tx.Exec(c.Request().Context(), `
-			INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc, is_secret)
-			VALUES ($1, $2, $3, $4, false)
-			ON CONFLICT (stack_id, name) DO UPDATE
-			  SET value_enc = EXCLUDED.value_enc, updated_at = now()
-		`, stackID, orgID, envKey, enc); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to set env var: "+envKey)
-		}
+	if err := h.insertParamEnvVars(c, tx, stackID, orgID, params, req.Values); err != nil {
+		return err
 	}
-
 	if err := tx.Commit(c.Request().Context()); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit")
 	}
@@ -585,6 +534,68 @@ func (h *Handler) Deploy(c echo.Context) error {
 	})
 
 	return c.JSON(http.StatusCreated, map[string]string{"stack_id": stackID})
+}
+
+func validateRequiredParams(params []Param, values map[string]string) error {
+	for _, p := range params {
+		if !p.Required {
+			continue
+		}
+		if strings.TrimSpace(values[p.Name]) == "" && strings.TrimSpace(p.DefaultValue) == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "required param missing: "+p.Name)
+		}
+	}
+	return nil
+}
+
+func (h *Handler) insertStack(c echo.Context, tx pgx.Tx, orgID, userID, secret, stackName string, b Blueprint) (string, error) {
+	var stackID string
+	err := tx.QueryRow(c.Request().Context(), `
+		INSERT INTO stacks
+		  (org_id, slug, name, description, tool, tool_version, repo_url, repo_branch,
+		   project_root, runner_image, auto_apply, drift_detection, drift_schedule,
+		   auto_remediate_drift, vcs_provider, created_by, webhook_secret,
+		   blueprint_id, blueprint_name)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+		RETURNING id
+	`, orgID, slugify(stackName), stackName, b.Description, b.Tool, b.ToolVersion, b.RepoURL,
+		b.RepoBranch, b.ProjectRoot, b.RunnerImage, b.AutoApply,
+		b.DriftDetection, b.DriftSchedule, b.AutoRemediateDrift, b.VCSProvider,
+		userID, secret, b.ID, b.Name,
+	).Scan(&stackID)
+	if err != nil {
+		if strings.Contains(err.Error(), "unique") {
+			return "", echo.NewHTTPError(http.StatusConflict, "a stack with that name already exists")
+		}
+		return "", echo.NewHTTPError(http.StatusInternalServerError, "failed to create stack")
+	}
+	return stackID, nil
+}
+
+func (h *Handler) insertParamEnvVars(c echo.Context, tx pgx.Tx, stackID, orgID string, params []Param, values map[string]string) error {
+	for _, p := range params {
+		val := values[p.Name]
+		if val == "" {
+			val = p.DefaultValue
+		}
+		if val == "" {
+			continue
+		}
+		envKey := p.EnvPrefix + p.Name
+		enc, err := h.vault.Encrypt(stackID, []byte(val))
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed for: "+envKey)
+		}
+		if _, err := tx.Exec(c.Request().Context(), `
+			INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc, is_secret)
+			VALUES ($1, $2, $3, $4, false)
+			ON CONFLICT (stack_id, name) DO UPDATE
+			  SET value_enc = EXCLUDED.value_enc, updated_at = now()
+		`, stackID, orgID, envKey, enc); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to set env var: "+envKey)
+		}
+	}
+	return nil
 }
 
 func randomHex(n int) (string, error) {

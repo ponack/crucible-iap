@@ -1,6 +1,6 @@
 CREATE TABLE blueprints (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id      UUID NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    org_id      UUID NOT NULL,
     name        TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
     tool        TEXT NOT NULL DEFAULT 'opentofu',
