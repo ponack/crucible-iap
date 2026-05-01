@@ -35,6 +35,65 @@ Crucible runner (management account)
 
 The `nuke/` stack creates `aws-nuke-role` in the target account and sets its trust policy to allow assumption from your management account role.
 
+### Why AdministratorAccess — and why that is appropriate here
+
+aws-nuke must enumerate and delete every resource type across a whole AWS account. That means calling hundreds of service APIs (`ec2:Describe*`, `s3:DeleteBucket`, `iam:DeleteRole`, `rds:DeleteDBInstance`, …). A least-privilege policy that covered every API aws-nuke can invoke would be enormous, brittle (it would break every time aws-nuke adds support for a new resource type), and would still be semantically equivalent to "delete everything in this account." AWS themselves grant `AdministratorAccess` to automation roles of this kind — Control Tower's own `AWSControlTowerExecution` role is the canonical example.
+
+The safety controls live in the *trust boundary*, not in the policy:
+
+| Control | How it is enforced |
+| ------- | ------------------ |
+| **Account isolation** | `aws-nuke-role` only exists in the sandbox. Management and production accounts are permanently blocklisted in `nuke-config.yaml.tpl`. |
+| **Trust policy principal** | Only the specific `crucible-nuke-run` role ARN in the management account can assume `aws-nuke-role`. No wildcard principals. |
+| **OIDC chain** | Crucible mints a short-lived JWT per run; the management account role is only assumable by Crucible's OIDC provider — not by a human or an access key. |
+| **Stack locked** | The `nuke/` stack is locked in Crucible after the first apply, preventing accidental changes to the trust policy or role name. |
+| **Dry-run gate** | `TF_VAR_dry_run` defaults to `true`; changing it to `false` requires an explicit stack-config edit. |
+
+### Keeping the trust policy tight
+
+The `nuke/` stack trust policy should be as narrow as possible. Apply these constraints:
+
+#### 1. Exact principal — no wildcards
+
+```json
+"Principal": {
+  "AWS": "arn:aws:iam::<management-account-id>:role/crucible-nuke-run"
+}
+```
+
+Never use `"AWS": "arn:aws:iam::<management-account-id>:root"` — that allows any principal in the management account to assume the role.
+
+#### 2. Require an ExternalId
+
+An `ExternalId` condition prevents confused-deputy attacks — if the management account role were ever compromised and used to call `sts:AssumeRole` on behalf of a third party, the third party would not know the `ExternalId` and the assume would fail.
+
+```json
+"Condition": {
+  "StringEquals": {
+    "sts:ExternalId": "<a-random-uuid-you-choose>"
+  }
+}
+```
+
+Store this value as a Secret variable in the `nuke-run/` stack and pass it to `aws-nuke` via `AWS_ASSUME_ROLE_EXTERNAL_ID`.
+
+#### 3. Scope to your management account with SourceAccount
+
+As defence-in-depth alongside the principal ARN:
+
+```json
+"Condition": {
+  "StringEquals": {
+    "aws:SourceAccount": "<management-account-id>",
+    "sts:ExternalId": "<a-random-uuid-you-choose>"
+  }
+}
+```
+
+#### 4. Review the trust policy after every nuke stack apply
+
+The apply output will show the full trust document. Confirm the `Principal` and `Condition` blocks match what you expect before locking the stack.
+
 ## Step 1 — Apply `nuke/` (once)
 
 Create a Crucible stack pointing at `nuke/`, running **in the target account**.
