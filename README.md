@@ -343,7 +343,7 @@ cd api && go test -race ./...
 - [ ] Policy-as-code GitOps — manage Rego policies via a dedicated repository with the same PR review + merge flow as infrastructure code
 - [x] Cost estimation — integrate with Infracost or similar to surface per-run cost delta alongside the plan summary
 - [x] Fine-grained RBAC — per-stack viewer/approver roles in addition to the org-wide admin/member/viewer hierarchy; restricted stacks hidden from non-members
-- [ ] Exportable config — export full instance configuration (stacks, policies, variable sets, env var names) as a compressed, importable archive for backup, migration, or cloning between environments
+- [x] Exportable config — download a full JSON snapshot of stacks, policies, variable sets, templates, blueprints, and worker pools; non-secret env vars included in plaintext, secret vars as name-only placeholders; import on any instance with conflict-skip semantics (existing resources matched by name are never overwritten); both operations audit-logged; Settings → Export / Import tab
 - [x] Custom run hooks — per-stack pre/post-plan and pre/post-apply bash scripts; configured in the stack settings UI, injected as env vars, executed inside the runner container; a non-zero exit fails the run
 - [x] Context-aware approval policies — OPA `approval` hook evaluates plan context (run type, trigger, add/change/destroy counts, stack name) and returns `require_approval: true` to gate runs behind explicit sign-off; `deny` fails the run immediately
 - [x] Startup config validation — `RUNNER_MEMORY_LIMIT` and `RUNNER_CPU_LIMIT` validated at boot; server refuses to start on invalid values rather than silently running containers unbounded
