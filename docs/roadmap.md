@@ -106,20 +106,9 @@ Lightweight `crucible-agent` binary deploys on any host with Docker access. Agen
 
 One-click "Explain failure" on failed runs. Sends log context to the Claude API and returns a structured root-cause explanation and suggested fix. Opt-in per org via `ANTHROPIC_API_KEY` in `.env`. Log content truncated before sending; state file contents never sent.
 
----
+### Dark / Light Mode Switcher ✓
 
-## Near Term
-
-### Dark / Light Mode Switcher
-
-User-selectable UI theme with a toggle in the sidebar or user settings, defaulting to the system preference (`prefers-color-scheme`). Dark mode is currently hardcoded.
-
-**Implementation notes:**
-
-- Detect system preference via `window.matchMedia('(prefers-color-scheme: dark)')` on load; persist override in `localStorage`
-- Toggle stored preference via a button in the sidebar footer
-- Drive theme via a `data-theme` attribute on `<html>` and CSS custom properties (or Tailwind's `darkMode: 'class'` strategy)
-- No backend changes needed — purely client-side preference
+System preference (`prefers-color-scheme`) detected on first visit; persists to `localStorage`. Sun/moon toggle in the sidebar footer. Implemented via Tailwind v4 CSS variable overrides — the zinc scale is flipped at `:root.light` so all 32 pages respond with zero component changes. Native browser elements (scrollbars, form inputs) follow the theme via CSS `color-scheme`. No flash of wrong theme on hard reload via an inline anti-FOUC script in `<head>`. Smooth 150ms transition on background and text colour when toggling.
 
 ---
 

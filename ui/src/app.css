@@ -33,5 +33,6 @@
 		background-color: var(--page-bg);
 		color: var(--color-zinc-100);
 		min-height: 100%;
+		transition: background-color 150ms ease, color 150ms ease;
 	}
 }

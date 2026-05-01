@@ -1,0 +1,46 @@
+-- Pre-create monthly audit_events partitions for 2026-05 through 2027-12.
+-- The initial migration only created 2026-03 and 2026-04; EnsurePartitions
+-- creates them at runtime but fresh test environments need them upfront.
+-- All statements use CREATE TABLE IF NOT EXISTS so re-running is safe.
+
+CREATE TABLE IF NOT EXISTS audit_events_2026_05 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-05-01') TO ('2026-06-01');
+CREATE TABLE IF NOT EXISTS audit_events_2026_06 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-06-01') TO ('2026-07-01');
+CREATE TABLE IF NOT EXISTS audit_events_2026_07 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
+CREATE TABLE IF NOT EXISTS audit_events_2026_08 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-08-01') TO ('2026-09-01');
+CREATE TABLE IF NOT EXISTS audit_events_2026_09 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-09-01') TO ('2026-10-01');
+CREATE TABLE IF NOT EXISTS audit_events_2026_10 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
+CREATE TABLE IF NOT EXISTS audit_events_2026_11 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
+CREATE TABLE IF NOT EXISTS audit_events_2026_12 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-12-01') TO ('2027-01-01');
+
+CREATE TABLE IF NOT EXISTS audit_events_2027_01 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-01-01') TO ('2027-02-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_02 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-02-01') TO ('2027-03-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_03 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-03-01') TO ('2027-04-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_04 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-04-01') TO ('2027-05-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_05 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-05-01') TO ('2027-06-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_06 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-06-01') TO ('2027-07-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_07 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-07-01') TO ('2027-08-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_08 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-08-01') TO ('2027-09-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_09 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-09-01') TO ('2027-10-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_10 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-10-01') TO ('2027-11-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_11 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-11-01') TO ('2027-12-01');
+CREATE TABLE IF NOT EXISTS audit_events_2027_12 PARTITION OF audit_events
+    FOR VALUES FROM ('2027-12-01') TO ('2028-01-01');

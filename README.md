@@ -373,7 +373,7 @@ cd api && go test -race ./...
 - [x] OIDC token injection — runner no longer fails with "container rootfs is marked read-only"; token written from the entrypoint into tmpfs after container start instead of via CopyToContainer before start
 - [x] Worker OIDC base URL — `CRUCIBLE_BASE_URL` added to the worker service environment; without it the JWT issuer was empty and no OIDC token was minted, causing "No valid credential sources found" on every OIDC-configured run
 - [x] Provider cache restore crash — empty provider cache no longer kills the run; `jq -r '.keys[]'` on an empty array fed an empty key into the restore loop, causing `rm -f` to target the cache directory itself and exit non-zero under `set -e`
-- [x] Dark / light mode switcher — system preference detected on first visit; persists to `localStorage`; sun/moon toggle in the sidebar footer; native browser elements (scrollbars, inputs) follow the theme via CSS `color-scheme`; no flash of wrong theme on hard reload
+- [x] Dark / light mode switcher — system preference detected on first visit; persists to `localStorage`; sun/moon toggle in the sidebar footer; native browser elements (scrollbars, inputs) follow the theme via CSS `color-scheme`; no flash of wrong theme on hard reload; smooth 150ms transition when toggling
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
 
