@@ -107,10 +107,26 @@
 		<!-- Sidebar -->
 		<aside class="w-56 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col">
 			<div class="px-4 py-4 border-b border-zinc-800 flex items-center gap-3">
-				<img src="/mark.png" alt="" class="h-9 w-9 flex-shrink-0" />
+				<img src="/mark.png" alt="" class="h-11 w-11 flex-shrink-0" />
 				<div class="flex flex-col leading-none">
 					<span class="font-semibold text-white tracking-tight text-sm">Crucible</span>
 					<span class="text-[10px] text-zinc-500 uppercase tracking-widest">IAP</span>
+				</div>
+				<div class="ml-auto flex items-center gap-2">
+					{#if appVersion}
+						<span class="text-[10px] text-zinc-600">{appVersion}</span>
+					{/if}
+					<button onclick={toggleTheme} title="Toggle theme" class="text-zinc-500 hover:text-zinc-300 transition-colors">
+						{#if theme === 'dark'}
+							<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+							</svg>
+						{:else}
+							<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+							</svg>
+						{/if}
+					</button>
 				</div>
 			</div>
 
@@ -151,22 +167,6 @@
 			</nav>
 			<div class="px-4 py-3 border-t border-zinc-800 flex items-center gap-2">
 				<span class="text-xs text-zinc-500 truncate flex-1" title={auth.user?.email}>{auth.user?.email}</span>
-				{#if appVersion}
-					<span class="text-[10px] text-zinc-600 flex-shrink-0">{appVersion}</span>
-				{/if}
-				<button onclick={toggleTheme} title="Toggle theme" class="text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">
-					{#if theme === 'dark'}
-						<!-- Sun: switch to light -->
-						<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-						</svg>
-					{:else}
-						<!-- Moon: switch to dark -->
-						<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-						</svg>
-					{/if}
-				</button>
 				<button onclick={logout} class="text-xs text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">Sign out</button>
 			</div>
 		</aside>
