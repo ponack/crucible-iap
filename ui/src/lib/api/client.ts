@@ -1049,6 +1049,23 @@ export const blueprints = {
 		})
 };
 
+// ── Export / Import ───────────────────────────────────────────────────────────
+
+export interface ImportResult {
+	stacks:        { created: number; skipped: number };
+	policies:      { created: number; skipped: number };
+	variable_sets: { created: number; skipped: number };
+	stack_templates: { created: number; skipped: number };
+	blueprints:    { created: number; skipped: number };
+	worker_pools:  { created: number; skipped: number };
+}
+
+export const configExport = {
+	exportURL: () => `${BASE}/export`,
+	import: (manifest: unknown) =>
+		request<ImportResult>('/import', { method: 'POST', body: JSON.stringify(manifest) })
+};
+
 // ── Health / version ──────────────────────────────────────────────────────────
 
 export interface HealthStatus {
