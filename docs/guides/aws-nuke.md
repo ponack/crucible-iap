@@ -67,25 +67,51 @@ Never use `"AWS": "arn:aws:iam::<management-account-id>:root"` — that allows a
 
 An `ExternalId` condition prevents confused-deputy attacks — if the management account role were ever compromised and used to call `sts:AssumeRole` on behalf of a third party, the third party would not know the `ExternalId` and the assume would fail.
 
+**Generate a value** — any random UUID works.
+
+Linux/macOS:
+
+```bash
+uuidgen
+# example output: 3f2a1b4c-9d8e-47f6-a5b2-1c0d3e4f5a6b
+```
+
+PowerShell:
+
+```powershell
+[System.Guid]::NewGuid().ToString()
+# example output: 3f2a1b4c-9d8e-47f6-a5b2-1c0d3e4f5a6b
+```
+
+**Add it to the trust policy** of `aws-nuke-role` in the target account:
+
 ```json
 "Condition": {
   "StringEquals": {
-    "sts:ExternalId": "<a-random-uuid-you-choose>"
+    "sts:ExternalId": "3f2a1b4c-9d8e-47f6-a5b2-1c0d3e4f5a6b"
   }
 }
 ```
 
-Store this value as a Secret variable in the `nuke-run/` stack and pass it to `aws-nuke` via `AWS_ASSUME_ROLE_EXTERNAL_ID`.
+**Store it in Crucible** on the `nuke-run/` stack (Stack → Settings → Environment Variables):
+
+| Name | Value | Secret? |
+| ---- | ----- | ------- |
+| `AWS_ASSUME_ROLE_EXTERNAL_ID` | `3f2a1b4c-9d8e-47f6-a5b2-1c0d3e4f5a6b` | ✓ Yes |
+
+Mark it **Secret** so the value is write-only and never appears in run logs. aws-nuke reads `AWS_ASSUME_ROLE_EXTERNAL_ID` automatically when assuming the nuke role — no extra configuration in `nuke-config.yaml.tpl` is needed.
+
+The value in the trust policy and in Crucible must match exactly. If they differ, `sts:AssumeRole` will return an `AccessDenied` error.
 
 #### 3. Scope to your management account with SourceAccount
 
-As defence-in-depth alongside the principal ARN:
+As defence-in-depth alongside the principal ARN, combine both conditions:
 
 ```json
 "Condition": {
   "StringEquals": {
     "aws:SourceAccount": "<management-account-id>",
-    "sts:ExternalId": "<a-random-uuid-you-choose>"
+    "sts:ExternalId": "3f2a1b4c-9d8e-47f6-a5b2-1c0d3e4f5a6b"
   }
 }
 ```
