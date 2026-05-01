@@ -112,7 +112,7 @@
 						<th class="text-left px-4 py-3">Queued</th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-zinc-800">
+				<tbody class="divide-y divide-zinc-700">
 					{#each allRuns as run (run.id)}
 						{@const tb = triggerBadge(run.trigger)}
 						<tr class="hover:bg-zinc-900/50 transition-colors">

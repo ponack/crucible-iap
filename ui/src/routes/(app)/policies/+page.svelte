@@ -233,7 +233,7 @@
 						<th class="px-4 py-2 text-left">Updated</th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-zinc-800">
+				<tbody class="divide-y divide-zinc-700">
 					{#each items as p (p.id)}
 						<tr
 							class="cursor-pointer transition-colors hover:bg-zinc-900/50"

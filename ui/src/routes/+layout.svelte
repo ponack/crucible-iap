@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
-	import { org, tryRefresh } from '$lib/api/client';
+	import { org, tryRefresh, system } from '$lib/api/client';
 	import { orgListStore } from '$lib/stores/orgs.svelte';
 	import { decodeJWTPayload } from '$lib/jwt';
 	import { page } from '$app/state';
@@ -14,6 +14,7 @@
 	const myOrgs = orgListStore;
 	let switchingOrg = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
+	let appVersion = $state('');
 
 	function applyTheme(t: 'dark' | 'light') {
 		theme = t;
@@ -38,6 +39,7 @@
 	onMount(async () => {
 		// Sync theme state from the class already set by the anti-FOUC script.
 		theme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
+		system.health().then((h) => { appVersion = h.version; }).catch(() => {});
 		// Silently restore session from the httpOnly refresh cookie.
 		// Must complete before setting mounted so the loading spinner covers the round-trip.
 		if (!isAuthRoute && !auth.isAuthenticated) {
@@ -104,8 +106,8 @@
 	<div class="flex h-screen overflow-hidden">
 		<!-- Sidebar -->
 		<aside class="w-56 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col">
-			<div class="px-4 py-4 border-b border-zinc-800 flex items-center gap-2.5">
-				<img src="/mark.png" alt="" class="h-7 w-7 flex-shrink-0" />
+			<div class="px-4 py-4 border-b border-zinc-800 flex items-center gap-3">
+				<img src="/mark.png" alt="" class="h-9 w-9 flex-shrink-0" />
 				<div class="flex flex-col leading-none">
 					<span class="font-semibold text-white tracking-tight text-sm">Crucible</span>
 					<span class="text-[10px] text-zinc-500 uppercase tracking-widest">IAP</span>
@@ -149,6 +151,9 @@
 			</nav>
 			<div class="px-4 py-3 border-t border-zinc-800 flex items-center gap-2">
 				<span class="text-xs text-zinc-500 truncate flex-1" title={auth.user?.email}>{auth.user?.email}</span>
+				{#if appVersion}
+					<span class="text-[10px] text-zinc-600 flex-shrink-0">{appVersion}</span>
+				{/if}
 				<button onclick={toggleTheme} title="Toggle theme" class="text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">
 					{#if theme === 'dark'}
 						<!-- Sun: switch to light -->

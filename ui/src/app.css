@@ -8,10 +8,12 @@
 	:root {
 		--radius: 0.5rem;
 		--page-bg: #1a2e2a;
+		color-scheme: dark;
 	}
 
 	/* Light theme: flip the zinc scale so all existing dark classes render as light */
 	:root.light {
+		color-scheme: light;
 		--page-bg: #f0faf8;
 		--color-zinc-950: oklch(98.4% .002 286.375);
 		--color-zinc-900: oklch(96.7% .001 286.375);

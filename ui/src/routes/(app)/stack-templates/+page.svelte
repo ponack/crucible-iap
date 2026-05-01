@@ -138,7 +138,7 @@
 						<th class="text-left px-4 py-2">Updated</th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-zinc-800">
+				<tbody class="divide-y divide-zinc-700">
 					{#each items as t (t.id)}
 						<tr class="hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick={() => goto(`/stack-templates/${t.id}`)}>
 							<td class="px-4 py-3 text-zinc-200 font-medium">

@@ -175,7 +175,7 @@
 						<th class="px-4 py-3"></th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-zinc-800">
+				<tbody class="divide-y divide-zinc-700">
 					{#each items as pool (pool.id)}
 						<tr class="hover:bg-zinc-900/50 transition-colors">
 							<td class="px-4 py-3">
