@@ -8,7 +8,8 @@
 		{ label: 'Notifications', href: '/settings/notifications' },
 		{ label: 'Organization', href: '/settings/organization' },
 		{ label: 'Integrations', href: '/settings/integrations' },
-		{ label: 'API Tokens', href: '/settings/api-tokens' }
+		{ label: 'API Tokens', href: '/settings/api-tokens' },
+		{ label: 'Export / Import', href: '/settings/export' }
 	];
 
 	const activePath = $derived(page.url.pathname);

@@ -34,6 +34,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/blueprints"
+	"github.com/ponack/crucible-iap/internal/export"
 	"github.com/ponack/crucible-iap/internal/templates"
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/updater"
@@ -131,6 +132,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	satHandler := serviceaccounts.NewHandler(s.pool)
 	tmplHandler := templates.NewHandler(s.pool)
 	blueprintHandler := blueprints.NewHandler(s.pool, v)
+	exportHandler := export.NewHandler(s.pool, v)
 	integrationHandler := integrations.NewHandler(s.pool, v)
 	workerPoolHandler := workerpools.NewHandler(s.pool)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
@@ -290,6 +292,10 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stack-templates/:id", tmplHandler.Get)
 	api.PATCH("/stack-templates/:id", tmplHandler.Update, member)
 	api.DELETE("/stack-templates/:id", tmplHandler.Delete, admin)
+
+	// Config export / import
+	api.GET("/export", exportHandler.Export, admin)
+	api.POST("/import", exportHandler.Import, admin)
 
 	// Blueprints
 	api.GET("/blueprints", blueprintHandler.List)
