@@ -1139,7 +1139,7 @@
 
 		<!-- Existing overrides -->
 		{#if overrides.length > 0}
-		<div class="divide-y divide-zinc-800 border border-zinc-800 rounded-lg overflow-hidden">
+		<div class="divide-y divide-zinc-700 border border-zinc-800 rounded-lg overflow-hidden">
 			{#each overrides as ov}
 			<div class="flex items-center gap-2 px-3 py-2 bg-zinc-900">
 				<code class="text-xs text-indigo-300 font-mono flex-shrink-0">{ov.key}</code>
@@ -1345,7 +1345,7 @@
 	{/if}
 
 	<!-- Stack details -->
-	<div class="border border-zinc-800 rounded-xl divide-y divide-zinc-800 text-sm">
+	<div class="border border-zinc-800 rounded-xl divide-y divide-zinc-700 text-sm">
 		{#each [
 			['Repository', stack.repo_url],
 			['Branch', stack.repo_branch],
@@ -1420,7 +1420,7 @@
 							<th class="text-right px-4 py-2">Instances</th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each filtered as r (r.address)}
 							<tr>
 								<td class="px-4 py-2.5 font-mono text-xs text-zinc-200">{r.address}</td>
@@ -1458,7 +1458,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each stackPolicies as sp (sp.policy_id)}
 							<tr>
 								<td class="px-4 py-2.5">
@@ -1520,7 +1520,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each remoteSources as rs (rs.id)}
 							<tr>
 								<td class="px-4 py-2.5 text-zinc-200">
@@ -1577,7 +1577,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each envVars as ev (ev.id)}
 							<tr>
 								<td class="px-4 py-2.5 font-mono text-xs text-zinc-200">{ev.name}</td>
@@ -1654,7 +1654,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each stackVarSets as svs (svs.id)}
 							<tr>
 								<td class="px-4 py-2.5">
@@ -1720,7 +1720,7 @@
 		{#if auth.isMemberOrAbove && (upstreamDeps.length > 0 || downstreamDeps.length > 0)}
 			<div class="border border-zinc-800 rounded-xl overflow-hidden">
 				<table class="w-full text-sm">
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each upstreamDeps as dep (dep.id)}
 							<tr class="hover:bg-zinc-800/30 transition-colors">
 								<td class="px-4 py-2.5 text-xs text-zinc-500 w-20">upstream</td>
@@ -2127,7 +2127,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each members as m (m.user_id)}
 							<tr>
 								<td class="px-4 py-2.5">
@@ -2249,7 +2249,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each webhookDeliveries as d (d.id)}
 							<tr class="hover:bg-zinc-900/50 transition-colors cursor-pointer" onclick={() => toggleDeliveryPayload(d.id)}>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{fmtDate(d.received_at)}</td>
@@ -2329,7 +2329,7 @@
 		{#if outgoingWebhooks.length > 0}
 			<div class="border border-zinc-800 rounded-xl overflow-hidden">
 				<table class="w-full text-sm">
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each outgoingWebhooks as wh (wh.id)}
 							<tr class="hover:bg-zinc-900/50 transition-colors">
 								<td class="px-4 py-3 font-mono text-zinc-300 text-xs break-all max-w-xs">{wh.url}</td>
@@ -2467,7 +2467,7 @@
 							<th class="text-left px-4 py-2">Queued</th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each recentRuns as run (run.id)}
 							{@const tb = triggerBadge(run.trigger)}
 							<tr class="hover:bg-zinc-900/50 transition-colors">
@@ -2729,7 +2729,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each tokens as token (token.id)}
 							<tr>
 								<td class="px-4 py-2.5 text-zinc-300">{token.name}</td>

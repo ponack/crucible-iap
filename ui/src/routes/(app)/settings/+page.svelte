@@ -193,7 +193,7 @@
 	{/if}
 
 	<!-- Account -->
-	<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
+	<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 		<div class="px-6 py-4">
 			<p class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Account</p>
 			<div class="space-y-1">
@@ -448,7 +448,7 @@
 
 	<!-- IaC security scanning -->
 	{#if auth.isAdmin}
-		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 			<div class="px-6 py-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">IaC security scanning</p>
 				<p class="text-xs text-zinc-600">Run Checkov or Trivy post-plan. Findings surfaced in the run detail view. Set a severity threshold to block apply on critical issues.</p>
@@ -492,7 +492,7 @@
 
 	<!-- Infracost -->
 	{#if auth.isAdmin}
-		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 			<div class="px-6 py-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Infracost</p>
 				<p class="text-xs text-zinc-600">Cost estimation via <span class="font-mono">infracost breakdown</span> run post-plan. Set an API key to enable.</p>
@@ -532,7 +532,7 @@
 
 	<!-- Instance info -->
 	{#if health}
-		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-800">
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 			<div class="px-6 py-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Instance</p>
 				<dl class="space-y-1.5 text-sm">

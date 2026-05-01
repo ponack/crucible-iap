@@ -299,7 +299,7 @@
 				<span class="inline-block w-2 h-2 rounded-full bg-yellow-500"></span>
 				Awaiting approval
 			</h2>
-			<div class="border border-yellow-900/60 rounded-xl overflow-hidden divide-y divide-zinc-800">
+			<div class="border border-yellow-900/60 rounded-xl overflow-hidden divide-y divide-zinc-700">
 				{#each awaitingApproval as run (run.id)}
 					{@const delta = planDelta(run)}
 					<div class="flex items-center gap-3 px-4 py-3 hover:bg-zinc-900/50 transition-colors">
@@ -343,7 +343,7 @@
 				<span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
 				Active runs
 			</h2>
-			<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800">
+			<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-700">
 				{#each activeRuns as run (run.id)}
 					<div class="flex items-center gap-3 px-4 py-3 hover:bg-zinc-900/50 transition-colors">
 						<span class="w-2 h-2 rounded-full flex-shrink-0 {statusDot[run.status] ?? 'bg-zinc-500'}"></span>
@@ -383,7 +383,7 @@
 			{#if recentRuns.length === 0}
 				<p class="text-zinc-600 text-sm">No runs yet.</p>
 			{:else}
-				<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800">
+				<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-700">
 					{#each recentRuns as run (run.id)}
 						{@const delta = planDelta(run)}
 						<a href="/runs/{run.id}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-900/50 transition-colors group">
@@ -416,7 +416,7 @@
 			{#if recentAudit.length === 0}
 				<p class="text-zinc-600 text-sm">No activity yet.</p>
 			{:else}
-				<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800">
+				<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-700">
 					{#each recentAudit as ev (ev.id)}
 						{@const icon = auditIcon(ev)}
 						<div class="flex items-start gap-3 px-4 py-2.5">

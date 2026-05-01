@@ -7,7 +7,23 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ponack/crucible-iap/internal/audit"
 )
+
+// TestMain ensures audit_events partitions exist for the current month before
+// any test runs — the production server does this at startup via
+// audit.StartPartitionMaintainer, but tests hit the DB directly.
+func TestMain(m *testing.M) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn != "" {
+		pool, err := pgxpool.New(context.Background(), dsn)
+		if err == nil {
+			_ = audit.EnsurePartitions(context.Background(), pool, 2)
+			pool.Close()
+		}
+	}
+	os.Exit(m.Run())
+}
 
 // testDB returns a pool connected to the test database.
 // Tests using this are skipped if TEST_DATABASE_URL is not set.

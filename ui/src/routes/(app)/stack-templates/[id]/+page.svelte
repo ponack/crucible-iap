@@ -212,7 +212,7 @@
 		<!-- Read-only summary -->
 		<section class="rounded-xl border border-zinc-800 overflow-hidden">
 			<table class="w-full text-sm">
-				<tbody class="divide-y divide-zinc-800">
+				<tbody class="divide-y divide-zinc-700">
 					<tr>
 						<td class="px-4 py-2.5 text-zinc-500 w-40">Tool</td>
 						<td class="px-4 py-2.5 text-zinc-200">{tmpl.tool}{tmpl.tool_version ? ` ${tmpl.tool_version}` : ''}</td>

@@ -186,7 +186,7 @@
 							<th class="px-4 py-2"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-zinc-800">
+					<tbody class="divide-y divide-zinc-700">
 						{#each vs.vars as v (v.id)}
 							<tr>
 								<td class="px-4 py-2.5 font-mono text-xs text-zinc-300">{v.name}</td>

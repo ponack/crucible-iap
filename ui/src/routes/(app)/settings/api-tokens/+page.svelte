@@ -140,7 +140,7 @@
 						<th class="px-4 py-2"></th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-zinc-800">
+				<tbody class="divide-y divide-zinc-700">
 					{#each tokens as t (t.id)}
 						<tr>
 							<td class="px-4 py-2.5 text-zinc-200 font-medium">{t.name}</td>

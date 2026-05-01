@@ -209,7 +209,7 @@
 			<p class="px-6 py-4 text-sm text-red-400">{error}</p>
 		{:else}
 			<table class="w-full text-sm">
-				<tbody class="divide-y divide-zinc-800">
+				<tbody class="divide-y divide-zinc-700">
 					{#each members as member (member.user_id)}
 						<tr class="hover:bg-zinc-800/40 transition-colors">
 							<td class="px-6 py-3">
@@ -295,7 +295,7 @@
 			{#if invites.length > 0}
 				<div class="border-t border-zinc-800">
 					<table class="w-full text-sm">
-						<tbody class="divide-y divide-zinc-800">
+						<tbody class="divide-y divide-zinc-700">
 							{#each invites as invite (invite.id)}
 								<tr class="hover:bg-zinc-800/40 transition-colors">
 									<td class="px-6 py-3 text-zinc-300">{invite.email}</td>
@@ -358,7 +358,7 @@
 			{#if groupMaps.length > 0}
 				<div class="border-t border-zinc-800">
 					<table class="w-full text-sm">
-						<tbody class="divide-y divide-zinc-800">
+						<tbody class="divide-y divide-zinc-700">
 							{#each groupMaps as gm (gm.id)}
 								<tr class="hover:bg-zinc-800/40 transition-colors">
 									<td class="px-6 py-3 font-mono text-zinc-300 text-xs">{gm.group_claim}</td>

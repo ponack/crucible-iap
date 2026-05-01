@@ -171,7 +171,7 @@
 					<p class="text-zinc-600 text-xs mt-1">Add a GitHub, GitLab, or Gitea token to clone private repositories.</p>
 				</div>
 			{:else}
-				<div class="border border-zinc-800 rounded-lg divide-y divide-zinc-800 overflow-hidden">
+				<div class="border border-zinc-800 rounded-lg divide-y divide-zinc-700 overflow-hidden">
 					{#each groupItems('vcs') as item}
 						<div class="flex items-center justify-between px-4 py-3">
 							<div class="flex items-center gap-3">
@@ -203,7 +203,7 @@
 					<p class="text-zinc-600 text-xs mt-1">Connect AWS Secrets Manager, HashiCorp Vault, Bitwarden, or Vaultwarden to inject secrets into runs.</p>
 				</div>
 			{:else}
-				<div class="border border-zinc-800 rounded-lg divide-y divide-zinc-800 overflow-hidden">
+				<div class="border border-zinc-800 rounded-lg divide-y divide-zinc-700 overflow-hidden">
 					{#each groupItems('secret') as item}
 						<div class="flex items-center justify-between px-4 py-3">
 							<div class="flex items-center gap-3">
