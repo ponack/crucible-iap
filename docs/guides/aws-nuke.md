@@ -116,6 +116,8 @@ As defence-in-depth alongside the principal ARN, combine both conditions:
 }
 ```
 
+> **Note:** `aws:SourceAccount` is only meaningful when Crucible itself runs inside an AWS account (e.g. on EC2 or ECS) — AWS populates it from the caller's account identity. If Crucible runs outside AWS (on-premises, another cloud, or a local machine) this condition will never match and `sts:AssumeRole` will always fail. In that case omit `aws:SourceAccount` and rely on the principal ARN restriction and `sts:ExternalId` alone.
+
 #### 4. Review the trust policy after every nuke stack apply
 
 The apply output will show the full trust document. Confirm the `Principal` and `Condition` blocks match what you expect before locking the stack.
