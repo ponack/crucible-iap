@@ -989,6 +989,66 @@ export const stackTemplates = {
 	delete: (id: string) => request<null>(`/stack-templates/${id}`, { method: 'DELETE' })
 };
 
+// ── Blueprints ────────────────────────────────────────────────────────────────
+
+export interface BlueprintParam {
+	id: string;
+	name: string;
+	label: string;
+	description: string;
+	type: 'string' | 'number' | 'bool' | 'select';
+	options: string[];
+	default_value: string;
+	required: boolean;
+	env_prefix: string;
+	sort_order: number;
+}
+
+export interface Blueprint {
+	id: string;
+	name: string;
+	description: string;
+	tool: string;
+	tool_version: string;
+	repo_url: string;
+	repo_branch: string;
+	project_root: string;
+	runner_image: string;
+	auto_apply: boolean;
+	drift_detection: boolean;
+	drift_schedule: string;
+	auto_remediate_drift: boolean;
+	vcs_provider: string;
+	is_published: boolean;
+	params: BlueprintParam[];
+	created_at: string;
+	updated_at: string;
+}
+
+export const blueprints = {
+	list: () => request<Blueprint[]>('/blueprints'),
+	get: (id: string) => request<Blueprint>(`/blueprints/${id}`),
+	create: (data: Partial<Blueprint>) =>
+		request<Blueprint>('/blueprints', { method: 'POST', body: JSON.stringify(data) }),
+	update: (id: string, data: Partial<Blueprint>) =>
+		request<Blueprint>(`/blueprints/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+	delete: (id: string) => request<null>(`/blueprints/${id}`, { method: 'DELETE' }),
+	publish: (id: string, published: boolean) =>
+		request<null>(`/blueprints/${id}/publish`, { method: 'PUT', body: JSON.stringify({ published }) }),
+	upsertParam: (id: string, data: Partial<BlueprintParam>) =>
+		request<BlueprintParam>(`/blueprints/${id}/params/${encodeURIComponent(data.name ?? '')}`, {
+			method: 'PUT',
+			body: JSON.stringify(data)
+		}),
+	deleteParam: (id: string, name: string) =>
+		request<null>(`/blueprints/${id}/params/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+	deploy: (id: string, stackName: string, values: Record<string, string>) =>
+		request<{ stack_id: string }>(`/blueprints/${id}/deploy`, {
+			method: 'POST',
+			body: JSON.stringify({ stack_name: stackName, values })
+		})
+};
+
 // ── Health / version ──────────────────────────────────────────────────────────
 
 export interface HealthStatus {
