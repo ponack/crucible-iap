@@ -1,22 +1,22 @@
 # AWS Account Nuke with Crucible IAP
 
-This guide shows how to automate sandbox AWS account cleanup using [aws-nuke](https://github.com/ekristen/aws-nuke) orchestrated by Crucible IAP. Three stacks — `nuke`, `prep`, and `nuke-run` — form a self-resetting demo loop: nuke cleans the account, prep automatically re-provisions test resources afterwards.
+This guide shows how to automate sandbox AWS account cleanup using [aws-nuke](https://github.com/ekristen/aws-nuke) orchestrated by Crucible IAP. Three stacks — `aws-nuke-env-prep`, `build-infrastructure`, and `aws-nuke-run` — form a self-resetting demo loop: nuke cleans the account, build-infrastructure automatically re-provisions test resources afterwards.
 
 A reference implementation is available at [ponack/homelab-aws](https://github.com/ponack/homelab-aws).
 
 ## Architecture
 
 ```text
-nuke  (one-time setup, then lock)
+aws-nuke-env-prep  (one-time setup, then lock)
 
-prep ──► nuke-run
+build-infrastructure ──► aws-nuke-run
 ```
 
 | Stack | Purpose |
 | ----- | ------- |
-| `nuke/` | Creates `aws-nuke-role` in the target account with `AdministratorAccess`. Apply once and lock. |
-| `prep/` | Provisions test resources — one protected (survives nuke) and one target (gets deleted). |
-| `nuke-run/` | Downloads aws-nuke and runs it. Downstream of `prep` so the account is re-provisioned automatically after each nuke. |
+| `aws-nuke-env-prep/` | Creates `aws-nuke-role` in the target account with `AdministratorAccess`. Apply once and lock. |
+| `build-infrastructure/` | Provisions test resources — one protected (survives nuke) and one target (gets deleted). |
+| `aws-nuke-run/` | Downloads aws-nuke and runs it. Downstream of `build-infrastructure` so the account is re-provisioned automatically after each nuke. |
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ Crucible runner (management account)
                                  └─ AdministratorAccess on target account
 ```
 
-The `nuke/` stack creates `aws-nuke-role` in the target account and sets its trust policy to allow assumption from your management account role.
+The `aws-nuke-env-prep/` stack creates `aws-nuke-role` in the target account and sets its trust policy to allow assumption from your management account role.
 
 ### Why AdministratorAccess — and why that is appropriate here
 
@@ -46,12 +46,12 @@ The safety controls live in the *trust boundary*, not in the policy:
 | **Account isolation** | `aws-nuke-role` only exists in the sandbox. Management and production accounts are permanently blocklisted in `nuke-config.yaml.tpl`. |
 | **Trust policy principal** | Only the specific `crucible-nuke-run` role ARN in the management account can assume `aws-nuke-role`. No wildcard principals. |
 | **OIDC chain** | Crucible mints a short-lived JWT per run; the management account role is only assumable by Crucible's OIDC provider — not by a human or an access key. |
-| **Stack locked** | The `nuke/` stack is locked in Crucible after the first apply, preventing accidental changes to the trust policy or role name. |
+| **Stack locked** | The `aws-nuke-env-prep/` stack is locked in Crucible after the first apply, preventing accidental changes to the trust policy or role name. |
 | **Dry-run gate** | `TF_VAR_dry_run` defaults to `true`; changing it to `false` requires an explicit stack-config edit. |
 
 ### Keeping the trust policy tight
 
-The `nuke/` stack trust policy should be as narrow as possible. Apply these constraints:
+The `aws-nuke-env-prep/` stack trust policy should be as narrow as possible. Apply these constraints:
 
 #### 1. Exact principal — no wildcards
 
@@ -93,7 +93,7 @@ PowerShell:
 }
 ```
 
-**Store it in Crucible** on the `nuke-run/` stack (Stack → Settings → Environment Variables):
+**Store it in Crucible** on the `aws-nuke-run/` stack (Stack → Settings → Environment Variables):
 
 | Name | Value | Secret? |
 | ---- | ----- | ------- |
@@ -118,13 +118,13 @@ As defence-in-depth alongside the principal ARN, combine both conditions:
 
 > **Note:** `aws:SourceAccount` is only meaningful when Crucible itself runs inside an AWS account (e.g. on EC2 or ECS) — AWS populates it from the caller's account identity. If Crucible runs outside AWS (on-premises, another cloud, or a local machine) this condition will never match and `sts:AssumeRole` will always fail. In that case omit `aws:SourceAccount` and rely on the principal ARN restriction and `sts:ExternalId` alone.
 
-#### 4. Review the trust policy after every nuke stack apply
+#### 4. Review the trust policy after every aws-nuke-env-prep stack apply
 
 The apply output will show the full trust document. Confirm the `Principal` and `Condition` blocks match what you expect before locking the stack.
 
-## Step 1 — Apply `nuke/` (once)
+## Step 1 — Apply `aws-nuke-env-prep/` (once)
 
-Create a Crucible stack pointing at `nuke/`, running **in the target account**.
+Create a Crucible stack pointing at `aws-nuke-env-prep/`, running **in the target account**.
 
 | Variable | Value |
 | -------- | ----- |
@@ -133,35 +133,35 @@ Create a Crucible stack pointing at `nuke/`, running **in the target account**.
 
 After the apply succeeds, **lock the stack** in Crucible (Settings → Lock stack). The role only needs to exist once.
 
-## Step 2 — Apply `prep/`
+## Step 2 — Apply `build-infrastructure/`
 
-Create a Crucible stack pointing at `prep/`, running in the target account. This creates:
+Create a Crucible stack pointing at `build-infrastructure/`, running in the target account. This creates:
 
 - A **protected VPC** (tagged `crucible-nuke-protect=true`) containing `nuke-test-protected` — this instance and all its networking survive the nuke
 - A **target VPC** (no protect tags) containing `nuke-test-target` — this gets deleted by the nuke
 
 Keeping protected and target resources in separate VPCs is essential: a protected instance's ENI would permanently block deletion of a shared VPC.
 
-## Step 3 — Configure `nuke-run/`
+## Step 3 — Configure `aws-nuke-run/`
 
-Create a Crucible stack pointing at `nuke-run/`, running **in the management account**.
+Create a Crucible stack pointing at `aws-nuke-run/`, running **in the management account**.
 
 Set these environment variables in Crucible (Stack → Settings → Environment Variables):
 
 | Variable | Example | Notes |
 | -------- | ------- | ----- |
-| `TF_VAR_nuke_role_arn` | `arn:aws:iam::<target-id>:role/aws-nuke-role` | Created by the `nuke/` stack |
+| `TF_VAR_nuke_role_arn` | `arn:aws:iam::<target-id>:role/aws-nuke-role` | Created by the `aws-nuke-env-prep/` stack |
 | `TF_VAR_management_account_id` | `<management-account-id>` | Permanently blocklisted — can never be nuked |
 | `TF_VAR_dry_run` | `true` | Keep `true` until you've verified the dry-run output |
 | `TF_VAR_key_pair_name` | `my-key` | EC2 key pair to preserve (leave empty to skip) |
 
 Mark `TF_VAR_nuke_role_arn` and `TF_VAR_management_account_id` as **Secret** so the account IDs are never stored in git.
 
-On the **Dependencies** tab, add `prep` as an upstream stack so `prep` auto-runs after each nuke completes.
+On the **Dependencies** tab, add `build-infrastructure` as an upstream stack so `build-infrastructure` auto-runs after each nuke completes.
 
 ## Step 4 — Verify the dry run
 
-Trigger `nuke-run` with `TF_VAR_dry_run=true` (the default). The run log will list every resource that *would* be deleted.
+Trigger `aws-nuke-run` with `TF_VAR_dry_run=true` (the default). The run log will list every resource that *would* be deleted.
 
 Check the output for:
 
@@ -175,14 +175,14 @@ When the summary reads `0 nukeable`, proceed to the live run.
 
 ## Step 5 — Live run
 
-Change `TF_VAR_dry_run` to `false` and trigger `nuke-run`. aws-nuke deletes everything unfiltered, then Crucible's dependency system automatically triggers `prep` to reprovision the test resources.
+Change `TF_VAR_dry_run` to `false` and trigger `aws-nuke-run`. aws-nuke deletes everything unfiltered, then Crucible's dependency system automatically triggers `build-infrastructure` to reprovision the test resources.
 
 ## The reset loop
 
 Once set up, resetting the sandbox for a demo is a single action:
 
-1. Trigger `nuke-run` (with `dry_run=false`)
-2. Crucible auto-triggers `prep` after nuke completes
+1. Trigger `aws-nuke-run` (with `dry_run=false`)
+2. Crucible auto-triggers `build-infrastructure` after nuke completes
 3. Account is clean and test resources are re-provisioned
 
 ## Troubleshooting
@@ -197,7 +197,7 @@ Reduce `regions:` in the nuke config to only the regions where your stacks actua
 
 ### VPC deletion stuck (in-use error)
 
-A protected EC2 instance's ENI keeps the VPC in-use permanently. The solution is separate VPCs for protected and target resources — the `prep/` reference implementation does this.
+A protected EC2 instance's ENI keeps the VPC in-use permanently. The solution is separate VPCs for protected and target resources — the `build-infrastructure/` reference implementation does this.
 
 ### IAM Control Tower roles failing
 
@@ -229,7 +229,7 @@ EC2InternetGateway:
 
 ## Customising what gets preserved
 
-Edit `nuke-run/nuke-config.yaml.tpl`. Filters support exact name matches, glob patterns, regex, and property/tag matching.
+Edit `aws-nuke-run/nuke-config.yaml.tpl`. Filters support exact name matches, glob patterns, regex, and property/tag matching.
 
 Common additions:
 
