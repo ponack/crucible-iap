@@ -126,6 +126,17 @@ Full Terraform Provider Registry Protocol v1 endpoint for distributing custom an
 
 Store `.rego` policy files in a git repository and Crucible syncs them automatically on every push — no manual copy-paste into the UI. A background worker fetches a VCS archive (GitHub or GitLab, including self-hosted), extracts `.rego` files, and upserts each one as a policy. Policy type is inferred from the parent directory name (`post_plan/`, `approval/`, etc.) or an inline `# crucible:type` comment, defaulting to `post_plan`. HMAC-SHA256 verified push webhooks. Optional **mirror mode** deletes policies that no longer exist in the repo. Private repos via existing org integrations (token stored encrypted). See the [Policy GitOps guide](guides/policy-gitops.md).
 
+### Forge UI ✓
+
+Complete visual redesign shipped across four PRs in v0.8.1:
+
+- **Teal-slate design system** — the full zinc scale is shifted to hue 185 in OKLCH, giving every surface a subtle teal undertone without requiring class changes. Accent CSS variables (`--accent: #2DD4BF`, `--accent-muted`, `--accent-border`) are available everywhere. `field-input` utility defined with a teal focus ring.
+- **Icon sidebar** — plain text nav links replaced with Heroicons v2 SVG icon + label pairs, grouped into three sections (Core · Config · Ops). Active item shows a 2 px teal left-border bar and accent-muted fill.
+- **RunLifecycle rail** — 5-step horizontal progress indicator (Queued → Planning → Review → Applying → Done) at the top of every run detail page. Pulsing dot on the active step, check icon on completed steps, red ✗ on failure, cancel, or discard.
+- **Terminal log viewer** — run output panel restyled with a deep teal-black background and traffic-light chrome dots.
+- **Toast notifications** — all 48 browser-native `alert()` popups replaced with a teal-accented toast store. Error / success / info variants auto-dismiss after 4.5 s and stack bottom-right. `aria-live="polite"` for screen readers.
+- **Consistent empty states** — shared `EmptyState` component with a teal icon badge, heading, and subtext on all 10 list pages.
+
 ---
 
 ## Medium Term
