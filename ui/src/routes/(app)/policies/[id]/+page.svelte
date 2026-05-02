@@ -8,6 +8,7 @@
 	import PolicyInputSchema from '$lib/components/PolicyInputSchema.svelte';
 	import { policyTemplates, sampleInputs, type PolicyType } from '$lib/policy-data';
 	import { type PolicyResult, policies as policiesApi } from '$lib/api/client';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	const id = $derived(page.params.id!);
 
@@ -128,7 +129,7 @@
 				isOrgDefault = true;
 			}
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			togglingOrgDefault = false;
 		}

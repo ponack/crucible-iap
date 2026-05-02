@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { serviceAccountTokens, type ServiceAccountToken } from '$lib/api/client';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	let tokens = $state<ServiceAccountToken[]>([]);
 	let loading = $state(true);
@@ -48,7 +49,7 @@
 			await serviceAccountTokens.revoke(id);
 			tokens = tokens.filter((t) => t.id !== id);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 </script>

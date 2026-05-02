@@ -1,5 +1,6 @@
 <script lang="ts">
 	import '../app.css';
+	import Toasts from '$lib/components/Toasts.svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
@@ -276,4 +277,5 @@
 			{@render children()}
 		</main>
 	</div>
+	<Toasts />
 {/if}

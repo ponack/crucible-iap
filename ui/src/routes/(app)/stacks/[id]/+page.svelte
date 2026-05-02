@@ -6,6 +6,7 @@
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	const stackID = $derived(page.params.id as string);
 
@@ -357,7 +358,7 @@
 			await stacks.delete(stackID);
 			goto('/stacks');
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -368,7 +369,7 @@
 			await stacks.state.forceUnlock(stackID);
 			stateResources = await stacks.state.resources(stackID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			forcingUnlock = false;
 		}
@@ -380,7 +381,7 @@
 			const run = await runs.create(stackID, 'tracked', overrides);
 			goto(`/runs/${run.id}`);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 			triggeringRun = false;
 		}
 	}
@@ -410,7 +411,7 @@
 			const run = await runs.triggerDrift(stackID);
 			goto(`/runs/${run.id}`);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 			triggeringDrift = false;
 		}
 	}
@@ -422,7 +423,7 @@
 			const run = await runs.create(stackID, 'destroy');
 			goto(`/runs/${run.id}`);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 			triggeringDestroy = false;
 		}
 	}
@@ -437,7 +438,7 @@
 			newTokenName = '';
 			tokens = await stacks.tokens.list(stackID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			creatingToken = false;
 		}
@@ -449,7 +450,7 @@
 			await stacks.tokens.revoke(stackID, tokenID);
 			tokens = tokens.filter((t) => t.id !== tokenID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -460,7 +461,7 @@
 			stackPolicies = await policies.forStack(stackID);
 			attachingPolicy = '';
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -469,7 +470,7 @@
 			await policies.detach(stackID, policyID);
 			stackPolicies = stackPolicies.filter((p) => p.policy_id !== policyID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -499,7 +500,7 @@
 			notifSaved = true;
 			stack = await stacks.get(stackID);
 		} catch (err) {
-			alert((err as Error).message);
+			toast.error((err as Error).message);
 		} finally {
 			savingNotif = false;
 		}
@@ -568,7 +569,7 @@
 			newEnvValue = '';
 			newEnvSecret = true;
 		} catch (err) {
-			alert((err as Error).message);
+			toast.error((err as Error).message);
 		} finally {
 			savingEnv = false;
 		}
@@ -590,7 +591,7 @@
 			await stacks.env.delete(stackID, name);
 			envVars = envVars.filter((v) => v.name !== name);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -606,7 +607,7 @@
 			integrationsSaved = true;
 			stack = await stacks.get(stackID);
 		} catch (err) {
-			alert((err as Error).message);
+			toast.error((err as Error).message);
 		} finally {
 			savingIntegrations = false;
 		}
@@ -691,7 +692,7 @@
 			oidcGenericScope = '';
 			oidcAudienceOverride = '';
 		} catch (err) {
-			alert((err as Error).message);
+			toast.error((err as Error).message);
 		}
 	}
 
@@ -709,7 +710,7 @@
 			stateBackendSaved = true;
 			stack = await stacks.get(stackID);
 		} catch (err) {
-			alert((err as Error).message);
+			toast.error((err as Error).message);
 		} finally {
 			savingStateBackend = false;
 		}
@@ -726,7 +727,7 @@
 		try {
 			stack = await stacks.update(stackID, { is_disabled: next });
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			togglingDisabled = false;
 		}
@@ -741,7 +742,7 @@
 				await stacks.unlock(stackID);
 				stack = await stacks.get(stackID);
 			} catch (e) {
-				alert((e as Error).message);
+				toast.error((e as Error).message);
 			} finally {
 				togglingLocked = false;
 			}
@@ -753,7 +754,7 @@
 				await stacks.lock(stackID, reason);
 				stack = await stacks.get(stackID);
 			} catch (e) {
-				alert((e as Error).message);
+				toast.error((e as Error).message);
 			} finally {
 				togglingLocked = false;
 			}
@@ -778,7 +779,7 @@
 			await stacks.remoteState.remove(stackID, sourceID);
 			remoteSources = remoteSources.filter((r) => r.id !== sourceID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -790,7 +791,7 @@
 			members = await stackMembers.list(stackID);
 			addMemberUserID = '';
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			addingMember = false;
 		}
@@ -801,7 +802,7 @@
 			await stackMembers.remove(stackID, userID);
 			members = members.filter((m) => m.user_id !== userID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -810,7 +811,7 @@
 			await stackMembers.upsert(stackID, userID, role);
 			members = members.map((m) => m.user_id === userID ? { ...m, role } : m);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -823,7 +824,7 @@
 			newWebhookSecret = res.webhook_secret;
 			sessionStorage.setItem(`webhook_secret_${stackID}`, res.webhook_secret);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			rotatingWebhook = false;
 		}
@@ -852,7 +853,7 @@
 			stackVarSets = updated;
 			attachingVarSet = '';
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -861,7 +862,7 @@
 			await varSets.detachFromStack(stackID, vsID);
 			stackVarSets = stackVarSets.filter((s) => s.id !== vsID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -910,7 +911,7 @@
 			azureCfg = { account_name: '', account_key: '', container: '' };
 			stack = await stacks.get(stackID);
 		} catch (err) {
-			alert((err as Error).message);
+			toast.error((err as Error).message);
 		} finally {
 			removingStateBackend = false;
 		}
