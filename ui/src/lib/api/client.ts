@@ -1173,6 +1173,40 @@ export const providers = {
 	deleteGPGKey: (id: string) => request<null>(`/registry/provider-gpg-keys/${id}`, { method: 'DELETE' }),
 };
 
+// ── Policy git sources ────────────────────────────────────────────────────────
+
+export interface PolicyGitSource {
+	id: string;
+	name: string;
+	repo_url: string;
+	branch: string;
+	path: string;
+	vcs_integration_id?: string;
+	webhook_secret?: string;
+	mirror_mode: boolean;
+	last_synced_at?: string;
+	last_sync_sha: string;
+	last_sync_error?: string;
+	created_at: string;
+}
+
+export const policyGit = {
+	list: () => request<PolicyGitSource[]>('/policy-git-sources'),
+	get: (id: string) => request<PolicyGitSource>(`/policy-git-sources/${id}`),
+	create: (body: {
+		name: string;
+		repo_url: string;
+		branch?: string;
+		path?: string;
+		vcs_integration_id?: string;
+		mirror_mode?: boolean;
+	}) => request<PolicyGitSource>('/policy-git-sources', { method: 'POST', body: JSON.stringify(body) }),
+	update: (id: string, body: Partial<{ name: string; repo_url: string; branch: string; path: string; vcs_integration_id: string; mirror_mode: boolean }>) =>
+		request<PolicyGitSource>(`/policy-git-sources/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+	delete: (id: string) => request<null>(`/policy-git-sources/${id}`, { method: 'DELETE' }),
+	sync: (id: string) => request<{ status: string }>(`/policy-git-sources/${id}/sync`, { method: 'POST' }),
+};
+
 // ── Cloud OIDC workload identity federation ───────────────────────────────────
 
 export interface CloudOIDCConfig {

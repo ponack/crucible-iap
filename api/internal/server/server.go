@@ -35,6 +35,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/blueprints"
 	"github.com/ponack/crucible-iap/internal/export"
+	"github.com/ponack/crucible-iap/internal/policygit"
 	"github.com/ponack/crucible-iap/internal/providers"
 	"github.com/ponack/crucible-iap/internal/templates"
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
@@ -137,6 +138,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	exportHandler := export.NewHandler(s.pool, v)
 	integrationHandler := integrations.NewHandler(s.pool, v)
 	workerPoolHandler := workerpools.NewHandler(s.pool)
+	policyGitHandler := policygit.NewHandler(s.pool, q)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -172,6 +174,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 
 	// Webhook ingestion — authenticated internally via HMAC/token
 	e.POST("/api/v1/webhooks/:stackID", webhookHandler.Receive)
+	e.POST("/api/v1/policy-git-webhooks/:id", policyGitHandler.ReceiveWebhook)
 
 	// ── Terraform state backend (HTTP Basic auth per stack token) ──────────────
 	tfState := e.Group("/api/v1/state/:stackID")
@@ -209,6 +212,14 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/org/sso-group-maps", orgHandler.ListGroupMaps, admin)
 	api.POST("/org/sso-group-maps", orgHandler.CreateGroupMap, admin)
 	api.DELETE("/org/sso-group-maps/:id", orgHandler.DeleteGroupMap, admin)
+
+	// Policy git sources
+	api.GET("/policy-git-sources", policyGitHandler.List)
+	api.POST("/policy-git-sources", policyGitHandler.Create, member)
+	api.GET("/policy-git-sources/:id", policyGitHandler.Get)
+	api.PATCH("/policy-git-sources/:id", policyGitHandler.Update, member)
+	api.DELETE("/policy-git-sources/:id", policyGitHandler.Delete, admin)
+	api.POST("/policy-git-sources/:id/sync", policyGitHandler.TriggerSync, member)
 
 	// Policies
 	api.POST("/policies/validate", policyHandler.Validate)

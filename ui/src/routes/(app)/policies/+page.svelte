@@ -97,6 +97,12 @@
 		<h1 class="text-lg font-semibold text-white">Policies</h1>
 		<div class="flex items-center gap-2">
 			<a
+				href="/policies/git-sources"
+				class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+			>
+				Git sources
+			</a>
+			<a
 				href="/policies/test"
 				class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
 			>
