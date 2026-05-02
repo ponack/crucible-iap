@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { configExport, type ImportResult } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	let importing = $state(false);
 	let importError = $state<string | null>(null);
@@ -13,7 +14,7 @@
 			headers: auth.accessToken ? { Authorization: `Bearer ${auth.accessToken}` } : {}
 		});
 		if (!res.ok) {
-			alert('Export failed: ' + (await res.text()));
+			toast.error('Export failed: ' + (await res.text()));
 			return;
 		}
 		const blob = await res.blob();

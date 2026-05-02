@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { stackTemplates, type StackTemplate } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	const id = $derived(page.params.id!);
 
@@ -80,7 +81,7 @@
 			await stackTemplates.delete(id);
 			goto('/stack-templates');
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 </script>

@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { varSets, type VarSetDetail, type VarMeta } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	const id = $derived(page.params.id!);
 
@@ -86,7 +87,7 @@
 			vs!.vars = vs!.vars.filter((v) => v.name !== name);
 			vs!.var_count -= 1;
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -96,7 +97,7 @@
 			await varSets.delete(id);
 			goto('/variable-sets');
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 </script>

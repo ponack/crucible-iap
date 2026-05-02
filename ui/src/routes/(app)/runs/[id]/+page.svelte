@@ -4,6 +4,7 @@
 	import { runs, type Run, type RunPolicyResult, type RunScanResult } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import RunLifecycle from '$lib/components/RunLifecycle.svelte';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	const runID = $derived(page.params.id as string);
 
@@ -113,7 +114,7 @@
 			await runs.approve(runID);
 			run = await runs.get(runID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			acting = null;
 		}
@@ -127,7 +128,7 @@
 			logLines = [...logLines, '', '─── apply phase ───────────────────────────────────'];
 			startSSE(runID, () => false);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			acting = null;
 		}
@@ -139,7 +140,7 @@
 			await runs.discard(runID);
 			run = await runs.get(runID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			acting = null;
 		}
@@ -151,7 +152,7 @@
 			await runs.cancel(runID);
 			run = await runs.get(runID);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			acting = null;
 		}
@@ -192,7 +193,7 @@
 			await runs.remove(runID);
 			goto('/runs');
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -206,7 +207,7 @@
 			a.click();
 			URL.revokeObjectURL(url);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -217,7 +218,7 @@
 			await runs.annotate(runID, annotationDraft);
 			run = { ...run, annotation: annotationDraft || undefined };
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 

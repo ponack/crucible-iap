@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { workerPools, type WorkerPool } from '$lib/api/client';
 	import { onMount } from 'svelte';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	let items = $state<WorkerPool[]>([]);
 	let loading = $state(true);
@@ -56,7 +57,7 @@
 			await workerPools.delete(id);
 			items = items.filter(p => p.id !== id);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -68,7 +69,7 @@
 			rotatedToken = res.token;
 			rotatedPoolName = name;
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			rotatingID = null;
 		}

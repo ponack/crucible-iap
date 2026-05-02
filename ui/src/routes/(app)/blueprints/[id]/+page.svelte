@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { blueprints, type Blueprint, type BlueprintParam } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	const id = $derived(page.params.id!);
 
@@ -107,7 +108,7 @@
 			await blueprints.publish(id, !bp.is_published);
 			bp = { ...bp, is_published: !bp.is_published };
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		} finally {
 			publishing = false;
 		}
@@ -119,7 +120,7 @@
 			await blueprints.delete(id);
 			goto('/blueprints');
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
@@ -155,7 +156,7 @@
 			if (!bp) return;
 			bp.params = bp.params.filter((p) => p.name !== name);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 

@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { stacks, runs, audit, system, type Stack, type Run, type AuditEvent, type HealthStatus } from '$lib/api/client';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	let loading = $state(true);
 
@@ -77,7 +78,7 @@
 		try {
 			await runs.confirm(run.id);
 			awaitingApproval = awaitingApproval.filter((r) => r.id !== run.id);
-		} catch (e) { alert((e as Error).message); }
+		} catch (e) { toast.error((e as Error).message); }
 		const { [run.id]: _, ...rest } = actioning; actioning = rest;
 	}
 
@@ -86,7 +87,7 @@
 		try {
 			await runs.discard(run.id);
 			awaitingApproval = awaitingApproval.filter((r) => r.id !== run.id);
-		} catch (e) { alert((e as Error).message); }
+		} catch (e) { toast.error((e as Error).message); }
 		const { [run.id]: _, ...rest } = actioning; actioning = rest;
 	}
 
@@ -95,7 +96,7 @@
 		try {
 			await runs.cancel(run.id);
 			activeRuns = activeRuns.filter((r) => r.id !== run.id);
-		} catch (e) { alert((e as Error).message); }
+		} catch (e) { toast.error((e as Error).message); }
 		const { [run.id]: _, ...rest } = actioning; actioning = rest;
 	}
 

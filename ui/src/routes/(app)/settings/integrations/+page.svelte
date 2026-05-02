@@ -10,6 +10,7 @@
 		type BitwardenSecretStoreConfig,
 		type VaultwardenSecretStoreConfig
 	} from '$lib/api/client';
+	import { toast } from '$lib/stores/toasts.svelte';
 
 	let items = $state<Integration[]>([]);
 	let loading = $state(true);
@@ -116,7 +117,7 @@
 			await integrations.delete(id);
 			items = items.filter(i => i.id !== id);
 		} catch (e) {
-			alert((e as Error).message);
+			toast.error((e as Error).message);
 		}
 	}
 
