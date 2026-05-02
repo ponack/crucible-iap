@@ -35,6 +35,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/blueprints"
 	"github.com/ponack/crucible-iap/internal/export"
+	"github.com/ponack/crucible-iap/internal/providers"
 	"github.com/ponack/crucible-iap/internal/templates"
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/updater"
@@ -117,6 +118,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 
 	authHandler := auth.NewHandler(s.cfg, s.pool)
 	registryHandler := registry.NewHandler(s.pool, store, s.cfg)
+	providersHandler := providers.NewHandler(s.pool, store, s.cfg)
 	stackHandler := stacks.NewHandler(s.pool, v, n)
 	runHandler := runs.NewHandler(s.pool, s.cfg, q, store)
 	stateHandler := state.NewHandler(s.pool, store, v)
@@ -393,6 +395,23 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	regv1.GET("/:namespace/:name/:provider/:version/download", registryHandler.Download)
 	regv1.GET("/:namespace/:name/:provider/:version/archive", registryHandler.Archive)
 
+	// Provider registry (management API)
+	api.GET("/registry/providers", providersHandler.List)
+	api.GET("/registry/providers/:id", providersHandler.Get)
+	api.POST("/registry/providers", providersHandler.Publish, member)
+	api.DELETE("/registry/providers/:id", providersHandler.Yank, member)
+	api.GET("/registry/provider-gpg-keys", providersHandler.ListGPGKeys)
+	api.POST("/registry/provider-gpg-keys", providersHandler.AddGPGKey, admin)
+	api.DELETE("/registry/provider-gpg-keys/:id", providersHandler.DeleteGPGKey, admin)
+
+	// Provider Registry Protocol v1
+	provv1 := e.Group("/registry/v1/providers")
+	provv1.Use(auth.JWTMiddleware(s.cfg.SecretKey))
+	provv1.GET("/:namespace/:type/versions", providersHandler.Versions)
+	provv1.GET("/:namespace/:type/:version/download/:os/:arch", providersHandler.DownloadInfo)
+	provv1.GET("/:namespace/:type/:version/archive/:os/:arch", providersHandler.Archive)
+	provv1.GET("/:namespace/:type/:version/shasums", providersHandler.Shasums)
+
 	// ── External worker-agent endpoints (pool bearer token auth) ──────────────
 	agentGroup := e.Group("/api/v1/agent")
 	agentGroup.Use(agentHandler.PoolAuthMiddleware)
@@ -466,7 +485,8 @@ func (s *Server) handleHealth(c echo.Context) error {
 
 func (s *Server) handleTerraformDiscovery(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{
-		"modules.v1": s.cfg.BaseURL + "/registry/v1/modules/",
+		"modules.v1":   s.cfg.BaseURL + "/registry/v1/modules/",
+		"providers.v1": s.cfg.BaseURL + "/registry/v1/providers/",
 	})
 }
 

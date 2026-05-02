@@ -189,3 +189,22 @@ func providerCacheKey(relPath string) string { return "provider-cache/" + relPat
 func ModuleKey(namespace, name, provider, version string) string {
 	return fmt.Sprintf("registry/%s/%s/%s/%s.tar.gz", namespace, name, provider, version)
 }
+
+func ProviderKey(namespace, providerType, version, osName, arch string) string {
+	filename := fmt.Sprintf("terraform-provider-%s_%s_%s_%s.zip", providerType, version, osName, arch)
+	return fmt.Sprintf("registry-providers/%s/%s/%s/%s_%s/%s", namespace, providerType, version, osName, arch, filename)
+}
+
+func (c *Client) PutProvider(ctx context.Context, key string, r io.Reader, size int64) error {
+	_, err := c.mc.PutObject(ctx, c.bucketArtifacts, key, r, size,
+		minio.PutObjectOptions{ContentType: "application/zip"})
+	return err
+}
+
+func (c *Client) GetProvider(ctx context.Context, key string) (*minio.Object, error) {
+	return c.mc.GetObject(ctx, c.bucketArtifacts, key, minio.GetObjectOptions{})
+}
+
+func (c *Client) DeleteProvider(ctx context.Context, key string) error {
+	return c.mc.RemoveObject(ctx, c.bucketArtifacts, key, minio.RemoveObjectOptions{})
+}

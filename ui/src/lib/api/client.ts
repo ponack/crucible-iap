@@ -1133,6 +1133,46 @@ export const registry = {
 	yank: (id: string) => request<null>(`/registry/modules/${id}`, { method: 'DELETE' }),
 };
 
+// ── Provider registry ─────────────────────────────────────────────────────────
+
+export interface RegistryProvider {
+	id: string;
+	namespace: string;
+	type: string;
+	version: string;
+	os: string;
+	arch: string;
+	filename: string;
+	shasum: string;
+	protocols: string[];
+	readme?: string;
+	yanked: boolean;
+	published_by?: string;
+	published_at: string;
+	download_count: number;
+}
+
+export interface ProviderGPGKey {
+	id: string;
+	namespace: string;
+	key_id: string;
+	ascii_armor: string;
+	created_by?: string;
+	created_at: string;
+}
+
+export const providers = {
+	list: (q?: string) =>
+		request<RegistryProvider[]>(`/registry/providers${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+	get: (id: string) => request<RegistryProvider>(`/registry/providers/${id}`),
+	publish: (form: FormData) => requestForm<RegistryProvider>('/registry/providers', form),
+	yank: (id: string) => request<null>(`/registry/providers/${id}`, { method: 'DELETE' }),
+	listGPGKeys: () => request<ProviderGPGKey[]>('/registry/provider-gpg-keys'),
+	addGPGKey: (body: { namespace: string; key_id: string; ascii_armor: string }) =>
+		request<ProviderGPGKey>('/registry/provider-gpg-keys', { method: 'POST', body: JSON.stringify(body) }),
+	deleteGPGKey: (id: string) => request<null>(`/registry/provider-gpg-keys/${id}`, { method: 'DELETE' }),
+};
+
 // ── Cloud OIDC workload identity federation ───────────────────────────────────
 
 export interface CloudOIDCConfig {
