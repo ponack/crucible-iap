@@ -6,6 +6,12 @@ Start here if you're setting up Crucible or integrating it with your stack.
 
 - [**Quickstart**](quickstart.md) — 10-minute local walkthrough (HTTP, local auth, a `random_pet` Terraform stack). The fastest way to see Crucible run.
 - [**Operator guide**](operator-guide.md) — production deployment, TLS, OIDC SSO, cloud workload identity federation, reverse proxy setups.
+
+## Cloud deployments
+
+- [AWS ECS](guides/deploy-aws-ecs.md) — RDS PostgreSQL, S3, ECS Fargate (API) + EC2 (worker), ALB
+- [GCP Cloud Run](guides/deploy-gcp-cloudrun.md) — Cloud SQL, GCS, Cloud Run (API) + Compute Engine (worker)
+- [Azure Container Apps](guides/deploy-azure-aca.md) — Azure Database for PostgreSQL, Blob Storage, Container Apps (API) + Azure VM (worker)
 - [**Architecture**](architecture.md) — services, data flow, and how API / Worker / runner containers interact.
 - [**Security**](security.md) — threat model, encryption at rest, secret handling, hardening notes.
 - [**Roadmap**](roadmap.md) — what's shipped, what's next.
