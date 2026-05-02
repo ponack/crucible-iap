@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { runs, type Run, type PageMeta } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -97,9 +98,11 @@
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else if allRuns.length === 0}
-		<div class="border border-zinc-800 rounded-xl p-12 text-center">
-			<p class="text-zinc-400 text-sm">No runs yet. Trigger a run from a stack.</p>
-		</div>
+		<EmptyState
+			icon="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"
+			heading="No runs yet"
+			sub="Runs appear here when a stack is triggered manually, by a webhook push, or on a schedule."
+		/>
 	{:else}
 		<div class="border border-zinc-800 rounded-xl overflow-hidden">
 			<table class="w-full text-sm">

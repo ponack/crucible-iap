@@ -2,6 +2,7 @@
 	import { workerPools, type WorkerPool } from '$lib/api/client';
 	import { onMount } from 'svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let items = $state<WorkerPool[]>([]);
 	let loading = $state(true);
@@ -159,11 +160,15 @@
 			<button onclick={load} class="mt-3 text-teal-400 text-sm hover:underline">Try again →</button>
 		</div>
 	{:else if items.length === 0 && !creating}
-		<div class="border border-zinc-800 rounded-xl p-12 text-center space-y-2">
-			<p class="text-zinc-400 text-sm">No worker pools yet.</p>
-			<p class="text-zinc-600 text-xs max-w-sm mx-auto">Worker pools let you run infrastructure jobs on your own servers. Deploy <code class="text-zinc-400">crucible-agent</code> with a pool token and point stacks at the pool.</p>
-			<button onclick={() => creating = true} class="mt-3 text-teal-400 text-sm hover:underline">Create your first pool →</button>
-		</div>
+		<EmptyState
+			icon="M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 6 0m-6 0H3m16.5 0H21m-1.5 0a3 3 0 0 0 3-3m-3 3a3 3 0 1 1-6 0m6 0h1.5m-7.5 0H12m0 0a3 3 0 0 1-3-3m3 3a3 3 0 0 0 3-3m-3 0V3m0 11.25"
+			heading="No worker pools yet"
+			sub="Deploy crucible-agent on any host with Docker access to run jobs on your own infrastructure."
+		>
+			<button onclick={() => creating = true} class="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors" style="background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);">
+				Create pool →
+			</button>
+		</EmptyState>
 	{:else if items.length > 0}
 		<div class="border border-zinc-800 rounded-xl overflow-hidden">
 			<table class="w-full text-sm">

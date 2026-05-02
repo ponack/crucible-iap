@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { blueprints, type Blueprint } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let items = $state<Blueprint[]>([]);
 	let loading = $state(true);
@@ -122,10 +123,11 @@
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
 	{:else if items.length === 0}
-		<div class="rounded-xl border border-zinc-800 p-10 text-center space-y-2">
-			<p class="text-zinc-400 text-sm font-medium">No blueprints yet</p>
-			<p class="text-zinc-600 text-xs">Create a blueprint to let app teams deploy pre-configured stacks without touching IaC.</p>
-		</div>
+		<EmptyState
+			icon="M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z"
+			heading="No blueprints yet"
+			sub="Blueprints let app teams self-serve new stacks by filling in a form — no Terraform knowledge required."
+		/>
 	{:else}
 		<div class="rounded-xl border border-zinc-800 overflow-hidden">
 			<table class="w-full text-sm">
