@@ -158,6 +158,7 @@
 				<a href="/runs" class={navClass('/runs')}>Runs</a>
 				<a href="/policies" class={navClass('/policies')}>Policies</a>
 				<a href="/registry" class={navClass('/registry')}>Registry</a>
+				<a href="/providers" class={navClass('/providers')}>Providers</a>
 				<a href="/variable-sets" class={navClass('/variable-sets')}>Variable Sets</a>
 				<a href="/blueprints" class={navClass('/blueprints')}>Blueprints</a>
 				<a href="/stack-templates" class={navClass('/stack-templates')}>Templates</a>
