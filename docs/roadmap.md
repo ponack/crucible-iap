@@ -110,44 +110,23 @@ One-click "Explain failure" on failed runs. Sends log context to the Claude API 
 
 System preference (`prefers-color-scheme`) detected on first visit; persists to `localStorage`. Sun/moon toggle in the sidebar footer. Implemented via Tailwind v4 CSS variable overrides — the zinc scale is flipped at `:root.light` so all 32 pages respond with zero component changes. Native browser elements (scrollbars, form inputs) follow the theme via CSS `color-scheme`. No flash of wrong theme on hard reload via an inline anti-FOUC script in `<head>`. Smooth 150ms transition on background and text colour when toggling.
 
+### Exportable Config ✓
+
+Export the full instance configuration as a JSON snapshot and re-import it on another instance. Covers stacks, policies, variable sets, stack templates, blueprints, and worker pool definitions. Non-secret env var and variable set values are included in plaintext; secret values are always omitted. Import skips existing resources (matched by name) — nothing is overwritten.
+
+### Self-Service Infrastructure Blueprints ✓
+
+Parameterized stack creation with a visible input form. Platform teams define blueprints with named fields (environment name, region, instance size); app teams self-serve new stacks by filling in the form — no Terraform knowledge required. Blueprint params are injected as `TF_VAR_*` env vars on the created stack. Blueprints must be published before they are visible to non-admin members.
+
+### Private Provider Registry ✓
+
+Full Terraform Provider Registry Protocol v1 endpoint for distributing custom and internal providers. Critical for air-gapped deployments. Provider binaries are uploaded per OS/arch and stored in MinIO. SHA-256 checksums are computed at upload and served via a dynamic `SHA256SUMS` endpoint. GPG public keys can be registered per namespace for `terraform providers lock` compatibility. Discovery via `.well-known/terraform.json` alongside `modules.v1`.
+
 ---
 
 ## Medium Term
 
-### Exportable Config
-
-Export the full instance configuration as a single compressed archive and import it on another instance. Useful for backup, DR, staging-to-prod promotion, and migration.
-
-**What gets exported:** stacks, policies, variable sets, org settings, integration metadata. Secret values excluded by default; opt-in with `--password` (AES-256-GCM + Argon2id-derived key).
-
-**What is always excluded:** run history, audit log, state files, users/membership.
-
-**Conflict strategy:** import skips existing objects by name/slug by default; `--overwrite` replaces them.
-
-### Private Provider Registry
-
-Extend the existing module registry (already shipping) to serve custom Terraform providers. Critical for air-gapped deployments that cannot reach registry.terraform.io and for teams distributing internal providers.
-
-**Implementation notes:**
-
-- Implement the Terraform Provider Registry Protocol (`/v1/providers/` endpoints)
-- Providers stored in MinIO alongside modules
-- Upload via UI or API (same pattern as modules)
-- `terraform_provider_mirror` block in `~/.terraformrc` to point at Crucible
-- Signing: support GPG key upload per provider namespace for `terraform providers lock`
-
-### Self-Service Infrastructure Blueprints
-
-Parameterized stack creation with a visible input form. Like stack templates, but with named user-facing input fields (environment name, region, instance size) that are rendered as form controls — the user fills them in without touching the stack config.
-
-**Why it matters:** Platform engineering teams can publish blueprints; app teams self-serve new environments without writing Terraform or understanding stack configuration. Spacelift calls this "blueprints"; env0 calls it "self-service workflows".
-
-**Implementation notes:**
-
-- New `blueprints` table: name, description, base template ID, `inputs[]` schema (label, key, type, default, validation regex)
-- Blueprint inputs are stored as variable overrides on the created stack
-- UI: public blueprint catalog page; fill form → creates stack in one click
-- Input values rendered as `TF_VAR_*` env vars or injected into the stack's env var set
+Nothing currently planned — suggest a feature by opening a GitHub issue.
 
 ---
 
