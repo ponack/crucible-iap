@@ -152,6 +152,9 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/policies/README.md](docs/policies/README.md) | Ready-to-use policy templates (no-destroy, blast radius, tags, EC2 allowlist, public access, approval gates, and more) |
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/team-setup.md](docs/guides/team-setup.md) | Org roles, per-stack RBAC, approval policies, recommended starter policy set |
+| [docs/guides/stack-templates.md](docs/guides/stack-templates.md) | Reusable stack configurations — create templates, deploy from them, good design practices |
+| [docs/guides/blueprints.md](docs/guides/blueprints.md) | Self-service stack deployment — platform teams publish blueprints, app teams fill in a form and deploy |
+| [docs/guides/provider-registry.md](docs/guides/provider-registry.md) | Private Terraform provider registry — publish binaries, configure Terraform, GPG signing |
 | [docs/guides/aws.md](docs/guides/aws.md) | AWS credentials, S3 remote state backend, minimal IAM role, recommended AWS policies |
 | [docs/guides/gcp.md](docs/guides/gcp.md) | GCP credentials, GCS remote state backend, Workload Identity Federation, minimal IAM roles |
 | [docs/guides/azure.md](docs/guides/azure.md) | Azure credentials, Blob Storage remote state, federated identity, minimal role assignments |
