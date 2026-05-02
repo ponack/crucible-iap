@@ -15,10 +15,12 @@ Start here if you're setting up Crucible or integrating it with your stack.
 - [AWS](guides/aws.md) · [GCP](guides/gcp.md) · [Azure](guides/azure.md) · [Proxmox](guides/proxmox.md) — cloud / hypervisor setup
 - [Cloudflare](guides/cloudflare.md) — bootstrap with cf-terraforming, Crucible stack setup, OPA policies
 - [Ansible](guides/ansible.md) · [Pulumi](guides/pulumi.md) — non-Terraform tooling
+- [Provider registry](guides/provider-registry.md) — private Terraform provider registry, GPG signing, air-gapped deployments
 - [Webhooks](guides/webhooks.md) — GitHub / GitLab / Gitea / Gogs
 - [Remote state](guides/remote-state.md) — built-in HTTP backend and S3/GCS/Azure overrides
 - [Drift detection](guides/drift-detection.md) · [Run hooks](guides/run-hooks.md) · [Stack dependencies](guides/stack-dependencies.md)
 - [Team setup](guides/team-setup.md) — org, roles, invites, per-stack membership
+- [Stack templates](guides/stack-templates.md) · [Blueprints](guides/blueprints.md) — reusable configs and self-service deployment
 
 ## Migration
 
