@@ -34,7 +34,7 @@
 	{#if error}
 		<div class="text-center space-y-3">
 			<p class="text-red-400 text-sm">{error}</p>
-			<a href="/login" class="text-indigo-400 text-sm hover:underline">Back to login</a>
+			<a href="/login" class="text-teal-400 text-sm hover:underline">Back to login</a>
 		</div>
 	{:else}
 		<p class="text-zinc-400 text-sm">Signing in…</p>

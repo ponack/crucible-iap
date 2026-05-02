@@ -60,7 +60,7 @@
 	};
 
 	const typeBadge: Record<string, string> = {
-		post_plan: 'bg-indigo-900 text-indigo-300',
+		post_plan: 'bg-teal-900 text-teal-300',
 		pre_plan: 'bg-sky-900 text-sky-300',
 		pre_apply: 'bg-violet-900 text-violet-300',
 		trigger: 'bg-amber-900 text-amber-300',
@@ -78,7 +78,7 @@
 	{#if loadError}
 		<p class="text-sm text-red-400">{loadError}</p>
 	{:else if allPolicies.length === 0}
-		<p class="text-sm text-zinc-500">No policies found. <a href="/policies" class="text-indigo-400 hover:text-indigo-300">Create one first.</a></p>
+		<p class="text-sm text-zinc-500">No policies found. <a href="/policies" class="text-teal-400 hover:text-teal-300">Create one first.</a></p>
 	{:else}
 		<!-- Policy selector -->
 		<div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden">
@@ -88,7 +88,7 @@
 			<div class="px-4 py-3 flex items-center gap-3">
 				<select
 					bind:value={selectedID}
-					class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+					class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
 				>
 					{#each allPolicies as p (p.id)}
 						<option value={p.id}>{p.name}</option>
@@ -120,7 +120,7 @@
 			</div>
 			<div class="p-4">
 				<textarea
-					class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
+					class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 resize-y"
 					rows="18"
 					bind:value={testInput}
 					spellcheck="false"
@@ -131,13 +131,13 @@
 		<!-- Run controls -->
 		<div class="flex items-center justify-between">
 			<label class="flex cursor-pointer items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200">
-				<input type="checkbox" bind:checked={traceEnabled} class="accent-indigo-500" />
+				<input type="checkbox" bind:checked={traceEnabled} class="accent-teal-500" />
 				Include evaluation trace
 			</label>
 			<button
 				onclick={runTest}
 				disabled={testing || !selected}
-				class="rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-5 py-2 transition-colors"
+				class="rounded-lg bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-5 py-2 transition-colors"
 			>
 				{testing ? 'Running…' : 'Run test'}
 			</button>
@@ -186,9 +186,9 @@
 						{#if r.trigger && r.trigger.length > 0}
 							<div class="space-y-1">
 								{#each r.trigger as id}
-									<div class="flex items-start gap-2 rounded bg-indigo-950/50 border border-indigo-900/40 px-3 py-1.5">
-										<span class="text-xs font-mono text-indigo-400 shrink-0">trigger</span>
-										<span class="text-xs font-mono text-indigo-300">{id}</span>
+									<div class="flex items-start gap-2 rounded bg-teal-950/50 border border-teal-900/40 px-3 py-1.5">
+										<span class="text-xs font-mono text-teal-400 shrink-0">trigger</span>
+										<span class="text-xs font-mono text-teal-300">{id}</span>
 									</div>
 								{/each}
 							</div>

@@ -40,7 +40,7 @@
 				<div class="space-y-1.5">
 					{#each schema.fields as field}
 						<div class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5">
-							<code class="font-mono text-[11px] text-indigo-300 break-all">{field.path}</code>
+							<code class="font-mono text-[11px] text-teal-300 break-all">{field.path}</code>
 							<span
 								class="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400"
 								>{field.type}</span

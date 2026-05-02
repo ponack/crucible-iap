@@ -159,7 +159,7 @@
 				</div>
 				<div class="flex justify-end">
 					<button type="submit" disabled={saving}
-						class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50">
+						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
 						{saving ? 'Saving…' : 'Save'}
 					</button>
 				</div>
@@ -224,7 +224,7 @@
 					<input id="var-value" class="field-input" type="password" bind:value={newVarValue} placeholder="••••••••" required />
 				</div>
 				<div class="flex items-center gap-1.5 pb-1.5">
-					<input id="var-secret" type="checkbox" bind:checked={newVarSecret} class="accent-indigo-500" />
+					<input id="var-secret" type="checkbox" bind:checked={newVarSecret} class="accent-teal-500" />
 					<label for="var-secret" class="text-xs text-zinc-400">Secret</label>
 				</div>
 				<button type="submit" disabled={savingVar}

@@ -63,7 +63,7 @@
 <div class="p-6 space-y-4">
 	<div class="flex items-center justify-between">
 		<h1 class="text-lg font-semibold text-white">Stacks</h1>
-		<a href="/stacks/new" class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+		<a href="/stacks/new" class="bg-teal-600 hover:bg-teal-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 			New stack
 		</a>
 	</div>
@@ -74,10 +74,10 @@
 			type="search" placeholder="Search stacks…"
 			bind:value={filterQ}
 			onkeydown={(e) => e.key === 'Enter' && applyFilters()}
-			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 w-56"
+			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500 w-56"
 		/>
 		<select bind:value={filterTool} onchange={applyFilters}
-			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-teal-500">
 			<option value="">All tools</option>
 			<option value="opentofu">OpenTofu</option>
 			<option value="terraform">Terraform</option>
@@ -85,7 +85,7 @@
 			<option value="pulumi">Pulumi</option>
 		</select>
 		<select bind:value={filterStatus} onchange={applyFilters}
-			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+			class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-teal-500">
 			<option value="">Any status</option>
 			<option value="finished">Finished</option>
 			<option value="failed">Failed</option>
@@ -94,7 +94,7 @@
 			<option value="planning">Planning</option>
 		</select>
 		<button onclick={applyFilters}
-			class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+			class="bg-teal-600 hover:bg-teal-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 			Search
 		</button>
 		{#if hasFilters}
@@ -110,14 +110,14 @@
 		<div class="border border-zinc-800 rounded-xl p-12 text-center">
 			<p class="text-zinc-400 text-sm">Could not load stacks.</p>
 			<p class="text-zinc-600 text-xs mt-1">{error}</p>
-			<button onclick={load} class="mt-3 inline-block text-indigo-400 text-sm hover:underline">
+			<button onclick={load} class="mt-3 inline-block text-teal-400 text-sm hover:underline">
 				Try again →
 			</button>
 		</div>
 	{:else if items.length === 0}
 		<div class="border border-zinc-800 rounded-xl p-12 text-center">
 			<p class="text-zinc-400 text-sm">No stacks yet.</p>
-			<a href="/stacks/new" class="mt-3 inline-block text-indigo-400 text-sm hover:underline">
+			<a href="/stacks/new" class="mt-3 inline-block text-teal-400 text-sm hover:underline">
 				Create your first stack →
 			</a>
 		</div>
@@ -138,7 +138,7 @@
 						<tr class="hover:bg-zinc-900/50 transition-colors">
 							<td class="px-4 py-3">
 								<div class="flex items-center gap-2">
-									<a href="/stacks/{stack.id}" class="font-medium {stack.is_disabled ? 'text-zinc-500 hover:text-zinc-300' : 'text-white hover:text-indigo-400'}">
+									<a href="/stacks/{stack.id}" class="font-medium {stack.is_disabled ? 'text-zinc-500 hover:text-zinc-300' : 'text-white hover:text-teal-400'}">
 										{stack.name}
 									</a>
 									{#if stack.is_preview}

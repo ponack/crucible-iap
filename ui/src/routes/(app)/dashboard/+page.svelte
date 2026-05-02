@@ -204,7 +204,7 @@
 		if (a === 'run.planning')   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '≡' };
 		if (a === 'run.applying')   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '▶' };
 		if (a.startsWith('run.'))   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '▶' };
-		if (a.startsWith('stack.')) return { bg: 'bg-indigo-900', fg: 'text-indigo-400', symbol: 'S' };
+		if (a.startsWith('stack.')) return { bg: 'bg-teal-900', fg: 'text-teal-400', symbol: 'S' };
 		if (a.startsWith('policy.'))return { bg: 'bg-violet-900', fg: 'text-violet-400', symbol: 'P' };
 		if (a.startsWith('variable_set.')) return { bg: 'bg-teal-900', fg: 'text-teal-400', symbol: 'V' };
 		if (a.startsWith('org.'))   return { bg: 'bg-zinc-800',   fg: 'text-zinc-400',   symbol: 'O' };
@@ -241,7 +241,7 @@
 		</p>
 		<div class="flex flex-wrap gap-3 justify-center pt-2">
 			<a href="/stacks/new"
-				class="inline-block bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
+				class="inline-block bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
 				Create your first stack →
 			</a>
 			<a href="https://github.com/ponack/crucible-iap/blob/main/docs/quickstart.md" target="_blank" rel="noopener"

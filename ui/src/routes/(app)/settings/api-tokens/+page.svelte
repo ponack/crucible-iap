@@ -64,7 +64,7 @@
 		</div>
 		<button
 			onclick={() => (creating = !creating)}
-			class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500">
+			class="shrink-0 rounded-lg bg-teal-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-teal-500">
 			{creating ? 'Cancel' : 'New token'}
 		</button>
 	</div>
@@ -111,7 +111,7 @@
 				</div>
 				<div class="flex justify-end">
 					<button type="submit" disabled={saving}
-						class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50">
+						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
 						{saving ? 'Creating…' : 'Create token'}
 					</button>
 				</div>
@@ -145,7 +145,7 @@
 						<tr>
 							<td class="px-4 py-2.5 text-zinc-200 font-medium">{t.name}</td>
 							<td class="px-4 py-2.5">
-								<span class="text-xs px-1.5 py-0.5 rounded {t.role === 'admin' ? 'bg-red-900/50 text-red-300' : t.role === 'member' ? 'bg-indigo-900/50 text-indigo-300' : 'bg-zinc-800 text-zinc-400'}">
+								<span class="text-xs px-1.5 py-0.5 rounded {t.role === 'admin' ? 'bg-red-900/50 text-red-300' : t.role === 'member' ? 'bg-teal-900/50 text-teal-300' : 'bg-zinc-800 text-zinc-400'}">
 									{t.role}
 								</span>
 							</td>

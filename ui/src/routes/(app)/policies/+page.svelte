@@ -84,7 +84,7 @@
 	};
 
 	const typeBadge: Record<string, string> = {
-		post_plan: 'bg-indigo-900 text-indigo-300',
+		post_plan: 'bg-teal-900 text-teal-300',
 		pre_plan: 'bg-sky-900 text-sky-300',
 		pre_apply: 'bg-violet-900 text-violet-300',
 		trigger: 'bg-amber-900 text-amber-300',
@@ -110,7 +110,7 @@
 			</a>
 			<button
 				onclick={() => (creating = !creating)}
-				class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500"
+				class="rounded-lg bg-teal-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-teal-500"
 			>
 				{creating ? 'Cancel' : 'New policy'}
 			</button>
@@ -208,7 +208,7 @@
 					<button
 						type="submit"
 						disabled={saving}
-						class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50"
 					>
 						{saving ? 'Creating…' : 'Create policy'}
 					</button>

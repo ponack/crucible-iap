@@ -76,7 +76,7 @@
 		'run.applying': 'text-blue-400',
 		'run.finished': 'text-green-400',
 		'run.failed': 'text-red-400',
-		'stack.created': 'text-indigo-400',
+		'stack.created': 'text-teal-400',
 		'stack.deleted': 'text-red-400'
 	};
 </script>
@@ -89,10 +89,10 @@
 				type="search" placeholder="Filter by action prefix…"
 				bind:value={filterAction}
 				onkeydown={(e) => e.key === 'Enter' && applyFilters()}
-				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-500 w-52"
+				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-teal-500 w-52"
 			/>
 			<select bind:value={filterResourceType} onchange={applyFilters}
-				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-teal-500">
 				<option value="">All resources</option>
 				<option value="stack">Stack</option>
 				<option value="run">Run</option>

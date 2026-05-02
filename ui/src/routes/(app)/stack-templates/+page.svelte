@@ -54,7 +54,7 @@
 		{#if auth.isMemberOrAbove}
 			<button
 				onclick={() => (creating = !creating)}
-				class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500">
+				class="rounded-lg bg-teal-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-teal-500">
 				{creating ? 'Cancel' : 'New template'}
 			</button>
 		{/if}
@@ -109,7 +109,7 @@
 				</div>
 				<div class="flex justify-end">
 					<button type="submit" disabled={saving}
-						class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50">
+						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
 						{saving ? 'Creating…' : 'Create'}
 					</button>
 				</div>

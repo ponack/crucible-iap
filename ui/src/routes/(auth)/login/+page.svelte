@@ -76,14 +76,14 @@
 							bind:value={email}
 							placeholder="Email"
 							required
-							class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
 						/>
 						<input
 							type="password"
 							bind:value={password}
 							placeholder="Password"
 							required
-							class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
 						/>
 					</div>
 					{#if error}
@@ -98,7 +98,7 @@
 					<button
 						type="submit"
 						disabled={loading}
-						class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-colors"
+						class="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm font-medium py-2.5 px-4 rounded-lg transition-colors"
 					>
 						{loading ? 'Signing in…' : 'Sign in'}
 					</button>

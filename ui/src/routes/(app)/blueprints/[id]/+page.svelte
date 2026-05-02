@@ -207,7 +207,7 @@
 		<div class="flex items-center gap-2 shrink-0">
 			{#if bp.is_published && auth.isMemberOrAbove}
 				<a href="/blueprints/{id}/deploy"
-					class="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500">
+					class="rounded-lg bg-teal-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-teal-500">
 					Deploy
 				</a>
 			{/if}
@@ -285,15 +285,15 @@
 					<div class="space-y-1.5 col-span-2">
 						<div class="flex gap-6">
 							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="checkbox" bind:checked={form.auto_apply} class="accent-indigo-500" />
+								<input type="checkbox" bind:checked={form.auto_apply} class="accent-teal-500" />
 								<span class="text-xs text-zinc-400">Auto-apply</span>
 							</label>
 							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="checkbox" bind:checked={form.drift_detection} class="accent-indigo-500" />
+								<input type="checkbox" bind:checked={form.drift_detection} class="accent-teal-500" />
 								<span class="text-xs text-zinc-400">Drift detection</span>
 							</label>
 							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="checkbox" bind:checked={form.auto_remediate_drift} class="accent-indigo-500" />
+								<input type="checkbox" bind:checked={form.auto_remediate_drift} class="accent-teal-500" />
 								<span class="text-xs text-zinc-400">Auto-remediate drift</span>
 							</label>
 						</div>
@@ -307,7 +307,7 @@
 				</div>
 				<div class="flex justify-end">
 					<button type="submit" disabled={saving}
-						class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50">
+						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
 						{saving ? 'Saving…' : 'Save'}
 					</button>
 				</div>
@@ -433,14 +433,14 @@
 						</div>
 						<div class="col-span-2">
 							<label class="flex items-center gap-2 cursor-pointer">
-								<input type="checkbox" bind:checked={paramForm.required} class="accent-indigo-500" />
+								<input type="checkbox" bind:checked={paramForm.required} class="accent-teal-500" />
 								<span class="text-xs text-zinc-400">Required</span>
 							</label>
 						</div>
 					</div>
 					<div class="flex justify-end">
 						<button type="submit" disabled={paramSaving}
-							class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50">
+							class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
 							{paramSaving ? 'Saving…' : 'Save param'}
 						</button>
 					</div>

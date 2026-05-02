@@ -31,17 +31,13 @@
 		page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/auth')
 	);
 
-	// Current org ID from the JWT — used to mark the active org in the switcher.
 	const currentOrgID = $derived(
 		auth.accessToken ? (() => { try { return decodeJWTPayload(auth.accessToken!).org as string; } catch { return ''; } })() : ''
 	);
 
 	onMount(async () => {
-		// Sync theme state from the class already set by the anti-FOUC script.
 		theme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
 		system.health().then((h) => { appVersion = h.version; }).catch(() => {});
-		// Silently restore session from the httpOnly refresh cookie.
-		// Must complete before setting mounted so the loading spinner covers the round-trip.
 		if (!isAuthRoute && !auth.isAuthenticated) {
 			await tryRefresh();
 		}
@@ -52,18 +48,16 @@
 		if (mounted && !isAuthRoute && !auth.isAuthenticated) {
 			goto('/login', { replaceState: true });
 		}
-		// Fetch org role once authenticated and not yet known.
 		if (mounted && !isAuthRoute && auth.isAuthenticated && !auth.orgRole) {
 			org.me().then((r) => auth.setOrgRole(r.role as OrgRole)).catch(() => {});
 		}
-		// Load orgs for the switcher once authenticated.
 		if (mounted && !isAuthRoute && auth.isAuthenticated && myOrgs.list.length === 0) {
 			org.list().then((r) => { myOrgs.set(r); }).catch(() => {});
 		}
 	});
 
-	function navClass(prefix: string) {
-		return 'nav-link' + (page.url.pathname.startsWith(prefix) ? ' active' : '');
+	function isActive(prefix: string) {
+		return page.url.pathname.startsWith(prefix);
 	}
 
 	async function logout() {
@@ -86,14 +80,96 @@
 			});
 			const switched = myOrgs.list.find(o => o.id === orgID);
 			if (switched) auth.setOrgRole(switched.role as OrgRole);
-			myOrgs.clear(); // triggers reload on next effect tick
+			myOrgs.clear();
 			goto('/stacks', { replaceState: true });
 		} catch {
-			// silently ignore — user stays on current org
+			// stay on current org
 		} finally {
 			switchingOrg = false;
 		}
 	}
+
+	const navSections = [
+		{
+			items: [
+				{
+					href: '/dashboard',
+					label: 'Dashboard',
+					path: 'M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z'
+				},
+				{
+					href: '/stacks',
+					label: 'Stacks',
+					path: 'M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3'
+				},
+				{
+					href: '/runs',
+					label: 'Runs',
+					path: 'M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z'
+				}
+			]
+		},
+		{
+			label: 'Config',
+			items: [
+				{
+					href: '/policies',
+					label: 'Policies',
+					path: 'M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z'
+				},
+				{
+					href: '/registry',
+					label: 'Registry',
+					path: 'M21 7.5l-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9'
+				},
+				{
+					href: '/providers',
+					label: 'Providers',
+					path: 'M14.25 6.087c0-.355.186-.676.401-.959.221-.29.349-.634.349-1.003 0-1.036-1.007-1.875-2.25-1.875s-2.25.84-2.25 1.875c0 .369.128.713.349 1.003.215.283.401.604.401.959v0a.64.64 0 0 1-.657.643 48.39 48.39 0 0 1-4.163-.3c.186 1.613.293 3.25.315 4.907a.656.656 0 0 1-.658.663v0c-.355 0-.676-.186-.959-.401a1.647 1.647 0 0 0-1.003-.349c-1.035 0-1.875 1.007-1.875 2.25s.84 2.25 1.875 2.25c.369 0 .713-.128 1.003-.349.283-.215.604-.401.959-.401v0c.31 0 .555.26.532.57a48.039 48.039 0 0 1-.642 5.056c1.518.19 3.058.309 4.616.354a.64.64 0 0 0 .657-.643v0c0-.355-.186-.676-.401-.959a1.647 1.647 0 0 1-.349-1.003c0-1.035 1.007-1.875 2.25-1.875 1.243 0 2.25.84 2.25 1.875 0 .369-.128.713-.349 1.003-.215.283-.401.604-.401.959v0c0 .333.277.599.61.58a48.1 48.1 0 0 0 5.427-.63 48.05 48.05 0 0 0 .582-4.717.532.532 0 0 0-.533-.57v0c-.355 0-.676.186-.959.401-.29.221-.634.349-1.003.349-1.035 0-1.875-1.007-1.875-2.25s.84-2.25 1.875-2.25c.37 0 .713.128 1.003.349.283.215.604.401.959.401v0a.656.656 0 0 0 .658-.663 48.422 48.422 0 0 0-.37-5.36c-1.886.342-3.81.574-5.766.689a.578.578 0 0 1-.61-.58v0Z'
+				},
+				{
+					href: '/variable-sets',
+					label: 'Variable Sets',
+					path: 'M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75'
+				},
+				{
+					href: '/blueprints',
+					label: 'Blueprints',
+					path: 'M9 6.75V15m6-6v8.25m.503 3.498 4.875-2.437c.381-.19.622-.58.622-1.006V4.82c0-.836-.88-1.38-1.628-1.006l-3.869 1.934c-.317.159-.69.159-1.006 0L9.503 3.252a1.125 1.125 0 0 0-1.006 0L3.622 5.689C3.24 5.88 3 6.27 3 6.695V19.18c0 .836.88 1.38 1.628 1.006l3.869-1.934c.317-.159.69-.159 1.006 0l4.994 2.497c.317.158.69.158 1.006 0Z'
+				},
+				{
+					href: '/stack-templates',
+					label: 'Templates',
+					path: 'M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75'
+				}
+			]
+		},
+		{
+			label: 'Ops',
+			items: [
+				{
+					href: '/worker-pools',
+					label: 'Worker Pools',
+					path: 'M5.25 14.25h13.5m-13.5 0a3 3 0 0 1-3-3m3 3a3 3 0 1 0 6 0m-6 0H3m16.5 0H21m-1.5 0a3 3 0 0 0 3-3m-3 3a3 3 0 1 1-6 0m6 0h1.5m-7.5 0H12m0 0a3 3 0 0 1-3-3m3 3a3 3 0 0 0 3-3m-3 0V3m0 11.25'
+				},
+				{
+					href: '/audit',
+					label: 'Audit Log',
+					path: 'M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-.1-.664m-5.8 0A2.251 2.251 0 0 1 13.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C9.095 4.01 8.25 4.973 8.25 6.108V8.25m0 0H4.875c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V9.375c0-.621-.504-1.125-1.125-1.125H8.25ZM6.75 12h.008v.008H6.75V12Zm0 3h.008v.008H6.75V15Zm0 3h.008v.008H6.75V18Z'
+				},
+				{
+					href: '/monitoring',
+					label: 'Monitoring',
+					path: 'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z'
+				},
+				{
+					href: '/settings',
+					label: 'Settings',
+					path: 'M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z'
+				}
+			]
+		}
+	];
 </script>
 
 {#if isAuthRoute}
@@ -105,9 +181,11 @@
 {:else}
 	<div class="flex h-screen overflow-hidden">
 		<!-- Sidebar -->
-		<aside class="w-56 flex-shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col">
-			<div class="px-4 py-4 border-b border-zinc-800 flex items-center gap-3">
-				<img src="/mark.png" alt="" class="h-11 w-11 flex-shrink-0" />
+		<aside class="w-56 flex-shrink-0 flex flex-col" style="background: var(--color-zinc-900); border-right: 1px solid var(--color-zinc-800);">
+
+			<!-- Logo + controls -->
+			<div class="px-4 py-4 flex items-center gap-3" style="border-bottom: 1px solid var(--color-zinc-800);">
+				<img src="/mark.png" alt="" class="h-10 w-10 flex-shrink-0" />
 				<div class="flex flex-col leading-none">
 					<span class="font-semibold text-white tracking-tight text-sm">Crucible</span>
 					<span class="text-[10px] text-zinc-500 uppercase tracking-widest">IAP</span>
@@ -130,15 +208,16 @@
 				</div>
 			</div>
 
-			<!-- Org switcher — only shown when user belongs to more than one org -->
+			<!-- Org switcher -->
 			{#if myOrgs.list.length > 1}
-				<div class="px-2 py-2 border-b border-zinc-800">
+				<div class="px-2 py-2" style="border-bottom: 1px solid var(--color-zinc-800);">
 					<div class="relative">
 						<select
 							onchange={(e) => switchOrg((e.target as HTMLSelectElement).value)}
 							value={currentOrgID}
 							disabled={switchingOrg}
-							class="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50 truncate"
+							class="w-full text-zinc-200 text-xs rounded-lg px-2.5 py-1.5 pr-7 appearance-none cursor-pointer focus:outline-none disabled:opacity-50 truncate"
+							style="background: var(--color-zinc-800); border: 1px solid var(--color-zinc-700);"
 						>
 							{#each myOrgs.list as o (o.id)}
 								<option value={o.id}>{o.name}</option>
@@ -152,22 +231,41 @@
 					</div>
 				</div>
 			{/if}
-			<nav class="flex-1 px-2 py-4 space-y-1 text-sm">
-				<a href="/dashboard" class={navClass('/dashboard')}>Dashboard</a>
-				<a href="/stacks" class={navClass('/stacks')}>Stacks</a>
-				<a href="/runs" class={navClass('/runs')}>Runs</a>
-				<a href="/policies" class={navClass('/policies')}>Policies</a>
-				<a href="/registry" class={navClass('/registry')}>Registry</a>
-				<a href="/providers" class={navClass('/providers')}>Providers</a>
-				<a href="/variable-sets" class={navClass('/variable-sets')}>Variable Sets</a>
-				<a href="/blueprints" class={navClass('/blueprints')}>Blueprints</a>
-				<a href="/stack-templates" class={navClass('/stack-templates')}>Templates</a>
-				<a href="/worker-pools" class={navClass('/worker-pools')}>Worker Pools</a>
-				<a href="/audit" class={navClass('/audit')}>Audit Log</a>
-				<a href="/monitoring" class={navClass('/monitoring')}>Monitoring</a>
-				<a href="/settings" class={navClass('/settings')}>Settings</a>
+
+			<!-- Nav -->
+			<nav class="flex-1 overflow-y-auto px-2 py-3 space-y-5">
+				{#each navSections as section}
+					<div>
+						{#if section.label}
+							<p class="px-3 mb-1 text-[10px] font-medium uppercase tracking-widest text-zinc-600">{section.label}</p>
+						{/if}
+						<ul class="space-y-0.5">
+							{#each section.items as item}
+								{@const active = isActive(item.href)}
+								<li>
+									<a
+										href={item.href}
+										class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors duration-100 relative"
+										style={active
+											? 'color: var(--accent); background: var(--accent-muted); border-left: 2px solid var(--accent); padding-left: calc(0.75rem - 2px);'
+											: 'color: var(--color-zinc-400);'}
+										class:hover:bg-zinc-800={!active}
+										class:hover:text-zinc-200={!active}
+									>
+										<svg class="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+											<path d={item.path}/>
+										</svg>
+										{item.label}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/each}
 			</nav>
-			<div class="px-4 py-3 border-t border-zinc-800 flex items-center gap-2">
+
+			<!-- Footer -->
+			<div class="px-4 py-3 flex items-center gap-2" style="border-top: 1px solid var(--color-zinc-800);">
 				<span class="text-xs text-zinc-500 truncate flex-1" title={auth.user?.email}>{auth.user?.email}</span>
 				<button onclick={logout} class="text-xs text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">Sign out</button>
 			</div>
@@ -179,21 +277,3 @@
 		</main>
 	</div>
 {/if}
-
-<style>
-	:global(.nav-link) {
-		display: block;
-		padding: 0.375rem 0.75rem;
-		border-radius: 0.375rem;
-		color: var(--color-zinc-400);
-		transition: background-color 0.1s, color 0.1s;
-	}
-	:global(.nav-link:hover) {
-		background-color: var(--color-zinc-800);
-		color: #fff;
-	}
-	:global(.nav-link.active) {
-		background-color: var(--color-zinc-800);
-		color: #fff;
-	}
-</style>

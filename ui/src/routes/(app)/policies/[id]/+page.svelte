@@ -171,7 +171,7 @@
 						{policy.is_active ? 'Active' : 'Inactive'}
 					</span>
 					{#if isOrgDefault}
-						<span class="rounded bg-indigo-900 px-1.5 py-0.5 text-indigo-300">Org default</span>
+						<span class="rounded bg-teal-900 px-1.5 py-0.5 text-teal-300">Org default</span>
 					{/if}
 				</div>
 			</div>
@@ -311,7 +311,7 @@
 						</div>
 						<div class="flex items-center justify-between">
 							<label class="flex cursor-pointer items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300">
-								<input type="checkbox" bind:checked={traceEnabled} class="accent-indigo-500" />
+								<input type="checkbox" bind:checked={traceEnabled} class="accent-teal-500" />
 								Include trace
 							</label>
 							<button
@@ -345,7 +345,7 @@
 									{/if}
 									{#if r.trigger && r.trigger.length > 0}
 										{#each r.trigger as id}
-											<p class="font-mono text-xs text-indigo-300">trigger: {id}</p>
+											<p class="font-mono text-xs text-teal-300">trigger: {id}</p>
 										{/each}
 									{/if}
 									{#if r.require_approval}
@@ -379,7 +379,7 @@
 							disabled={togglingOrgDefault}
 							class="text-xs transition-colors disabled:opacity-40
 								{isOrgDefault
-								? 'text-indigo-400 hover:text-indigo-200'
+								? 'text-teal-400 hover:text-teal-200'
 								: 'text-zinc-500 hover:text-zinc-300'}"
 						>
 							{togglingOrgDefault
@@ -401,7 +401,7 @@
 					<button
 						type="submit"
 						disabled={saving}
-						class="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50"
 					>
 						{saving ? 'Saving…' : 'Save policy'}
 					</button>

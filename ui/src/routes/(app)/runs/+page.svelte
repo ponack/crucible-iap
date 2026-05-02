@@ -65,7 +65,7 @@
 		<h1 class="text-lg font-semibold text-white">Runs</h1>
 		<div class="flex items-center gap-2">
 			<select bind:value={filterStatus} onchange={applyFilters}
-				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-teal-500">
 				<option value="">Any status</option>
 				<option value="queued">Queued</option>
 				<option value="planning">Planning</option>
@@ -78,7 +78,7 @@
 				<option value="discarded">Discarded</option>
 			</select>
 			<select bind:value={filterType} onchange={applyFilters}
-				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-indigo-500">
+				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-teal-500">
 				<option value="">Any type</option>
 				<option value="tracked">Tracked</option>
 				<option value="proposed">Proposed</option>

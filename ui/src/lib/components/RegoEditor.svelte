@@ -98,5 +98,5 @@
 
 <div
 	bind:this={container}
-	class="overflow-hidden rounded-lg border border-zinc-700 transition-colors focus-within:border-indigo-500"
+	class="overflow-hidden rounded-lg border border-zinc-700 transition-colors focus-within:border-teal-500"
 ></div>

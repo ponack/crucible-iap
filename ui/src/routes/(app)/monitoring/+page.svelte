@@ -43,7 +43,7 @@
 		</div>
 		{#if health}
 			<a href="{grafanaBase}/d/{dashUID}" target="_blank" rel="noopener noreferrer"
-				class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
+				class="text-xs text-teal-400 hover:text-teal-300 transition-colors">
 				Open in Grafana ↗
 			</a>
 		{/if}
@@ -68,7 +68,7 @@
 	<p class="text-xs text-zinc-600">
 		Full dashboard and alerting available in
 		<a href="{grafanaBase}" target="_blank" rel="noopener noreferrer"
-			class="text-indigo-400 hover:text-indigo-300">Grafana</a>.
+			class="text-teal-400 hover:text-teal-300">Grafana</a>.
 		Admin credentials are set via <code class="text-zinc-400">GRAFANA_ADMIN_USER</code> /
 		<code class="text-zinc-400">GRAFANA_ADMIN_PASSWORD</code> in your <code class="text-zinc-400">.env</code>.
 	</p>
