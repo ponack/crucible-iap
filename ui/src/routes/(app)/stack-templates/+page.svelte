@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { stackTemplates, type StackTemplate } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let items = $state<StackTemplate[]>([]);
 	let loading = $state(true);
@@ -122,10 +123,11 @@
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
 	{:else if items.length === 0}
-		<div class="rounded-xl border border-zinc-800 p-10 text-center space-y-2">
-			<p class="text-zinc-400 text-sm font-medium">No templates yet</p>
-			<p class="text-zinc-600 text-xs">Create a template to pre-fill the stack creation form with common settings.</p>
-		</div>
+		<EmptyState
+			icon="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75"
+			heading="No templates yet"
+			sub="Templates pre-fill stack creation with common settings — runner image, VCS integration, env vars — so new stacks start consistent."
+		/>
 	{:else}
 		<div class="rounded-xl border border-zinc-800 overflow-hidden">
 			<table class="w-full text-sm">

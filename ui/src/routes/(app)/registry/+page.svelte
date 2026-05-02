@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { registry, type RegistryModule } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let modules = $state<RegistryModule[]>([]);
 	let loading = $state(true);
@@ -176,10 +177,11 @@
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else if grouped().length === 0}
-		<div class="text-center py-16 text-zinc-500">
-			<p class="text-lg">No modules yet</p>
-			<p class="text-sm mt-1">Publish your first module to get started.</p>
-		</div>
+		<EmptyState
+			icon="M21 7.5l-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"
+			heading="No modules yet"
+			sub="Publish Terraform modules to make them available for all stacks via the built-in registry."
+		/>
 	{:else}
 		<div class="space-y-3">
 			{#each grouped() as group}

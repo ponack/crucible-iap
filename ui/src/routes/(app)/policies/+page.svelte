@@ -6,6 +6,7 @@
 	import RegoEditor from '$lib/components/RegoEditor.svelte';
 	import PolicyInputSchema from '$lib/components/PolicyInputSchema.svelte';
 	import { policyTemplates, type PolicyType } from '$lib/policy-data';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let items = $state<Policy[]>([]);
 	let loading = $state(true);
@@ -222,12 +223,11 @@
 	{:else if error}
 		<p class="text-sm text-red-400">{error}</p>
 	{:else if items.length === 0}
-		<div class="rounded-xl border border-zinc-800 p-8 text-center space-y-2">
-			<p class="text-sm text-zinc-400">No policies yet.</p>
-			<p class="text-xs text-zinc-600">
-				Create a policy to enforce guardrails on plan and apply operations.
-			</p>
-		</div>
+		<EmptyState
+			icon="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"
+			heading="No policies yet"
+			sub="Create an OPA policy to enforce guardrails, require approvals, or block high-blast-radius applies."
+		/>
 	{:else}
 		<div class="overflow-hidden rounded-xl border border-zinc-800">
 			<table class="w-full text-sm">

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { varSets, type VarSet } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let items = $state<VarSet[]>([]);
 	let loading = $state(true);
@@ -84,10 +85,11 @@
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
 	{:else if items.length === 0}
-		<div class="rounded-xl border border-zinc-800 p-10 text-center space-y-2">
-			<p class="text-zinc-400 text-sm font-medium">No variable sets yet</p>
-			<p class="text-zinc-600 text-xs">Create a variable set to share environment variables across multiple stacks.</p>
-		</div>
+		<EmptyState
+			icon="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"
+			heading="No variable sets yet"
+			sub="Group env vars once and attach them to multiple stacks. Injected before stack-level vars; stack wins on collision."
+		/>
 	{:else}
 		<div class="rounded-xl border border-zinc-800 overflow-hidden">
 			<table class="w-full text-sm">

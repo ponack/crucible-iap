@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { stacks, type Stack, type PageMeta } from '$lib/api/client';
 	import { onMount } from 'svelte';
+	import EmptyState from '$lib/components/EmptyState.svelte';
 
 	let items = $state<Stack[]>([]);
 	let pagination = $state<PageMeta | null>(null);
@@ -115,12 +116,15 @@
 			</button>
 		</div>
 	{:else if items.length === 0}
-		<div class="border border-zinc-800 rounded-xl p-12 text-center">
-			<p class="text-zinc-400 text-sm">No stacks yet.</p>
-			<a href="/stacks/new" class="mt-3 inline-block text-teal-400 text-sm hover:underline">
-				Create your first stack →
+		<EmptyState
+			icon="M6.429 9.75 2.25 12l4.179 2.25m0-4.5 5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0 4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0-5.571 3-5.571-3"
+			heading="No stacks yet"
+			sub="Create your first stack to start managing infrastructure with OpenTofu, Terraform, Ansible, or Pulumi."
+		>
+			<a href="/stacks/new" class="text-xs font-medium px-3 py-1.5 rounded-lg transition-colors" style="background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);">
+				New stack →
 			</a>
-		</div>
+		</EmptyState>
 	{:else}
 		<div class="border border-zinc-800 rounded-xl overflow-hidden">
 			<table class="w-full text-sm">
