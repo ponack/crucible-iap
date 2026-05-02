@@ -18,7 +18,7 @@ A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible pl
 [![Go Report Card](https://goreportcard.com/badge/github.com/ponack/crucible-iap/api)](https://goreportcard.com/report/github.com/ponack/crucible-iap/api)
 [![zizmor](https://img.shields.io/badge/zizmor-passing-brightgreen)](https://github.com/ponack/crucible-iap/actions/workflows/ci.yml)
 ![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)
-![Status: Beta](https://img.shields.io/badge/status-beta-blue)
+![Status: Release Candidate](https://img.shields.io/badge/status-release%20candidate-green)
 
 ---
 
