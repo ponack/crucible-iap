@@ -122,6 +122,10 @@ Parameterized stack creation with a visible input form. Platform teams define bl
 
 Full Terraform Provider Registry Protocol v1 endpoint for distributing custom and internal providers. Critical for air-gapped deployments. Provider binaries are uploaded per OS/arch and stored in MinIO. SHA-256 checksums are computed at upload and served via a dynamic `SHA256SUMS` endpoint. GPG public keys can be registered per namespace for `terraform providers lock` compatibility. Discovery via `.well-known/terraform.json` alongside `modules.v1`.
 
+### Policy-as-Code GitOps ✓
+
+Store `.rego` policy files in a git repository and Crucible syncs them automatically on every push — no manual copy-paste into the UI. A background worker fetches a VCS archive (GitHub or GitLab, including self-hosted), extracts `.rego` files, and upserts each one as a policy. Policy type is inferred from the parent directory name (`post_plan/`, `approval/`, etc.) or an inline `# crucible:type` comment, defaulting to `post_plan`. HMAC-SHA256 verified push webhooks. Optional **mirror mode** deletes policies that no longer exist in the repo. Private repos via existing org integrations (token stored encrypted). See the [Policy GitOps guide](guides/policy-gitops.md).
+
 ---
 
 ## Medium Term
@@ -137,10 +141,6 @@ Nothing currently planned — suggest a feature by opening a GitHub issue.
 - PostgreSQL connection pooling (PgBouncer)
 - Stateless API — run multiple API instances behind a load balancer
 - Remote Docker host support for runner containers (not just local socket)
-
-### Policy-as-Code GitOps
-
-Manage Rego policies via a dedicated Git repository using the same PR review + merge flow as infrastructure code. Policy changes go through review, get proposed runs that validate syntax, and merge to apply.
 
 ### Multi-Org Support
 
