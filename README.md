@@ -29,7 +29,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 | Area | What you get |
 | ---- | ------------ |
 | **GitOps & runs** | Push or PR triggers a tracked run (plan → confirm → apply) with PR comments and commit status checks. Works with GitHub, GitLab, Gitea, and Gogs (HMAC-verified webhooks). Tracked / proposed / destroy / drift run types, auto-apply, and scheduled drift detection. |
-| **Policy-as-code** | OPA/Rego policies at `pre_plan`, `post_plan`, `pre_apply`, `trigger`, `login`, and `approval` hooks. Blocking denies + non-blocking warnings. Approval gating on blast radius. Standalone `/policies/test` playground with OPA evaluation trace. Full append-only audit log. |
+| **Policy-as-code** | OPA/Rego policies at `pre_plan`, `post_plan`, `pre_apply`, `trigger`, `login`, and `approval` hooks. Blocking denies + non-blocking warnings. Approval gating on blast radius. GitOps sync — store `.rego` files in a git repo and Crucible syncs them on push (GitHub / GitLab, HMAC-verified). Standalone `/policies/test` playground with OPA evaluation trace. Full append-only audit log. |
 | **State & runners** | OpenTofu, Terraform, Ansible, and Pulumi. Built-in Terraform HTTP backend on MinIO (zero config) or per-stack S3 / GCS / Azure Blob overrides. Each run in a fresh, read-only, capability-dropped Docker container — cosign-signed, digest-pinned runner image. |
 | **Secrets & identity** | Per-stack OIDC workload identity federation with AWS, GCP, Azure, Vault, Authentik, or any OIDC IdP — no static cloud credentials. Encrypted stack env vars + reusable variable sets. External secret stores: AWS Secrets Manager, Vault KV v2, Bitwarden, Vaultwarden. See [`docs/security.md`](docs/security.md) for crypto details. |
 | **Auth & access** | SSO via OIDC (Authentik, Okta, GitHub, Keycloak, anything OIDC) with PKCE, or single-operator local auth. Org-level RBAC (viewer / member / admin) with automatic IdP group → role mapping on login. Per-stack `viewer` / `approver` membership and service-account API tokens for CI. Rate-limited, hardened login. |
@@ -149,6 +149,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, external worker agents, backup, monitoring, troubleshooting |
 | [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting. GitHub Actions workflows audited with [zizmor](https://github.com/zizmorcore/zizmor) on every PR. |
 | [docs/policies.md](docs/policies.md) | Rego policy authoring guide — all policy types, input/output shapes, examples |
+| [docs/guides/policy-gitops.md](docs/guides/policy-gitops.md) | Policy-as-code GitOps — sync `.rego` files from a git repo, webhook setup, mirror mode |
 | [docs/policies/README.md](docs/policies/README.md) | Ready-to-use policy templates (no-destroy, blast radius, tags, EC2 allowlist, public access, approval gates, and more) |
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/team-setup.md](docs/guides/team-setup.md) | Org roles, per-stack RBAC, approval policies, recommended starter policy set |

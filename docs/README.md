@@ -29,4 +29,5 @@ Start here if you're setting up Crucible or integrating it with your stack.
 ## Policy
 
 - [Policy reference](policies.md) — OPA/Rego hooks, inputs, outputs
+- [Policy GitOps](guides/policy-gitops.md) — sync `.rego` files from a git repo, webhook setup, mirror mode
 - [Example policies](policies/README.md) — ready-to-use `.rego` samples (approval gates, blast-radius guards, tag requirements, region allowlists, destroy protection)
