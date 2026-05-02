@@ -922,12 +922,12 @@
 
 	const statusColour: Record<string, string> = {
 		queued: 'text-zinc-400',
-		preparing: 'text-blue-400',
-		planning: 'text-blue-400',
+		preparing: 'text-teal-400',
+		planning: 'text-teal-400',
 		unconfirmed: 'text-yellow-400',
 		pending_approval: 'text-purple-400',
-		confirmed: 'text-blue-400',
-		applying: 'text-blue-400',
+		confirmed: 'text-teal-400',
+		applying: 'text-teal-400',
 		finished: 'text-green-400',
 		failed: 'text-red-400',
 		canceled: 'text-zinc-500',
@@ -2480,7 +2480,7 @@
 									{run.type}{#if run.is_drift} <span class="text-xs text-amber-500">drift</span>{/if}
 									{#if run.pr_number}
 										<a href={run.pr_url} target="_blank" rel="noopener"
-											class="ml-1 text-xs text-blue-400 hover:text-blue-300">#{run.pr_number}</a>
+											class="ml-1 text-xs text-teal-400 hover:text-teal-300">#{run.pr_number}</a>
 									{/if}
 								</td>
 								<td class="px-4 py-2.5 text-xs font-mono">

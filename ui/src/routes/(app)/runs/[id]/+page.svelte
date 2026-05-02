@@ -230,12 +230,12 @@
 
 	const statusColour: Record<string, string> = {
 		queued: 'bg-zinc-800 text-zinc-300',
-		preparing: 'bg-blue-900 text-blue-300',
-		planning: 'bg-blue-900 text-blue-300',
+		preparing: 'bg-teal-900 text-teal-300',
+		planning: 'bg-teal-900 text-teal-300',
 		unconfirmed: 'bg-yellow-900 text-yellow-300',
 		pending_approval: 'bg-purple-900 text-purple-300',
-		confirmed: 'bg-blue-900 text-blue-300',
-		applying: 'bg-blue-900 text-blue-300',
+		confirmed: 'bg-teal-900 text-teal-300',
+		applying: 'bg-teal-900 text-teal-300',
 		finished: 'bg-green-900 text-green-300',
 		failed: 'bg-red-900 text-red-300',
 		canceled: 'bg-zinc-800 text-zinc-400',

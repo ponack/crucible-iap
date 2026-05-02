@@ -66,14 +66,14 @@
 	}
 
 	const actionColour: Record<string, string> = {
-		'run.created': 'text-blue-400',
+		'run.created': 'text-teal-400',
 		'run.confirmed': 'text-green-400',
 		'run.discarded': 'text-zinc-400',
 		'run.canceled': 'text-zinc-400',
-		'run.preparing': 'text-blue-400',
-		'run.planning': 'text-blue-400',
+		'run.preparing': 'text-teal-400',
+		'run.planning': 'text-teal-400',
 		'run.unconfirmed': 'text-yellow-400',
-		'run.applying': 'text-blue-400',
+		'run.applying': 'text-teal-400',
 		'run.finished': 'text-green-400',
 		'run.failed': 'text-red-400',
 		'stack.created': 'text-teal-400',
