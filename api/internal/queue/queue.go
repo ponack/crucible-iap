@@ -126,6 +126,29 @@ type AuditFlushArgs struct {
 
 func (AuditFlushArgs) Kind() string { return "audit_flush" }
 
+// PolicySyncArgs is enqueued when a policy git source receives a push webhook
+// or a manual sync is triggered.
+type PolicySyncArgs struct {
+	SourceID  string `json:"source_id"`
+	CommitSHA string `json:"commit_sha"`
+}
+
+func (PolicySyncArgs) Kind() string { return "policy_sync" }
+
+func (PolicySyncArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 3, Priority: 2, Queue: river.QueueDefault}
+}
+
+// EnqueuePolicySync queues a policy sync job for the given git source.
+func (c *Client) EnqueuePolicySync(ctx context.Context, args PolicySyncArgs) error {
+	_, err := c.river.Insert(ctx, args, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue policy sync: %w", err)
+	}
+	slog.Info("policy sync job enqueued", "source_id", args.SourceID, "sha", args.CommitSHA)
+	return nil
+}
+
 // TokenClaims holds the per-job JWT payload sent to runner containers.
 type TokenClaims struct {
 	RunID   string    `json:"run_id"`

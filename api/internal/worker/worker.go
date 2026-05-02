@@ -21,6 +21,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/policy"
+	"github.com/ponack/crucible-iap/internal/policygit"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/runner"
 	"github.com/ponack/crucible-iap/internal/runs"
@@ -65,6 +66,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 		storage: s,
 		vault:   v,
 	})
+	river.AddWorker(workers, policygit.NewPolicySyncWorker(pool, v, e))
 
 	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{
