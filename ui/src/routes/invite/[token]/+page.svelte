@@ -70,7 +70,7 @@
 			<div class="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-8 text-center space-y-3">
 				<p class="text-zinc-100 font-medium">Invite not found</p>
 				<p class="text-sm text-zinc-500">This invite link has expired, already been used, or is invalid.</p>
-				<a href="/" class="block mt-4 text-sm text-indigo-400 hover:text-indigo-300">Go home</a>
+				<a href="/" class="block mt-4 text-sm text-teal-400 hover:text-teal-300">Go home</a>
 			</div>
 		{:else if meta}
 			<div class="bg-zinc-900 border border-zinc-800 rounded-xl px-6 py-8 space-y-5">
@@ -91,7 +91,7 @@
 				<button
 					onclick={accept}
 					disabled={accepting}
-					class="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition-colors"
+					class="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition-colors"
 				>
 					{#if accepting}
 						Joining…

@@ -124,7 +124,7 @@
 		<div class="flex items-center justify-between">
 			<a href="/blueprints/{id}" class="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">Cancel</a>
 			<button type="submit" disabled={deploying}
-				class="rounded-lg bg-indigo-600 px-5 py-2 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-50">
+				class="rounded-lg bg-teal-600 px-5 py-2 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
 				{deploying ? 'Deploying…' : 'Deploy stack'}
 			</button>
 		</div>

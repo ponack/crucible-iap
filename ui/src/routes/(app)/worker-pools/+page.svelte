@@ -91,7 +91,7 @@
 			<p class="text-zinc-500 text-sm mt-0.5">External agent processes that run jobs on your own infrastructure instead of the built-in runner.</p>
 		</div>
 		<button onclick={() => creating = !creating}
-			class="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+			class="bg-teal-600 hover:bg-teal-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 			New pool
 		</button>
 	</div>
@@ -124,22 +124,22 @@
 				<div class="col-span-2 flex flex-col gap-1">
 					<label for="pool-name" class="text-xs text-zinc-400">Name</label>
 					<input id="pool-name" bind:value={newName} placeholder="my-pool"
-						class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+						class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-teal-500" />
 				</div>
 				<div class="col-span-2 flex flex-col gap-1">
 					<label for="pool-desc" class="text-xs text-zinc-400">Description (optional)</label>
 					<input id="pool-desc" bind:value={newDesc} placeholder="On-prem GPU cluster"
-						class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+						class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-teal-500" />
 				</div>
 				<div class="flex flex-col gap-1">
 					<label for="pool-cap" class="text-xs text-zinc-400">Max concurrent runs</label>
 					<input id="pool-cap" type="number" min="1" max="50" bind:value={newCapacity}
-						class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500" />
+						class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-teal-500" />
 				</div>
 			</div>
 			<div class="flex gap-2">
 				<button onclick={handleCreate} disabled={!newName}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-40 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					Create
 				</button>
 				<button onclick={() => { creating = false; createError = null; }} class="text-sm text-zinc-500 hover:text-zinc-300">
@@ -155,13 +155,13 @@
 		<div class="border border-zinc-800 rounded-xl p-12 text-center">
 			<p class="text-zinc-400 text-sm">Could not load worker pools.</p>
 			<p class="text-zinc-600 text-xs mt-1">{error}</p>
-			<button onclick={load} class="mt-3 text-indigo-400 text-sm hover:underline">Try again →</button>
+			<button onclick={load} class="mt-3 text-teal-400 text-sm hover:underline">Try again →</button>
 		</div>
 	{:else if items.length === 0 && !creating}
 		<div class="border border-zinc-800 rounded-xl p-12 text-center space-y-2">
 			<p class="text-zinc-400 text-sm">No worker pools yet.</p>
 			<p class="text-zinc-600 text-xs max-w-sm mx-auto">Worker pools let you run infrastructure jobs on your own servers. Deploy <code class="text-zinc-400">crucible-agent</code> with a pool token and point stacks at the pool.</p>
-			<button onclick={() => creating = true} class="mt-3 text-indigo-400 text-sm hover:underline">Create your first pool →</button>
+			<button onclick={() => creating = true} class="mt-3 text-teal-400 text-sm hover:underline">Create your first pool →</button>
 		</div>
 	{:else if items.length > 0}
 		<div class="border border-zinc-800 rounded-xl overflow-hidden">

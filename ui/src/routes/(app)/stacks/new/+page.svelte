@@ -161,7 +161,7 @@
 			<legend class="text-xs text-zinc-500 uppercase tracking-widest px-1">Behaviour</legend>
 
 			<label class="flex items-center gap-3 cursor-pointer">
-				<input type="checkbox" class="rounded border-zinc-700 bg-zinc-900 text-indigo-500"
+				<input type="checkbox" class="rounded border-zinc-700 bg-zinc-900 text-teal-500"
 					bind:checked={form.auto_apply} />
 				<span class="text-sm text-zinc-300">
 					Auto-apply — apply immediately after a clean plan (no confirmation required)
@@ -169,7 +169,7 @@
 			</label>
 
 			<label class="flex items-center gap-3 cursor-pointer">
-				<input type="checkbox" class="rounded border-zinc-700 bg-zinc-900 text-indigo-500"
+				<input type="checkbox" class="rounded border-zinc-700 bg-zinc-900 text-teal-500"
 					bind:checked={form.drift_detection} />
 				<span class="text-sm text-zinc-300">
 					Drift detection — schedule periodic plan runs to detect configuration drift
@@ -188,7 +188,7 @@
 					</select>
 				</div>
 				<label class="flex items-center gap-3 cursor-pointer pl-7">
-					<input type="checkbox" class="rounded border-zinc-700 bg-zinc-900 text-indigo-500"
+					<input type="checkbox" class="rounded border-zinc-700 bg-zinc-900 text-teal-500"
 						bind:checked={form.auto_remediate_drift} />
 					<span class="text-sm text-zinc-300">
 						Auto-remediate drift — automatically apply when drift is detected
@@ -199,7 +199,7 @@
 
 		<div class="flex items-center gap-3">
 			<button type="submit" disabled={submitting}
-				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+				class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
 				{submitting ? 'Creating…' : 'Create stack'}
 			</button>
 			<a href="/stacks" class="text-sm text-zinc-500 hover:text-zinc-300">Cancel</a>
@@ -226,6 +226,6 @@
 		transition: border-color 0.1s;
 	}
 	:global(.field-input:focus) {
-		border-color: var(--color-indigo-500, #6366f1);
+		border-color: var(--color-teal-500, #6366f1);
 	}
 </style>

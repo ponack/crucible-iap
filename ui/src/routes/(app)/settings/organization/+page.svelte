@@ -170,12 +170,12 @@
 							bind:value={orgNameDraft}
 							placeholder="My Organization"
 							required
-							class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+							class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
 						/>
 						<button
 							type="submit"
 							disabled={savingName || !orgNameDraft.trim() || orgNameDraft === orgDetail?.name}
-							class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+							class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
 						>
 							{savingName ? 'Saving…' : 'Save'}
 						</button>
@@ -259,7 +259,7 @@
 						bind:value={inviteEmail}
 						placeholder="email@example.com"
 						required
-						class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500"
 					/>
 					<select
 						bind:value={inviteRole}
@@ -272,7 +272,7 @@
 					<button
 						type="submit"
 						disabled={inviting}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
 					>
 						{inviting ? 'Sending…' : 'Invite'}
 					</button>
@@ -285,7 +285,7 @@
 				{#if newToken}
 					<div class="bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-3 space-y-1">
 						<p class="text-xs text-zinc-400">Share this invite link — it expires in 7 days and can only be used once:</p>
-						<p class="text-xs font-mono text-indigo-300 break-all">
+						<p class="text-xs font-mono text-teal-300 break-all">
 							{window.location.origin}/invite/{newToken}
 						</p>
 					</div>
@@ -332,7 +332,7 @@
 						bind:value={newGroupClaim}
 						placeholder="idp-group-name"
 						required
-						class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+						class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
 					/>
 					<select
 						bind:value={newGroupRole}
@@ -345,7 +345,7 @@
 					<button
 						type="submit"
 						disabled={addingGroupMap}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
 					>
 						{addingGroupMap ? 'Adding…' : 'Add'}
 					</button>

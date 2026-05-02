@@ -246,7 +246,7 @@
 				</div>
 				<div class="flex items-center gap-3">
 					<button type="submit" disabled={savingRunner}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 						{savingRunner ? 'Saving…' : 'Save runner settings'}
 					</button>
 					{#if runnerSaved}
@@ -279,7 +279,7 @@
 				</div>
 				<div class="flex items-center gap-3">
 					<button type="submit" disabled={savingRetention}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 						{savingRetention ? 'Saving…' : 'Save retention policy'}
 					</button>
 					{#if retentionSaved}
@@ -435,7 +435,7 @@
 
 			<div class="flex items-center gap-3">
 				<button type="submit" disabled={savingOIDC}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{savingOIDC ? 'Saving…' : 'Save OIDC default'}
 				</button>
 				{#if oidcSaved}
@@ -479,7 +479,7 @@
 				{/if}
 				<div class="flex items-center gap-3">
 					<button type="submit" disabled={savingScan}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 						{savingScan ? 'Saving…' : 'Save scan settings'}
 					</button>
 					{#if scanSaved}
@@ -519,7 +519,7 @@
 				{/if}
 				<div class="flex items-center gap-3">
 					<button type="submit" disabled={savingInfracost}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 						{savingInfracost ? 'Saving…' : 'Save Infracost settings'}
 					</button>
 					{#if infracostSaved}

@@ -1060,7 +1060,7 @@
 			<!-- Primary run actions -->
 			{#if stack.my_stack_role !== 'viewer'}
 				<button onclick={triggerRun} disabled={triggeringRun}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-3 py-1.5 rounded-lg transition-colors">
 					{triggeringRun ? 'Queuing…' : 'Trigger run'}
 				</button>
 				<button
@@ -1068,7 +1068,7 @@
 					title="Variable overrides for this run"
 					class="border transition-colors text-sm px-2 py-1.5 rounded-lg
 						{overrides.length > 0
-							? 'border-indigo-600 text-indigo-400 hover:border-indigo-400'
+							? 'border-teal-600 text-teal-400 hover:border-teal-400'
 							: 'border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}">
 					{overrides.length > 0 ? `Overrides (${overrides.length})` : 'Overrides'}
 				</button>
@@ -1142,7 +1142,7 @@
 		<div class="divide-y divide-zinc-700 border border-zinc-800 rounded-lg overflow-hidden">
 			{#each overrides as ov}
 			<div class="flex items-center gap-2 px-3 py-2 bg-zinc-900">
-				<code class="text-xs text-indigo-300 font-mono flex-shrink-0">{ov.key}</code>
+				<code class="text-xs text-teal-300 font-mono flex-shrink-0">{ov.key}</code>
 				<span class="text-zinc-600 text-xs">=</span>
 				<code class="text-xs text-zinc-300 font-mono truncate flex-1">{ov.value || '(empty)'}</code>
 				<button onclick={() => removeOverride(ov.key)} class="text-zinc-600 hover:text-red-400 transition-colors text-xs ml-1">✕</button>
@@ -1307,7 +1307,7 @@
 			</div>
 			<div class="space-y-3 rounded-lg border border-zinc-800 p-4">
 				<div class="flex items-center gap-3">
-					<input id="edit-pr-preview" type="checkbox" class="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-indigo-500"
+					<input id="edit-pr-preview" type="checkbox" class="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-teal-500"
 						bind:checked={form.pr_preview_enabled} />
 					<label class="field-label mb-0" for="edit-pr-preview">PR preview environments</label>
 				</div>
@@ -1336,7 +1336,7 @@
 			</div>
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{saving ? 'Saving…' : 'Save changes'}
 				</button>
 			</div>
@@ -1898,7 +1898,7 @@
 
 			<div class="flex items-center gap-3 flex-wrap">
 				<button type="submit" disabled={savingNotif}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{savingNotif ? 'Saving…' : 'Save notifications'}
 				</button>
 				{#if stack.has_slack_webhook}
@@ -1955,7 +1955,7 @@
 	<!-- Integrations -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Integrations</h2>
-		<p class="text-xs text-zinc-500">Assign org-level integrations to this stack. Manage credentials in <a href="/settings/integrations" class="text-indigo-400 hover:text-indigo-300">Settings → Integrations</a>.</p>
+		<p class="text-xs text-zinc-500">Assign org-level integrations to this stack. Manage credentials in <a href="/settings/integrations" class="text-teal-400 hover:text-teal-300">Settings → Integrations</a>.</p>
 
 		<div class="border border-zinc-800 rounded-xl p-5 space-y-4">
 			<div class="grid grid-cols-2 gap-4">
@@ -1982,7 +1982,7 @@
 			</div>
 			<div class="flex items-center gap-3">
 				<button type="button" onclick={setIntegrations} disabled={savingIntegrations}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{savingIntegrations ? 'Saving…' : 'Save integrations'}
 				</button>
 				{#if integrationsSaved}
@@ -2084,7 +2084,7 @@
 			{#if stateBackendProvider}
 				<div class="flex items-center gap-3">
 					<button type="submit" disabled={savingStateBackend}
-						class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 						{savingStateBackend ? 'Saving…' : 'Save state backend'}
 					</button>
 					{#if stack.has_state_backend}
@@ -2266,7 +2266,7 @@
 								</td>
 								<td class="px-4 py-2.5 text-xs">
 									{#if d.run_id}
-										<a href="/runs/{d.run_id}" class="text-indigo-400 hover:text-indigo-300" onclick={(e) => e.stopPropagation()}>run →</a>
+										<a href="/runs/{d.run_id}" class="text-teal-400 hover:text-teal-300" onclick={(e) => e.stopPropagation()}>run →</a>
 									{:else if d.skip_reason}
 										<span class="text-zinc-600">{d.skip_reason.replace(/_/g, ' ')}</span>
 									{:else}
@@ -2284,7 +2284,7 @@
 												goto('/runs/' + res.run_id);
 											} catch { /* ignore */ }
 										}}
-										class="text-zinc-500 hover:text-indigo-400 transition-colors"
+										class="text-zinc-500 hover:text-teal-400 transition-colors"
 									>↺</button>
 								</td>
 							</tr>
@@ -2407,14 +2407,14 @@
 				<div class="space-y-1">
 					<label class="text-xs text-zinc-400" for="ow-url">URL</label>
 					<input id="ow-url" type="url" bind:value={newOWURL} placeholder="https://example.com/hook" required
-						class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+						class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-teal-500" />
 				</div>
 				<div class="space-y-1">
 					<p class="text-xs text-zinc-400">Events</p>
 					<div class="flex gap-4">
 						{#each ['plan_complete', 'run_finished', 'run_failed'] as ev}
 							<label class="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
-								<input type="checkbox" bind:group={newOWEvents} value={ev} class="accent-indigo-500" />
+								<input type="checkbox" bind:group={newOWEvents} value={ev} class="accent-teal-500" />
 								{ev.replace('_', ' ')}
 							</label>
 						{/each}
@@ -2423,17 +2423,17 @@
 				<div class="space-y-1">
 					<label class="text-xs text-zinc-400" for="ow-headers">Extra headers <span class="text-zinc-600">(optional, one per line: Key: Value)</span></label>
 					<textarea id="ow-headers" bind:value={newOWHeaders} rows="2" placeholder="Authorization: Bearer token123"
-						class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-xs rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+						class="w-full bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder-zinc-500 text-xs rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none"></textarea>
 				</div>
 				<label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
-					<input type="checkbox" bind:checked={newOWWithSecret} class="accent-indigo-500" />
+					<input type="checkbox" bind:checked={newOWWithSecret} class="accent-teal-500" />
 					Generate HMAC signing secret <span class="text-zinc-600">(adds <code class="text-zinc-300">X-Crucible-Signature</code> header)</span>
 				</label>
 				{#if owError}
 					<p class="text-xs text-red-400">{owError}</p>
 				{/if}
 				<button type="submit" disabled={addingOW || newOWEvents.length === 0}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors">
 					{addingOW ? 'Adding…' : 'Add webhook'}
 				</button>
 			</form>
@@ -2562,7 +2562,7 @@
 		</div>
 		<p class="text-xs text-zinc-600">Exchange a short-lived OIDC token for cloud credentials on every run — no static secrets stored in Crucible.</p>
 		{#if !oidcConfig}
-			<p class="text-xs text-indigo-400/70">No per-stack config — the org-level OIDC default from Settings will be used if one is configured.</p>
+			<p class="text-xs text-teal-400/70">No per-stack config — the org-level OIDC default from Settings will be used if one is configured.</p>
 		{/if}
 		<form onsubmit={saveOIDC} class="border border-zinc-800 rounded-xl p-5 space-y-4">
 			{#if oidcError}

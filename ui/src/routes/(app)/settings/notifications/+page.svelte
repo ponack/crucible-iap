@@ -172,7 +172,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<button type="submit" disabled={saving}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{saving ? 'Saving…' : 'Save'}
 				</button>
 				<button type="button" onclick={testSlack} disabled={testingSlack || !settings?.default_slack_webhook}
@@ -217,7 +217,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<button type="submit" disabled={saving}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{saving ? 'Saving…' : 'Save'}
 				</button>
 				<button type="button" onclick={testGotify} disabled={testingGotify || !settings?.default_gotify_url}
@@ -264,7 +264,7 @@
 			</div>
 			<div class="flex items-center gap-2">
 				<button type="submit" disabled={saving}
-					class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{saving ? 'Saving…' : 'Save'}
 				</button>
 				<button type="button" onclick={testNtfy} disabled={testingNtfy || !settings?.default_ntfy_url}
@@ -338,7 +338,7 @@
 			</div>
 			<p class="text-xs text-zinc-600">Port 587 uses STARTTLS. Port 465 uses implicit TLS (SMTPS). Port 25 with TLS disabled sends in plaintext.</p>
 			<button type="submit" disabled={saving}
-				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+				class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 				{saving ? 'Saving…' : 'Save SMTP settings'}
 			</button>
 		</form>
@@ -400,7 +400,7 @@
 				{/if}
 			</div>
 			<button type="submit" disabled={saving}
-				class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+				class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 				{saving ? 'Saving…' : 'Save'}
 			</button>
 		</form>

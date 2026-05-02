@@ -152,7 +152,7 @@
 			<p class="text-sm text-zinc-400 mt-0.5">Org-level credentials for VCS and external secret stores. Stacks select which integration to use.</p>
 		</div>
 		<button onclick={openCreate}
-			class="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors">
+			class="px-3 py-1.5 text-sm bg-teal-600 hover:bg-teal-500 text-white rounded-lg transition-colors">
 			Add integration
 		</button>
 	</div>
@@ -243,14 +243,14 @@
 				<div>
 					<label class="block text-xs text-zinc-400 mb-1" for="int-name">Name</label>
 					<input id="int-name" type="text" bind:value={formName} placeholder="e.g. GitHub (ponack)"
-						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 				</div>
 
 				{#if !editingID}
 				<div>
 					<label class="block text-xs text-zinc-400 mb-1" for="int-type">Type</label>
 					<select id="int-type" bind:value={formType}
-						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-teal-500">
 						{#each typeGroups as group}
 							<optgroup label={group.label}>
 								{#each group.types as t}
@@ -270,7 +270,7 @@
 						</label>
 						<input id="int-token" type="password" bind:value={vcsCfg.token}
 							placeholder={editingID ? '••••••••' : 'ghp_…'}
-							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						<p class="text-xs text-zinc-500 mt-1">
 							{#if formType === 'github'}Requires <code>repo</code> scope (or <code>contents:read</code> for fine-grained tokens).
 							{:else if formType === 'gitlab'}Requires <code>read_repository</code> scope.
@@ -284,23 +284,23 @@
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="aws-region">Region</label>
 							<input id="aws-region" type="text" bind:value={awsCfg.region} placeholder="us-east-1"
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="aws-key">Access key ID <span class="text-zinc-600">(optional)</span></label>
 							<input id="aws-key" type="text" bind:value={awsCfg.access_key_id} placeholder="AKIA…"
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 					</div>
 					<div>
 						<label class="block text-xs text-zinc-400 mb-1" for="aws-secret">Secret access key <span class="text-zinc-600">(optional)</span></label>
 						<input id="aws-secret" type="password" bind:value={awsCfg.secret_access_key}
-							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 					</div>
 					<div>
 						<label class="block text-xs text-zinc-400 mb-1" for="aws-names">Secret names <span class="text-zinc-500">(one per line)</span></label>
 						<textarea id="aws-names" bind:value={awsSecretNamesRaw} rows="3" placeholder="my-app/db-password&#10;my-app/api-key"
-							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500 resize-none font-mono"></textarea>
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 resize-none font-mono"></textarea>
 					</div>
 
 				<!-- HashiCorp Vault -->
@@ -308,35 +308,35 @@
 					<div>
 						<label class="block text-xs text-zinc-400 mb-1" for="hv-addr">Vault address</label>
 						<input id="hv-addr" type="text" bind:value={vaultCfg.address} placeholder="https://vault.example.com"
-							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="hv-mount">Mount</label>
 							<input id="hv-mount" type="text" bind:value={vaultCfg.mount} placeholder="secret"
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="hv-path">Path</label>
 							<input id="hv-path" type="text" bind:value={vaultCfg.path} placeholder="myapp/config"
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 					</div>
 					<div>
 						<label class="block text-xs text-zinc-400 mb-1" for="hv-token">Token <span class="text-zinc-600">(or use AppRole below)</span></label>
 						<input id="hv-token" type="password" bind:value={vaultCfg.token}
-							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="hv-role">Role ID</label>
 							<input id="hv-role" type="text" bind:value={vaultCfg.role_id}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="hv-secret-id">Secret ID</label>
 							<input id="hv-secret-id" type="password" bind:value={vaultCfg.secret_id}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 					</div>
 
@@ -345,18 +345,18 @@
 					<div>
 						<label class="block text-xs text-zinc-400 mb-1" for="bw-token">Machine account access token</label>
 						<input id="bw-token" type="password" bind:value={bwCfg.access_token}
-							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="bw-proj">Project ID <span class="text-zinc-600">(optional)</span></label>
 							<input id="bw-proj" type="text" bind:value={bwCfg.project_id}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="bw-org">Org ID <span class="text-zinc-600">(optional)</span></label>
 							<input id="bw-org" type="text" bind:value={bwCfg.org_id}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 					</div>
 
@@ -365,30 +365,30 @@
 					<div>
 						<label class="block text-xs text-zinc-400 mb-1" for="vw-url">Vaultwarden URL</label>
 						<input id="vw-url" type="text" bind:value={vwCfg.url} placeholder="https://vaultwarden.example.com"
-							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="vw-cid">Client ID</label>
 							<input id="vw-cid" type="text" bind:value={vwCfg.client_id}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="vw-csecret">Client secret</label>
 							<input id="vw-csecret" type="password" bind:value={vwCfg.client_secret}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 					</div>
 					<div class="grid grid-cols-2 gap-3">
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="vw-email">Email</label>
 							<input id="vw-email" type="email" bind:value={vwCfg.email}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 						<div>
 							<label class="block text-xs text-zinc-400 mb-1" for="vw-mp">Master password</label>
 							<input id="vw-mp" type="password" bind:value={vwCfg.master_password}
-								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+								class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
 						</div>
 					</div>
 				{/if}
@@ -399,7 +399,7 @@
 					Cancel
 				</button>
 				<button onclick={save} disabled={saving || !formName}
-					class="px-4 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg transition-colors">
+					class="px-4 py-1.5 text-sm bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg transition-colors">
 					{saving ? 'Saving…' : editingID ? 'Update' : 'Add'}
 				</button>
 			</div>

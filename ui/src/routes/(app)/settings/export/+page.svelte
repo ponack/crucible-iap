@@ -123,7 +123,7 @@
 
 		<div class="flex items-center gap-3">
 			<label
-				class="cursor-pointer rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition-colors hover:bg-indigo-500 {importing ? 'opacity-50 pointer-events-none' : ''}">
+				class="cursor-pointer rounded-lg bg-teal-600 px-4 py-2 text-sm text-white transition-colors hover:bg-teal-500 {importing ? 'opacity-50 pointer-events-none' : ''}">
 				{importing ? 'Importing…' : 'Choose file'}
 				<input
 					bind:this={fileInput}

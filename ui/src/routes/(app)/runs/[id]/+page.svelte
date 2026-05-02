@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { runs, type Run, type RunPolicyResult, type RunScanResult } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import RunLifecycle from '$lib/components/RunLifecycle.svelte';
 
 	const runID = $derived(page.params.id as string);
 
@@ -265,6 +266,9 @@
 		</div>
 	{/if}
 
+	<!-- Run lifecycle rail -->
+	<RunLifecycle status={run.status} />
+
 	<!-- Header bar -->
 	<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-4 flex items-start justify-between gap-4">
 		<div class="space-y-1">
@@ -395,7 +399,7 @@
 			{/if}
 			{#if run.status === 'failed'}
 				<button onclick={explainFailure} disabled={explaining}
-					class="border border-indigo-900 hover:border-indigo-700 text-indigo-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+					class="border border-teal-900 hover:border-teal-700 text-teal-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 					{explaining ? 'Analysing…' : '✦ Explain failure'}
 				</button>
 			{/if}
@@ -487,7 +491,7 @@
 	<!-- AI explanation panel -->
 	{#if explanation || explainError}
 		<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-4 space-y-2">
-			<p class="text-xs font-medium text-indigo-400 uppercase tracking-wide">✦ AI failure analysis</p>
+			<p class="text-xs font-medium text-teal-400 uppercase tracking-wide">✦ AI failure analysis</p>
 			{#if explainError}
 				<p class="text-xs text-red-400">{explainError}</p>
 			{:else if explanation}
@@ -498,8 +502,15 @@
 
 	<!-- Log viewer -->
 	<div class="flex-1 flex flex-col min-h-0">
-		<div class="flex items-center justify-between px-4 py-2 bg-zinc-950 border-b border-zinc-800">
-			<span class="text-xs text-zinc-500 font-mono">Run output</span>
+		<div class="flex items-center justify-between px-4 py-2" style="background: #0a1210; border-bottom: 1px solid var(--color-zinc-800);">
+			<div class="flex items-center gap-2">
+				<div class="flex gap-1.5">
+					<span class="h-2.5 w-2.5 rounded-full" style="background: var(--color-zinc-700);"></span>
+					<span class="h-2.5 w-2.5 rounded-full" style="background: var(--color-zinc-700);"></span>
+					<span class="h-2.5 w-2.5 rounded-full" style="background: var(--color-zinc-700);"></span>
+				</div>
+				<span class="text-xs text-zinc-600 font-mono ml-2">run output</span>
+			</div>
 			<div class="flex items-center gap-3">
 				{#if logLines.length > 0}
 					<button onclick={downloadLog}
@@ -514,11 +525,10 @@
 			</div>
 		</div>
 		<div bind:this={logEl}
-			class="flex-1 overflow-y-auto bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-300 leading-relaxed">
+			class="flex-1 overflow-y-auto px-5 py-4 font-mono text-xs text-zinc-300 leading-relaxed"
+			style="background: #0a1210;">
 			{#if logLines.length === 0}
-				{#if run.status === 'queued'}
-					<span class="text-zinc-600 animate-pulse">Waiting for output…</span>
-				{:else if terminalStatuses.has(run.status)}
+				{#if terminalStatuses.has(run.status)}
 					<span class="text-zinc-600">No log output recorded.</span>
 				{:else}
 					<span class="text-zinc-600 animate-pulse">Waiting for output…</span>

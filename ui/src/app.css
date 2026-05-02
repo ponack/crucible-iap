@@ -7,25 +7,42 @@
 @layer base {
 	:root {
 		--radius: 0.5rem;
-		--page-bg: #1a2e2a;
+		--page-bg: #0f1a18;
+		--accent: #2DD4BF;
+		--accent-muted: rgba(45, 212, 191, 0.08);
+		--accent-border: rgba(45, 212, 191, 0.18);
 		color-scheme: dark;
+
+		/* Teal-slate zinc: shift hue from ~286 (neutral) to 185 (teal-slate) */
+		--color-zinc-950: oklch(10.5% 0.008 185);
+		--color-zinc-900: oklch(14.8% 0.012 185);
+		--color-zinc-800: oklch(20.8% 0.016 185);
+		--color-zinc-700: oklch(31.2% 0.018 185);
+		--color-zinc-600: oklch(43.5% 0.020 185);
+		--color-zinc-500: oklch(54.0% 0.018 185);
+		--color-zinc-400: oklch(68.5% 0.016 185);
+		--color-zinc-300: oklch(78.5% 0.013 185);
+		--color-zinc-200: oklch(87.5% 0.010 185);
+		--color-zinc-100: oklch(93.5% 0.006 185);
+		--color-zinc-50:  oklch(97.5% 0.003 185);
 	}
 
-	/* Light theme: flip the zinc scale so all existing dark classes render as light */
+	/* Light theme */
 	:root.light {
 		color-scheme: light;
 		--page-bg: #f0faf8;
-		--color-zinc-950: oklch(98.4% .002 286.375);
-		--color-zinc-900: oklch(96.7% .001 286.375);
-		--color-zinc-800: oklch(92% .004 286.32);
-		--color-zinc-700: oklch(87.1% .006 286.286);
-		--color-zinc-600: oklch(70.5% .015 286.067);
-		--color-zinc-400: oklch(44.2% .017 285.786);
-		--color-zinc-300: oklch(37% .013 285.805);
-		--color-zinc-200: oklch(27.4% .006 286.033);
-		--color-zinc-100: oklch(21% .006 285.885);
-		--color-zinc-50: oklch(14.1% .005 285.823);
-		--color-white: oklch(14.1% .005 285.823);
+		--color-zinc-950: oklch(98.4% .002 185);
+		--color-zinc-900: oklch(96.7% .003 185);
+		--color-zinc-800: oklch(92%  .006 185);
+		--color-zinc-700: oklch(87%  .009 185);
+		--color-zinc-600: oklch(70%  .016 185);
+		--color-zinc-500: oklch(57%  .018 185);
+		--color-zinc-400: oklch(44%  .017 185);
+		--color-zinc-300: oklch(37%  .013 185);
+		--color-zinc-200: oklch(27%  .008 185);
+		--color-zinc-100: oklch(21%  .006 185);
+		--color-zinc-50:  oklch(14%  .005 185);
+		--color-white:    oklch(14%  .005 185);
 	}
 
 	html,
@@ -34,5 +51,33 @@
 		color: var(--color-zinc-100);
 		min-height: 100%;
 		transition: background-color 150ms ease, color 150ms ease;
+	}
+}
+
+/* Shared form input style used across many pages */
+@utility field-input {
+	display: block;
+	width: 100%;
+	background-color: var(--color-zinc-900);
+	border: 1px solid var(--color-zinc-700);
+	border-radius: var(--radius);
+	color: var(--color-zinc-100);
+	font-size: 0.875rem;
+	padding: 0.375rem 0.625rem;
+	transition: border-color 150ms ease, box-shadow 150ms ease;
+	outline: none;
+
+	&:focus {
+		border-color: var(--accent);
+		box-shadow: 0 0 0 2px var(--accent-muted);
+	}
+
+	&::placeholder {
+		color: var(--color-zinc-600);
+	}
+
+	&:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 }

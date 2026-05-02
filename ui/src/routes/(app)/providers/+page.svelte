@@ -241,7 +241,7 @@
 					<p class="text-red-400 text-sm">{formError}</p>
 				{/if}
 				<button type="submit" disabled={saving}
-					class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm rounded">
+					class="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm rounded">
 					{saving ? 'Saving…' : 'Add key'}
 				</button>
 			</form>
