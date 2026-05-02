@@ -51,9 +51,9 @@
 		finished: 'text-green-400',
 		failed: 'text-red-400',
 		unconfirmed: 'text-yellow-400',
-		applying: 'text-blue-400',
-		planning: 'text-blue-400',
-		preparing: 'text-blue-400',
+		applying: 'text-teal-400',
+		planning: 'text-teal-400',
+		preparing: 'text-teal-400',
 		queued: 'text-zinc-400',
 		canceled: 'text-zinc-500',
 		discarded: 'text-zinc-500'

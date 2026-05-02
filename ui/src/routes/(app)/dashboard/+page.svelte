@@ -126,11 +126,11 @@
 
 	const statusColour: Record<string, string> = {
 		queued:      'text-zinc-400',
-		preparing:   'text-blue-400',
-		planning:    'text-blue-400',
+		preparing:   'text-teal-400',
+		planning:    'text-teal-400',
 		unconfirmed: 'text-yellow-400',
-		confirmed:   'text-blue-400',
-		applying:    'text-blue-400',
+		confirmed:   'text-teal-400',
+		applying:    'text-teal-400',
 		finished:    'text-green-400',
 		failed:      'text-red-400',
 		canceled:    'text-zinc-500',
@@ -139,11 +139,11 @@
 
 	const statusDot: Record<string, string> = {
 		queued:      'bg-zinc-500',
-		preparing:   'bg-blue-500 animate-pulse',
-		planning:    'bg-blue-500 animate-pulse',
+		preparing:   'bg-teal-400 animate-pulse',
+		planning:    'bg-teal-400 animate-pulse',
 		unconfirmed: 'bg-yellow-500',
-		confirmed:   'bg-blue-500',
-		applying:    'bg-blue-500 animate-pulse',
+		confirmed:   'bg-teal-400',
+		applying:    'bg-teal-400 animate-pulse',
 		finished:    'bg-green-500',
 		failed:      'bg-red-500',
 		canceled:    'bg-zinc-600',
@@ -200,10 +200,10 @@
 		if (a === 'run.confirmed')  return { bg: 'bg-green-900',  fg: 'text-green-400',  symbol: '✓' };
 		if (a === 'run.discarded' || a === 'run.canceled')
 			return { bg: 'bg-zinc-800', fg: 'text-zinc-500', symbol: '×' };
-		if (a === 'run.preparing')  return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '⚙' };
-		if (a === 'run.planning')   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '≡' };
-		if (a === 'run.applying')   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '▶' };
-		if (a.startsWith('run.'))   return { bg: 'bg-blue-900',   fg: 'text-blue-400',   symbol: '▶' };
+		if (a === 'run.preparing')  return { bg: 'bg-teal-900',   fg: 'text-teal-400',   symbol: '⚙' };
+		if (a === 'run.planning')   return { bg: 'bg-teal-900',   fg: 'text-teal-400',   symbol: '≡' };
+		if (a === 'run.applying')   return { bg: 'bg-teal-900',   fg: 'text-teal-400',   symbol: '▶' };
+		if (a.startsWith('run.'))   return { bg: 'bg-teal-900',   fg: 'text-teal-400',   symbol: '▶' };
 		if (a.startsWith('stack.')) return { bg: 'bg-teal-900', fg: 'text-teal-400', symbol: 'S' };
 		if (a.startsWith('policy.'))return { bg: 'bg-violet-900', fg: 'text-violet-400', symbol: 'P' };
 		if (a.startsWith('variable_set.')) return { bg: 'bg-teal-900', fg: 'text-teal-400', symbol: 'V' };
@@ -266,7 +266,7 @@
 		</a>
 
 		<a href="/runs" class="group border border-zinc-800 hover:border-zinc-700 rounded-xl p-4 space-y-1 transition-colors">
-			<p class="text-2xl font-semibold {activeRuns.length > 0 ? 'text-blue-400' : 'text-white'}">{activeRuns.length}</p>
+			<p class="text-2xl font-semibold {activeRuns.length > 0 ? 'text-teal-400' : 'text-white'}">{activeRuns.length}</p>
 			<p class="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">Active runs</p>
 		</a>
 
@@ -340,7 +340,7 @@
 	{#if activeRuns.length > 0}
 		<section class="space-y-3">
 			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide flex items-center gap-2">
-				<span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+				<span class="inline-block w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
 				Active runs
 			</h2>
 			<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-700">
