@@ -15,7 +15,7 @@
 	const myOrgs = orgListStore;
 	let switchingOrg = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
-	let forge = $state<'cold' | 'hot' | 'neutral'>('cold');
+	let forge = $state<'cold' | 'hot' | 'neutral' | 'ember' | 'frost' | 'gold'>('cold');
 	let appVersion = $state('');
 
 	function applyTheme(t: 'dark' | 'light') {
@@ -29,11 +29,14 @@
 		applyTheme(theme === 'dark' ? 'light' : 'dark');
 	}
 
-	function switchForge(f: 'cold' | 'hot' | 'neutral') {
+	function switchForge(f: 'cold' | 'hot' | 'neutral' | 'ember' | 'frost' | 'gold') {
 		forge = f;
-		document.documentElement.classList.remove('hot-forge', 'neutral-forge');
+		document.documentElement.classList.remove('hot-forge', 'neutral-forge', 'ember-forge', 'frost-forge', 'gold-forge');
 		if (f === 'hot') document.documentElement.classList.add('hot-forge');
 		if (f === 'neutral') document.documentElement.classList.add('neutral-forge');
+		if (f === 'ember') document.documentElement.classList.add('ember-forge');
+		if (f === 'frost') document.documentElement.classList.add('frost-forge');
+		if (f === 'gold') document.documentElement.classList.add('gold-forge');
 		localStorage.setItem('forge', f === 'cold' ? '' : f);
 	}
 
@@ -49,6 +52,9 @@
 		theme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
 		forge = document.documentElement.classList.contains('hot-forge') ? 'hot'
 			: document.documentElement.classList.contains('neutral-forge') ? 'neutral'
+			: document.documentElement.classList.contains('ember-forge') ? 'ember'
+			: document.documentElement.classList.contains('frost-forge') ? 'frost'
+			: document.documentElement.classList.contains('gold-forge') ? 'gold'
 			: 'cold';
 		system.health().then((h) => { appVersion = h.version; }).catch(() => {});
 		if (!isAuthRoute && !auth.isAuthenticated) {
@@ -284,10 +290,13 @@
 					{#each [
 						{ key: 'cold',    color: '#2DD4BF', label: 'Cold Forge' },
 						{ key: 'hot',     color: '#D4883C', label: 'Hot Forge' },
-						{ key: 'neutral', color: '#818cf8', label: 'Neutral Forge' }
+						{ key: 'neutral', color: '#818cf8', label: 'Neutral Forge' },
+						{ key: 'ember',   color: '#E05252', label: 'Ember Forge' },
+						{ key: 'frost',   color: '#60A5FA', label: 'Frost Forge' },
+						{ key: 'gold',    color: '#F5C542', label: 'Gold Forge' }
 					] as f}
 						<button
-							onclick={() => switchForge(f.key as 'cold' | 'hot' | 'neutral')}
+							onclick={() => switchForge(f.key as 'cold' | 'hot' | 'neutral' | 'ember' | 'frost' | 'gold')}
 							title={f.label}
 							class="h-4 w-4 rounded-full transition-all duration-150 flex-shrink-0"
 							style="background: {f.color}; {forge === f.key
