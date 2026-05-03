@@ -137,6 +137,15 @@ Complete visual redesign shipped across four PRs in v0.8.1:
 - **Toast notifications** — all 48 browser-native `alert()` popups replaced with a teal-accented toast store. Error / success / info variants auto-dismiss after 4.5 s and stack bottom-right. `aria-live="polite"` for screen readers.
 - **Consistent empty states** — shared `EmptyState` component with a teal icon badge, heading, and subtext on all 10 list pages.
 
+### Cold Forge / Hot Forge Theme Switcher ✓
+
+Two named forge themes selectable from a color-swatch picker in the sidebar footer. Each combines independently with the existing dark / light toggle for four total palette combinations.
+
+- **Cold Forge** (default) — teal-slate, hue 185 OKLCH zinc scale, `#2DD4BF` accent, `#0f1a18` page background
+- **Hot Forge** — copper-amber, hue 42 OKLCH zinc scale, `#D4883C` accent, `#170e06` deep warm near-black page background (like hot coals)
+
+Selection persists to `localStorage` under the key `forge`. The anti-FOUC script in `<head>` reads both `theme` and `forge` before first paint so there is no flash of wrong theme on hard reload in any combination.
+
 ---
 
 ## Medium Term
