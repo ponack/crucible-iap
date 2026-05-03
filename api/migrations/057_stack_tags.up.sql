@@ -1,7 +1,7 @@
 -- Tags: org-scoped, named, color-coded labels for stacks.
 CREATE TABLE tags (
     id         UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id     UUID        NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+    org_id     UUID        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     name       TEXT        NOT NULL,
     color      TEXT        NOT NULL DEFAULT '#6B7280',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
