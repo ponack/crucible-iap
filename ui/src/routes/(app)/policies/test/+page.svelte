@@ -55,6 +55,7 @@
 		post_plan: 'Post-plan',
 		pre_plan: 'Pre-plan',
 		pre_apply: 'Pre-apply',
+		approval: 'Approval',
 		trigger: 'Trigger',
 		login: 'Login'
 	};
@@ -63,6 +64,7 @@
 		post_plan: 'bg-teal-900 text-teal-300',
 		pre_plan: 'bg-sky-900 text-sky-300',
 		pre_apply: 'bg-violet-900 text-violet-300',
+		approval: 'bg-orange-900 text-orange-300',
 		trigger: 'bg-amber-900 text-amber-300',
 		login: 'bg-rose-900 text-rose-300'
 	};

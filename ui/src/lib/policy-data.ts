@@ -1,4 +1,4 @@
-export type PolicyType = 'post_plan' | 'pre_plan' | 'pre_apply' | 'trigger' | 'login';
+export type PolicyType = 'post_plan' | 'pre_plan' | 'pre_apply' | 'approval' | 'trigger' | 'login';
 
 // ─── Templates ────────────────────────────────────────────────────────────────
 
@@ -211,6 +211,42 @@ warn_msgs[msg] {
 		}
 	],
 
+	approval: [
+		{
+			name: 'Business hours only',
+			description: 'Block applies outside Mon–Fri 09:00–17:00 UTC.',
+			body: `package crucible.approval.business_hours_only
+
+import rego.v1
+
+default require_approval := false
+
+require_approval if {
+	h := time.clock([time.now_ns(), "UTC"])[0]
+	d := time.weekday(time.now_ns())
+	not d in {"Saturday", "Sunday"}
+	h >= 9
+	h < 17
+}
+`
+		},
+		{
+			name: 'Blank',
+			description: 'Start from an empty approval policy.',
+			body: `package crucible.approval.my_policy
+
+import rego.v1
+
+default require_approval := false
+
+require_approval if {
+	# return true to require manual approval before apply
+	false
+}
+`
+		}
+	],
+
 	trigger: [
 		{
 			name: 'Trigger downstream stack',
@@ -389,6 +425,26 @@ export const sampleInputs: Record<PolicyType, string> = {
 		2
 	),
 
+	approval: JSON.stringify(
+		{
+			run: {
+				id: 'a1b2c3d4-0000-0000-0000-000000000000',
+				type: 'proposed',
+				trigger: 'vcs',
+				plan_add: 1,
+				plan_change: 2,
+				plan_destroy: 0
+			},
+			stack: {
+				id: 'e5f6a7b8-0000-0000-0000-000000000000',
+				name: 'prod-us-east-1',
+				slug: 'prod-us-east-1'
+			}
+		},
+		null,
+		2
+	),
+
 	trigger: JSON.stringify(
 		{
 			format_version: '1.2',
@@ -541,6 +597,66 @@ export const inputSchemas: Record<PolicyType, InputSchema> = {
 				path: 'input.variables',
 				type: 'object',
 				description: 'Input variables.'
+			}
+		]
+	},
+
+	approval: {
+		summary:
+			'Evaluated after post_plan. Return require_approval: true to hold the run at pending_approval until a human approves it.',
+		sample: `input.run.plan_destroy  // number of resources being destroyed
+input.run.trigger       // "vcs" | "manual" | "scheduled"
+input.stack.name        // e.g. "prod-us-east-1"`,
+		fields: [
+			{
+				path: 'input.run.id',
+				type: 'string (UUID)',
+				description: 'The run being evaluated.'
+			},
+			{
+				path: 'input.run.type',
+				type: 'string',
+				description: '"proposed" | "destroy".'
+			},
+			{
+				path: 'input.run.trigger',
+				type: 'string',
+				description: '"vcs" | "manual" | "scheduled" — what initiated the run.'
+			},
+			{
+				path: 'input.run.plan_add',
+				type: 'number',
+				description: 'Resources to be created.'
+			},
+			{
+				path: 'input.run.plan_change',
+				type: 'number',
+				description: 'Resources to be updated.'
+			},
+			{
+				path: 'input.run.plan_destroy',
+				type: 'number',
+				description: 'Resources to be destroyed.'
+			},
+			{
+				path: 'input.stack.id',
+				type: 'string (UUID)',
+				description: 'The stack the run belongs to.'
+			},
+			{
+				path: 'input.stack.name',
+				type: 'string',
+				description: 'Stack display name.'
+			},
+			{
+				path: 'input.stack.slug',
+				type: 'string',
+				description: 'Stack slug (URL-safe identifier).'
+			},
+			{
+				path: 'output require_approval',
+				type: 'boolean',
+				description: 'Return true to hold the run pending manual approval.'
 			}
 		]
 	},
