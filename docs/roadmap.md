@@ -168,6 +168,20 @@ Three additional forge palette options added in v0.8.5, bringing the total to si
 
 Sidebar dot-swatch row extended to six swatches. Anti-FOUC script updated to restore all six forge classes before first paint.
 
+### Stack Tags, Pinning, Bulk Approve, and Starter Policies ✓
+
+Shipped in v0.8.6.
+
+**Stack tags** — org-scoped, color-coded labels. Managed in Settings → Tags (full CRUD with 12 preset colors and per-tag stack count). Attach any number of tags to a stack via the tag picker in the stack detail page; tag pills appear in the stack list and stack detail header. Tags table + stack_tags join table (migration 057).
+
+**Tag filtering** — stacks list and runs list both accept a multi-value `tag` query param; the UI exposes a dropdown with color swatches and active filter pills. Implemented via `EXISTS` subquery on the `stack_tags` + `tags` join.
+
+**Stack pinning** — `is_pinned` boolean on `stacks`; pinned stacks float to the top of the list (`ORDER BY is_pinned DESC, created_at DESC`). Toggle via pin icon per row in the stacks list. Pin/unpin exposed as `POST/DELETE /stacks/:id/pin`.
+
+**Bulk approve** — "Approve all (N)" button in the dashboard Action Required zone header when two or more runs are pending approval; confirms all in parallel with a single click and shows a toast on completion.
+
+**Starter policies repo** — [`ponack/crucible-policies`](https://github.com/ponack/crucible-policies) is a public GitHub repo of 8 ready-made OPA policies across `post_plan/`, `approval/`, `trigger/`, and `pre_apply/` directories. The Policy Git Sources page shows a quick-connect banner that pre-fills the form; the Policies empty state links there.
+
 ---
 
 ## Medium Term
