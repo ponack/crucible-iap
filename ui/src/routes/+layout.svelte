@@ -15,7 +15,7 @@
 	const myOrgs = orgListStore;
 	let switchingOrg = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
-	let forge = $state<'cold' | 'hot'>('cold');
+	let forge = $state<'cold' | 'hot' | 'neutral'>('cold');
 	let appVersion = $state('');
 
 	function applyTheme(t: 'dark' | 'light') {
@@ -29,11 +29,12 @@
 		applyTheme(theme === 'dark' ? 'light' : 'dark');
 	}
 
-	function switchForge(f: 'cold' | 'hot') {
+	function switchForge(f: 'cold' | 'hot' | 'neutral') {
 		forge = f;
-		document.documentElement.classList.remove('hot-forge');
+		document.documentElement.classList.remove('hot-forge', 'neutral-forge');
 		if (f === 'hot') document.documentElement.classList.add('hot-forge');
-		localStorage.setItem('forge', f === 'hot' ? 'hot' : '');
+		if (f === 'neutral') document.documentElement.classList.add('neutral-forge');
+		localStorage.setItem('forge', f === 'cold' ? '' : f);
 	}
 
 	const isAuthRoute = $derived(
@@ -46,7 +47,9 @@
 
 	onMount(async () => {
 		theme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
-		forge = document.documentElement.classList.contains('hot-forge') ? 'hot' : 'cold';
+		forge = document.documentElement.classList.contains('hot-forge') ? 'hot'
+			: document.documentElement.classList.contains('neutral-forge') ? 'neutral'
+			: 'cold';
 		system.health().then((h) => { appVersion = h.version; }).catch(() => {});
 		if (!isAuthRoute && !auth.isAuthenticated) {
 			await tryRefresh();
@@ -298,6 +301,17 @@
 				>
 					<span class="h-2 w-2 rounded-full flex-shrink-0" style="background: #D4883C;"></span>
 					Hot
+				</button>
+				<button
+					onclick={() => switchForge('neutral')}
+					title="Neutral Forge"
+					class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+					style={forge === 'neutral'
+						? 'background: rgba(129,140,248,0.08); color: #818cf8; border: 1px solid rgba(129,140,248,0.18);'
+						: 'color: var(--color-zinc-500); border: 1px solid transparent;'}
+				>
+					<span class="h-2 w-2 rounded-full flex-shrink-0" style="background: #818cf8;"></span>
+					Neutral
 				</button>
 			</div>
 

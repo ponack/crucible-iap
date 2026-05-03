@@ -11,9 +11,10 @@
 					var t = s || (d ? 'dark' : 'light');
 					var forge = localStorage.getItem('forge') || '';
 					var h = document.documentElement;
-					h.classList.remove('dark', 'light', 'hot-forge');
+					h.classList.remove('dark', 'light', 'hot-forge', 'neutral-forge');
 					h.classList.add(t);
 					if (forge === 'hot') h.classList.add('hot-forge');
+					if (forge === 'neutral') h.classList.add('neutral-forge');
 				} catch (e) {}
 			})();
 		</script>
