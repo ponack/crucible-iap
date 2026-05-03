@@ -28,9 +28,18 @@
 
 	const terminalStatuses = new Set(['finished', 'failed', 'canceled', 'discarded']);
 
+	// Mutable token replaced on each effect run. confirm() captures it at
+	// call time so its polls cancel when THIS effect's cleanup fires, not
+	// when the next route's effect fires.
+	let liveToken = { cancelled: false };
+
 	$effect(() => {
 		const id = runID;
-		// Reset state for the new run whenever the route param changes.
+		// Create a fresh token per effect run — captures all async callbacks
+		// for this run. Must be an object (not a hoisted boolean) so fast
+		// navigate (A → B) can't reset the flag before A's callbacks fire.
+		const token = { cancelled: false };
+		liveToken = token;
 		run = null;
 		logLines = [];
 		loading = true;
@@ -40,27 +49,21 @@
 		sse?.close();
 		sse = null;
 
-		// Local flag — captured by all closures for this effect run.
-		// Must stay local: hoisting to module scope breaks the closure so a
-		// fast navigate (A → B) sets cancelled=false before A's callbacks fire,
-		// causing stale data from A to overwrite B's freshly loaded run.
-		let cancelled = false;
-
 		runs.get(id).then((r) => {
-			if (cancelled) return;
+			if (token.cancelled) return;
 			run = r;
 			loading = false;
-			startSSE(id, () => cancelled);
-			runs.policyResults(id).then((r2) => { if (!cancelled) policyResults = r2; }).catch(() => {});
-			runs.scanResults(id).then((r2) => { if (!cancelled) scanResults = r2; }).catch(() => {});
+			startSSE(id, () => token.cancelled);
+			runs.policyResults(id).then((r2) => { if (!token.cancelled) policyResults = r2; }).catch(() => {});
+			runs.scanResults(id).then((r2) => { if (!token.cancelled) scanResults = r2; }).catch(() => {});
 		}).catch((e) => {
-			if (cancelled) return;
+			if (token.cancelled) return;
 			error = (e as Error).message;
 			loading = false;
 		});
 
 		return () => {
-			cancelled = true;
+			token.cancelled = true;
 			sse?.close();
 			sse = null;
 		};
@@ -122,11 +125,12 @@
 
 	async function confirm() {
 		acting = 'confirm';
+		const myToken = liveToken;
 		try {
 			await runs.confirm(runID);
 			run = await runs.get(runID);
 			logLines = [...logLines, '', '─── apply phase ───────────────────────────────────'];
-			startSSE(runID, () => false);
+			startSSE(runID, () => myToken.cancelled);
 		} catch (e) {
 			toast.error((e as Error).message);
 		} finally {
