@@ -123,6 +123,31 @@
 		</div>
 	{/if}
 
+	<!-- Starter policies quick-connect -->
+	{#if !creating && auth.isAdmin}
+		<div class="rounded-xl border p-4 flex items-center justify-between gap-4"
+			style="border-color: var(--accent-border); background: var(--accent-muted);">
+			<div>
+				<p class="text-sm font-medium" style="color: var(--accent);">Crucible Starter Policies</p>
+				<p class="text-xs text-zinc-400 mt-0.5">
+					Ready-made OPA policies — destroy protection, cost gates, business-hours controls, and more.
+				</p>
+			</div>
+			<button
+				onclick={() => {
+					form.name = 'crucible-starter-policies';
+					form.repo_url = 'https://github.com/ponack/crucible-policies.git';
+					form.branch = 'main';
+					form.path = '.';
+					creating = true;
+				}}
+				class="text-xs font-medium px-3 py-1.5 rounded-lg flex-shrink-0 transition-colors"
+				style="background: var(--accent); color: #0f1a18;">
+				Quick connect →
+			</button>
+		</div>
+	{/if}
+
 	{#if creating}
 		<div class="space-y-4 rounded-xl border border-zinc-800 p-5">
 			<h2 class="text-sm font-medium text-zinc-300">New git source</h2>
