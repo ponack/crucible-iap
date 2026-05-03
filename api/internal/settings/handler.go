@@ -98,6 +98,7 @@ type Settings struct {
 	InfracostPricingAPIEndpoint     string    `json:"infracost_pricing_api_endpoint,omitempty"`
 	ScanTool                        string    `json:"scan_tool,omitempty"`
 	ScanSeverityThreshold           string    `json:"scan_severity_threshold,omitempty"`
+	AnthropicAPIKeySet              bool      `json:"anthropic_api_key_set"`
 	UpdatedAt                       time.Time `json:"updated_at"`
 }
 
@@ -185,6 +186,7 @@ type settingsUpdateReq struct {
 	InfracostPricingAPIEndpoint     *string `json:"infracost_pricing_api_endpoint"`
 	ScanTool                        *string `json:"scan_tool"`
 	ScanSeverityThreshold           *string `json:"scan_severity_threshold"`
+	AnthropicAPIKey                 *string `json:"anthropic_api_key"`
 }
 
 // validateSettingsUpdate checks all field constraints for a settings update request.
@@ -275,6 +277,7 @@ func (h *Handler) Update(c echo.Context) error {
 			infracost_pricing_api_endpoint   = COALESCE($38, infracost_pricing_api_endpoint),
 			scan_tool                        = COALESCE($39, scan_tool),
 			scan_severity_threshold          = COALESCE($40, scan_severity_threshold),
+			anthropic_api_key                = COALESCE($41, anthropic_api_key),
 			updated_at                       = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
@@ -291,7 +294,8 @@ func (h *Handler) Update(c echo.Context) error {
 		req.OIDCGenericTokenURL, req.OIDCGenericClientID, req.OIDCGenericScope,
 		req.OIDCAudienceOverride,
 		req.InfracostAPIKey, req.InfracostPricingAPIEndpoint,
-		req.ScanTool, req.ScanSeverityThreshold)
+		req.ScanTool, req.ScanSeverityThreshold,
+		req.AnthropicAPIKey)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -334,6 +338,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(infracost_pricing_api_endpoint, ''),
 		       COALESCE(scan_tool, 'none'),
 		       COALESCE(scan_severity_threshold, 'HIGH'),
+		       (anthropic_api_key IS NOT NULL AND anthropic_api_key != ''),
 		       updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
@@ -351,6 +356,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		&s.OIDCAudienceOverride,
 		&s.InfracostPricingAPIEndpoint,
 		&s.ScanTool, &s.ScanSeverityThreshold,
+		&s.AnthropicAPIKeySet,
 		&s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
@@ -366,6 +372,16 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		}, nil
 	}
 	return &s, nil
+}
+
+// LoadAnthropicAPIKey fetches the stored Anthropic API key.
+// Falls back to an empty string if not set; callers should also check the env var.
+func LoadAnthropicAPIKey(ctx context.Context, pool *pgxpool.Pool) (string, error) {
+	var key string
+	err := pool.QueryRow(ctx, `
+		SELECT COALESCE(anthropic_api_key, '') FROM system_settings WHERE id = true
+	`).Scan(&key)
+	return key, err
 }
 
 // LoadInfracost fetches the Infracost API key and optional pricing endpoint.

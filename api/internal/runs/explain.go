@@ -9,6 +9,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/settings"
 )
 
 const explainSystemPrompt = "You are an expert infrastructure engineer diagnosing failed " +
@@ -18,12 +19,17 @@ const explainSystemPrompt = "You are an expert infrastructure engineer diagnosin
 	"Be specific. Do not repeat the log. Do not add preamble or closing remarks."
 
 // ExplainFailure calls the Claude API with the run's log and returns a structured
-// root-cause explanation and suggested fix. Opt-in via ANTHROPIC_API_KEY.
+// root-cause explanation and suggested fix.
+// API key is read from system_settings (DB), falling back to ANTHROPIC_API_KEY env var.
 // POST /api/v1/runs/:id/explain
 func (h *Handler) ExplainFailure(c echo.Context) error {
-	if h.cfg.AnthropicAPIKey == "" {
+	apiKey, _ := settings.LoadAnthropicAPIKey(c.Request().Context(), h.pool)
+	if apiKey == "" {
+		apiKey = h.cfg.AnthropicAPIKey
+	}
+	if apiKey == "" {
 		return echo.NewHTTPError(http.StatusServiceUnavailable,
-			"AI troubleshooting not configured (set ANTHROPIC_API_KEY)")
+			"AI troubleshooting not configured (set an Anthropic API key in Settings)")
 	}
 
 	id := c.Param("id")
@@ -50,7 +56,7 @@ func (h *Handler) ExplainFailure(c echo.Context) error {
 	// Cap at 24 KB to stay within context and keep costs low.
 	logData, _ := io.ReadAll(io.LimitReader(obj, 24*1024))
 
-	client := anthropic.NewClient(option.WithAPIKey(h.cfg.AnthropicAPIKey))
+	client := anthropic.NewClient(option.WithAPIKey(apiKey))
 	msg, err := client.Messages.New(c.Request().Context(), anthropic.MessageNewParams{
 		Model:     anthropic.ModelClaudeHaiku4_5_20251001,
 		MaxTokens: 1024,
