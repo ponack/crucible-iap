@@ -123,6 +123,123 @@
 		--color-white:    oklch(14%  .005 286);
 	}
 
+	/* ── Ember Forge — deep red, hue 15 ── */
+	:root.ember-forge {
+		--page-bg: #160a0a;
+		--accent: #E05252;
+		--accent-muted: rgba(224, 82, 82, 0.08);
+		--accent-border: rgba(224, 82, 82, 0.18);
+		color-scheme: dark;
+
+		--color-zinc-950: oklch(10.5% 0.014 15);
+		--color-zinc-900: oklch(14.8% 0.020 15);
+		--color-zinc-800: oklch(20.8% 0.028 15);
+		--color-zinc-700: oklch(31.2% 0.030 15);
+		--color-zinc-600: oklch(43.5% 0.032 15);
+		--color-zinc-500: oklch(54.0% 0.030 15);
+		--color-zinc-400: oklch(68.5% 0.026 15);
+		--color-zinc-300: oklch(78.5% 0.020 15);
+		--color-zinc-200: oklch(87.5% 0.014 15);
+		--color-zinc-100: oklch(93.5% 0.009 15);
+		--color-zinc-50:  oklch(97.5% 0.004 15);
+	}
+
+	/* Ember Forge light */
+	:root.ember-forge.light {
+		color-scheme: light;
+		--page-bg: #fef5f5;
+		--color-zinc-950: oklch(98.4% .002 15);
+		--color-zinc-900: oklch(96.7% .004 15);
+		--color-zinc-800: oklch(92%  .008 15);
+		--color-zinc-700: oklch(87%  .013 15);
+		--color-zinc-600: oklch(70%  .022 15);
+		--color-zinc-500: oklch(57%  .024 15);
+		--color-zinc-400: oklch(44%  .022 15);
+		--color-zinc-300: oklch(37%  .018 15);
+		--color-zinc-200: oklch(27%  .012 15);
+		--color-zinc-100: oklch(21%  .009 15);
+		--color-zinc-50:  oklch(14%  .006 15);
+		--color-white:    oklch(14%  .006 15);
+	}
+
+	/* ── Frost Forge — arctic blue, hue 220 ── */
+	:root.frost-forge {
+		--page-bg: #080f18;
+		--accent: #60A5FA;
+		--accent-muted: rgba(96, 165, 250, 0.08);
+		--accent-border: rgba(96, 165, 250, 0.18);
+		color-scheme: dark;
+
+		--color-zinc-950: oklch(10.5% 0.010 220);
+		--color-zinc-900: oklch(14.8% 0.014 220);
+		--color-zinc-800: oklch(20.8% 0.020 220);
+		--color-zinc-700: oklch(31.2% 0.022 220);
+		--color-zinc-600: oklch(43.5% 0.024 220);
+		--color-zinc-500: oklch(54.0% 0.022 220);
+		--color-zinc-400: oklch(68.5% 0.019 220);
+		--color-zinc-300: oklch(78.5% 0.015 220);
+		--color-zinc-200: oklch(87.5% 0.011 220);
+		--color-zinc-100: oklch(93.5% 0.007 220);
+		--color-zinc-50:  oklch(97.5% 0.003 220);
+	}
+
+	/* Frost Forge light */
+	:root.frost-forge.light {
+		color-scheme: light;
+		--page-bg: #f0f5ff;
+		--color-zinc-950: oklch(98.4% .002 220);
+		--color-zinc-900: oklch(96.7% .003 220);
+		--color-zinc-800: oklch(92%  .007 220);
+		--color-zinc-700: oklch(87%  .010 220);
+		--color-zinc-600: oklch(70%  .018 220);
+		--color-zinc-500: oklch(57%  .019 220);
+		--color-zinc-400: oklch(44%  .018 220);
+		--color-zinc-300: oklch(37%  .014 220);
+		--color-zinc-200: oklch(27%  .009 220);
+		--color-zinc-100: oklch(21%  .007 220);
+		--color-zinc-50:  oklch(14%  .005 220);
+		--color-white:    oklch(14%  .005 220);
+	}
+
+	/* ── Gold Forge — warm gold, hue 78 ── */
+	:root.gold-forge {
+		--page-bg: #130f00;
+		--accent: #F5C542;
+		--accent-muted: rgba(245, 197, 66, 0.08);
+		--accent-border: rgba(245, 197, 66, 0.18);
+		color-scheme: dark;
+
+		--color-zinc-950: oklch(10.5% 0.014 78);
+		--color-zinc-900: oklch(14.8% 0.020 78);
+		--color-zinc-800: oklch(20.8% 0.028 78);
+		--color-zinc-700: oklch(31.2% 0.030 78);
+		--color-zinc-600: oklch(43.5% 0.032 78);
+		--color-zinc-500: oklch(54.0% 0.030 78);
+		--color-zinc-400: oklch(68.5% 0.026 78);
+		--color-zinc-300: oklch(78.5% 0.020 78);
+		--color-zinc-200: oklch(87.5% 0.015 78);
+		--color-zinc-100: oklch(93.5% 0.009 78);
+		--color-zinc-50:  oklch(97.5% 0.004 78);
+	}
+
+	/* Gold Forge light */
+	:root.gold-forge.light {
+		color-scheme: light;
+		--page-bg: #fdfbf0;
+		--color-zinc-950: oklch(98.4% .002 78);
+		--color-zinc-900: oklch(96.7% .004 78);
+		--color-zinc-800: oklch(92%  .008 78);
+		--color-zinc-700: oklch(87%  .013 78);
+		--color-zinc-600: oklch(70%  .022 78);
+		--color-zinc-500: oklch(57%  .024 78);
+		--color-zinc-400: oklch(44%  .022 78);
+		--color-zinc-300: oklch(37%  .018 78);
+		--color-zinc-200: oklch(27%  .012 78);
+		--color-zinc-100: oklch(21%  .009 78);
+		--color-zinc-50:  oklch(14%  .006 78);
+		--color-white:    oklch(14%  .006 78);
+	}
+
 	html,
 	body {
 		background-color: var(--page-bg);
