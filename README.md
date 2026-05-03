@@ -379,7 +379,7 @@ cd api && go test -race ./...
 - [x] Self-service infrastructure blueprints — platform teams define blueprints (repo, tool, params) and publish them; app teams deploy new stacks by filling in a form without touching IaC config; params are injected as encrypted `TF_VAR_*` env vars; string, number, bool, and select param types; per-param env prefix; deploy runs atomically in a single transaction
 - [x] OPA policy test playground — standalone `/policies/test` page; pick any saved policy, paste synthetic JSON, run it and see allow/deny/warn/trigger results with optional OPA evaluation trace; genuine differentiator — neither Spacelift nor TF Cloud has this built in
 - [x] PR preview environments — auto-create a stack from a template when a PR opens, auto-destroy when it closes; branch name drives workspace isolation; pairs with stack dependencies for full per-PR environment chains
-- [x] AI run troubleshooting — one-click "Explain failure" on failed runs; sends log context to the Claude API and returns a structured root-cause explanation and suggested fix; opt-in via `ANTHROPIC_API_KEY`
+- [x] AI run troubleshooting — one-click "Explain failure" on failed runs; sends log context to the Claude API and returns a structured root-cause explanation and suggested fix; API key set in Settings → AI troubleshooting (no container restart needed) or via `ANTHROPIC_API_KEY` env var
 - [x] AWS Cloud OIDC session duration default — saving an AWS Cloud OIDC config without specifying a session duration no longer returns a 500; defaults to 3600 s
 - [x] OIDC token injection — runner no longer fails with "container rootfs is marked read-only"; token written from the entrypoint into tmpfs after container start instead of via CopyToContainer before start
 - [x] Worker OIDC base URL — `CRUCIBLE_BASE_URL` added to the worker service environment; without it the JWT issuer was empty and no OIDC token was minted, causing "No valid credential sources found" on every OIDC-configured run
@@ -400,6 +400,7 @@ cd api && go test -race ./...
 - [x] Policy sync fix — `org_id` ambiguity in the policy git sync worker caused all sync jobs to fail silently; fixed column qualification in the JOIN query
 - [x] Policy input shape — cost fields (`cost_add`, `cost_change`, `cost_remove`) added to OPA policy input; `approval` type added to UI type labels, badges, templates, and input schema
 - [x] Blueprint export/import — export any blueprint as a portable JSON file (`schema_version` + all config + params, no ids or timestamps); import via file upload or paste on the blueprints list page; imported blueprints start as drafts; audit-logged
+- [x] Run navigation correctness — navigating away from a confirmed plan+apply run no longer shows the previous run's data; stale `pollFinal` callbacks from the confirm flow are now cancelled on navigation; the stack detail page refreshes its run list every 10 s so newly created runs appear without a page reload
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
 
