@@ -5,6 +5,7 @@
 }
 
 @layer base {
+	/* ── Cold Forge (default) — teal-slate, hue 185 ── */
 	:root {
 		--radius: 0.5rem;
 		--page-bg: #0f1a18;
@@ -13,7 +14,6 @@
 		--accent-border: rgba(45, 212, 191, 0.18);
 		color-scheme: dark;
 
-		/* Teal-slate zinc: shift hue from ~286 (neutral) to 185 (teal-slate) */
 		--color-zinc-950: oklch(10.5% 0.008 185);
 		--color-zinc-900: oklch(14.8% 0.012 185);
 		--color-zinc-800: oklch(20.8% 0.016 185);
@@ -27,7 +27,7 @@
 		--color-zinc-50:  oklch(97.5% 0.003 185);
 	}
 
-	/* Light theme */
+	/* Cold Forge light */
 	:root.light {
 		color-scheme: light;
 		--page-bg: #f0faf8;
@@ -43,6 +43,45 @@
 		--color-zinc-100: oklch(21%  .006 185);
 		--color-zinc-50:  oklch(14%  .005 185);
 		--color-white:    oklch(14%  .005 185);
+	}
+
+	/* ── Hot Forge — copper-amber, hue 42 ── */
+	:root.hot-forge {
+		--page-bg: #170e06;
+		--accent: #D4883C;
+		--accent-muted: rgba(212, 136, 60, 0.08);
+		--accent-border: rgba(212, 136, 60, 0.18);
+		color-scheme: dark;
+
+		--color-zinc-950: oklch(10.5% 0.012 42);
+		--color-zinc-900: oklch(14.8% 0.018 42);
+		--color-zinc-800: oklch(20.8% 0.024 42);
+		--color-zinc-700: oklch(31.2% 0.026 42);
+		--color-zinc-600: oklch(43.5% 0.028 42);
+		--color-zinc-500: oklch(54.0% 0.026 42);
+		--color-zinc-400: oklch(68.5% 0.022 42);
+		--color-zinc-300: oklch(78.5% 0.018 42);
+		--color-zinc-200: oklch(87.5% 0.014 42);
+		--color-zinc-100: oklch(93.5% 0.008 42);
+		--color-zinc-50:  oklch(97.5% 0.004 42);
+	}
+
+	/* Hot Forge light */
+	:root.hot-forge.light {
+		color-scheme: light;
+		--page-bg: #fdf6ee;
+		--color-zinc-950: oklch(98.4% .002 42);
+		--color-zinc-900: oklch(96.7% .004 42);
+		--color-zinc-800: oklch(92%  .008 42);
+		--color-zinc-700: oklch(87%  .012 42);
+		--color-zinc-600: oklch(70%  .020 42);
+		--color-zinc-500: oklch(57%  .022 42);
+		--color-zinc-400: oklch(44%  .020 42);
+		--color-zinc-300: oklch(37%  .016 42);
+		--color-zinc-200: oklch(27%  .010 42);
+		--color-zinc-100: oklch(21%  .008 42);
+		--color-zinc-50:  oklch(14%  .006 42);
+		--color-white:    oklch(14%  .006 42);
 	}
 
 	html,

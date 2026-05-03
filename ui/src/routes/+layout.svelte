@@ -15,6 +15,7 @@
 	const myOrgs = orgListStore;
 	let switchingOrg = $state(false);
 	let theme = $state<'dark' | 'light'>('dark');
+	let forge = $state<'cold' | 'hot'>('cold');
 	let appVersion = $state('');
 
 	function applyTheme(t: 'dark' | 'light') {
@@ -28,6 +29,13 @@
 		applyTheme(theme === 'dark' ? 'light' : 'dark');
 	}
 
+	function switchForge(f: 'cold' | 'hot') {
+		forge = f;
+		document.documentElement.classList.remove('hot-forge');
+		if (f === 'hot') document.documentElement.classList.add('hot-forge');
+		localStorage.setItem('forge', f === 'hot' ? 'hot' : '');
+	}
+
 	const isAuthRoute = $derived(
 		page.url.pathname.startsWith('/login') || page.url.pathname.startsWith('/auth')
 	);
@@ -38,6 +46,7 @@
 
 	onMount(async () => {
 		theme = document.documentElement.classList.contains('light') ? 'light' : 'dark';
+		forge = document.documentElement.classList.contains('hot-forge') ? 'hot' : 'cold';
 		system.health().then((h) => { appVersion = h.version; }).catch(() => {});
 		if (!isAuthRoute && !auth.isAuthenticated) {
 			await tryRefresh();
@@ -264,6 +273,33 @@
 					</div>
 				{/each}
 			</nav>
+
+			<!-- Forge theme switcher -->
+			<div class="px-3 py-2.5 flex items-center gap-1.5" style="border-top: 1px solid var(--color-zinc-800);">
+				<span class="text-[10px] text-zinc-600 uppercase tracking-widest mr-1">Forge</span>
+				<button
+					onclick={() => switchForge('cold')}
+					title="Cold Forge"
+					class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+					style={forge === 'cold'
+						? 'background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);'
+						: 'color: var(--color-zinc-500); border: 1px solid transparent;'}
+				>
+					<span class="h-2 w-2 rounded-full flex-shrink-0" style="background: #2DD4BF;"></span>
+					Cold
+				</button>
+				<button
+					onclick={() => switchForge('hot')}
+					title="Hot Forge"
+					class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
+					style={forge === 'hot'
+						? 'background: rgba(212,136,60,0.08); color: #D4883C; border: 1px solid rgba(212,136,60,0.18);'
+						: 'color: var(--color-zinc-500); border: 1px solid transparent;'}
+				>
+					<span class="h-2 w-2 rounded-full flex-shrink-0" style="background: #D4883C;"></span>
+					Hot
+				</button>
+			</div>
 
 			<!-- Footer -->
 			<div class="px-4 py-3 flex items-center gap-2" style="border-top: 1px solid var(--color-zinc-800);">

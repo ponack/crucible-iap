@@ -9,9 +9,11 @@
 					var s = localStorage.getItem('theme');
 					var d = window.matchMedia('(prefers-color-scheme: dark)').matches;
 					var t = s || (d ? 'dark' : 'light');
+					var forge = localStorage.getItem('forge') || '';
 					var h = document.documentElement;
-					h.classList.remove('dark', 'light');
+					h.classList.remove('dark', 'light', 'hot-forge');
 					h.classList.add(t);
+					if (forge === 'hot') h.classList.add('hot-forge');
 				} catch (e) {}
 			})();
 		</script>
