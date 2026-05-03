@@ -46,6 +46,13 @@
 	let infracostSaved = $state(false);
 	let infracostError = $state<string | null>(null);
 
+	// AI settings
+	let anthropicKeyInput = $state('');
+	let anthropicKeySet = $state(false);
+	let savingAI = $state(false);
+	let aiSaved = $state(false);
+	let aiError = $state<string | null>(null);
+
 	onMount(async () => {
 		system.health().then((h) => (health = h)).catch(() => {});
 		system.settings.get().then((s) => {
@@ -78,6 +85,7 @@
 				oidc_audience_override: s.oidc_audience_override ?? ''
 			};
 			infracostForm.infracost_pricing_api_endpoint = s.infracost_pricing_api_endpoint ?? '';
+			anthropicKeySet = s.anthropic_api_key_set ?? false;
 			scanForm = {
 				scan_tool: (s.scan_tool ?? 'none') as 'none' | 'checkov' | 'trivy',
 				scan_severity_threshold: (s.scan_severity_threshold ?? 'HIGH') as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
@@ -151,6 +159,26 @@
 			infracostError = (err as Error).message;
 		} finally {
 			savingInfracost = false;
+		}
+	}
+
+	async function saveAI(e: SubmitEvent) {
+		e.preventDefault();
+		savingAI = true;
+		aiSaved = false;
+		aiError = null;
+		try {
+			if (anthropicKeyInput) {
+				const res = await system.settings.update({ anthropic_api_key: anthropicKeyInput });
+				anthropicKeySet = res.anthropic_api_key_set ?? true;
+				anthropicKeyInput = '';
+			}
+			aiSaved = true;
+			setTimeout(() => (aiSaved = false), 3000);
+		} catch (err) {
+			aiError = (err as Error).message;
+		} finally {
+			savingAI = false;
 		}
 	}
 
@@ -523,6 +551,45 @@
 						{savingInfracost ? 'Saving…' : 'Save Infracost settings'}
 					</button>
 					{#if infracostSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			</form>
+		</div>
+	{/if}
+
+	<!-- AI -->
+	{#if auth.isAdmin}
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
+			<div class="px-6 py-4 flex items-center justify-between">
+				<div>
+					<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">AI troubleshooting</p>
+					<p class="text-xs text-zinc-600">Enables the "Explain failure" button on failed runs using Claude Haiku.</p>
+				</div>
+				{#if anthropicKeySet}
+					<span class="text-xs px-2 py-0.5 rounded-full bg-teal-900/50 text-teal-400 border border-teal-800">Configured</span>
+				{:else}
+					<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700">Not configured</span>
+				{/if}
+			</div>
+			<form class="px-6 py-5 space-y-4" onsubmit={saveAI}>
+				<div class="space-y-1.5">
+					<label class="field-label" for="anthropic-api-key">
+						Anthropic API key <span class="font-normal text-zinc-500">(write-only — leave blank to keep current)</span>
+					</label>
+					<input id="anthropic-api-key" type="password" class="field-input font-mono text-sm"
+						bind:value={anthropicKeyInput}
+						placeholder="sk-ant-••••••••••••••••••••••••••••••••" autocomplete="off" />
+				</div>
+				{#if aiError}
+					<p class="text-xs text-red-400">{aiError}</p>
+				{/if}
+				<div class="flex items-center gap-3">
+					<button type="submit" disabled={savingAI}
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingAI ? 'Saving…' : 'Save AI settings'}
+					</button>
+					{#if aiSaved}
 						<span class="text-xs text-green-400">Saved.</span>
 					{/if}
 				</div>
