@@ -25,11 +25,13 @@
 			.reduce<string[]>((acc, r) => acc.includes(r.stack_name ?? '') ? acc : [...acc, r.stack_name ?? ''], [])
 	);
 
+	const hasActionRequired = $derived(driftStacks.length > 0 || awaitingApproval.length > 0);
+
 	async function load() {
 		try {
 			const [stacksRes, activeRes, approvalRes, recentRes, auditRes, healthRes] = await Promise.all([
 				stacks.list(0, 200),
-				runs.listAll(0, 50), // all statuses; we filter to active client-side
+				runs.listAll(0, 50),
 				runs.listAll(0, 20, { status: 'unconfirmed' }),
 				runs.listAll(0, 15),
 				audit.list(0, 10),
@@ -37,7 +39,6 @@
 			]);
 			totalStacks = stacksRes.pagination.total;
 			disabledStacks = stacksRes.data.filter((s) => s.is_disabled).length;
-			// active = anything not terminal and not unconfirmed
 			activeRuns = activeRes.data.filter((r) =>
 				['queued','preparing','planning','confirmed','applying'].includes(r.status)
 			);
@@ -192,7 +193,6 @@
 		return auditVerbMap[action] ?? action;
 	}
 
-	// Returns Tailwind classes and a short symbol for each action category.
 	function auditIcon(ev: { action: string; actor_type: string; actor_id?: string }): { bg: string; fg: string; symbol: string } {
 		const a = ev.action;
 		if (a === 'run.finished')   return { bg: 'bg-green-900',  fg: 'text-green-400',  symbol: '✓' };
@@ -216,17 +216,25 @@
 
 <div class="p-6 space-y-6">
 
+	<!-- ── Header ──────────────────────────────────────────────────────────────── -->
 	<div class="flex items-center justify-between">
-		<h1 class="text-xl font-semibold text-white">Dashboard</h1>
-		{#if health}
-			<span class="text-xs text-zinc-600 font-mono">
-				{health.version === 'dev' ? 'dev build' : health.version}
-				· up {health.uptime}
-				{#if health.update_available}
-					· <a href="https://github.com/ponack/crucible-iap/releases/latest" target="_blank" rel="noopener" class="text-yellow-400 hover:underline">{health.latest_version} available</a>
-				{/if}
-			</span>
-		{/if}
+		<div>
+			<h1 class="text-xl font-semibold text-white">Dashboard</h1>
+			{#if health?.update_available}
+				<a href="https://github.com/ponack/crucible-iap/releases/latest" target="_blank" rel="noopener"
+					class="text-xs text-yellow-400 hover:text-yellow-300 transition-colors">
+					{health.latest_version} available →
+				</a>
+			{/if}
+		</div>
+		<a href="/stacks/new"
+			class="inline-flex items-center gap-1.5 text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+			style="background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);">
+			<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M12 4.5v15m7.5-7.5h-15"/>
+			</svg>
+			New stack
+		</a>
 	</div>
 
 	{#if loading}
@@ -242,7 +250,8 @@
 		</p>
 		<div class="flex flex-wrap gap-3 justify-center pt-2">
 			<a href="/stacks/new"
-				class="inline-block bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors">
+				class="inline-flex items-center gap-1.5 text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
+				style="background: var(--accent); color: #0f1a18;">
 				Create your first stack →
 			</a>
 			<a href="https://github.com/ponack/crucible-iap/blob/main/docs/quickstart.md" target="_blank" rel="noopener"
@@ -256,95 +265,130 @@
 
 	<!-- ── Stat cards ───────────────────────────────────────────────────────── -->
 	<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-		<a href="/stacks" class="group border border-zinc-800 hover:border-zinc-700 rounded-xl p-4 space-y-1 transition-colors">
-			<p class="text-2xl font-semibold text-white">{totalStacks}</p>
-			<p class="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">
-				Stacks
-				{#if disabledStacks > 0}
-					<span class="text-zinc-600">· {disabledStacks} disabled</span>
-				{/if}
-			</p>
+
+		<a href="/stacks" class="group flex items-center gap-3 border border-zinc-800 hover:border-zinc-700 rounded-xl p-4 transition-colors">
+			<div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background: var(--accent-muted);">
+				<svg class="h-5 w-5" style="color: var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M21 7.5l-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>
+				</svg>
+			</div>
+			<div class="min-w-0">
+				<p class="text-2xl font-semibold text-white leading-none">{totalStacks}</p>
+				<p class="text-xs text-zinc-500 mt-0.5 group-hover:text-zinc-400 transition-colors truncate">
+					Stacks{disabledStacks > 0 ? ` · ${disabledStacks} off` : ''}
+				</p>
+			</div>
 		</a>
 
-		<a href="/runs" class="group border border-zinc-800 hover:border-zinc-700 rounded-xl p-4 space-y-1 transition-colors">
-			<p class="text-2xl font-semibold {activeRuns.length > 0 ? 'text-teal-400' : 'text-white'}">{activeRuns.length}</p>
-			<p class="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">Active runs</p>
+		<a href="/runs" class="group flex items-center gap-3 border {activeRuns.length > 0 ? 'border-zinc-700' : 'border-zinc-800'} hover:border-zinc-600 rounded-xl p-4 transition-colors"
+			style={activeRuns.length > 0 ? 'background: var(--accent-muted);' : ''}>
+			<div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background: {activeRuns.length > 0 ? 'rgba(45,212,191,0.15)' : 'var(--color-zinc-800)'};">
+				<svg class="h-5 w-5 {activeRuns.length > 0 ? 'text-teal-300' : 'text-zinc-500'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/>
+				</svg>
+			</div>
+			<div>
+				<p class="text-2xl font-semibold {activeRuns.length > 0 ? 'text-teal-300' : 'text-white'} leading-none">{activeRuns.length}</p>
+				<p class="text-xs text-zinc-500 mt-0.5 group-hover:text-zinc-400 transition-colors">Active runs</p>
+			</div>
 		</a>
 
 		<button onclick={() => { if (awaitingApproval.length) document.getElementById('awaiting')?.scrollIntoView({ behavior: 'smooth' }); }}
-			class="group text-left border {awaitingApproval.length > 0 ? 'border-yellow-800 hover:border-yellow-700' : 'border-zinc-800 hover:border-zinc-700'} rounded-xl p-4 space-y-1 transition-colors">
-			<p class="text-2xl font-semibold {awaitingApproval.length > 0 ? 'text-yellow-400' : 'text-white'}">{awaitingApproval.length}</p>
-			<p class="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">Awaiting approval</p>
+			class="group flex items-center gap-3 text-left border {awaitingApproval.length > 0 ? 'border-yellow-900' : 'border-zinc-800'} hover:border-yellow-800 rounded-xl p-4 transition-colors w-full"
+			style={awaitingApproval.length > 0 ? 'background: rgba(161,98,7,0.08);' : ''}>
+			<div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background: {awaitingApproval.length > 0 ? 'rgba(234,179,8,0.12)' : 'var(--color-zinc-800)'};">
+				<svg class="h-5 w-5 {awaitingApproval.length > 0 ? 'text-yellow-400' : 'text-zinc-500'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+				</svg>
+			</div>
+			<div>
+				<p class="text-2xl font-semibold {awaitingApproval.length > 0 ? 'text-yellow-400' : 'text-white'} leading-none">{awaitingApproval.length}</p>
+				<p class="text-xs text-zinc-500 mt-0.5 group-hover:text-zinc-400 transition-colors">Awaiting approval</p>
+			</div>
 		</button>
 
-		<a href="/runs" class="group border {failedRecent.length > 0 ? 'border-red-900 hover:border-red-800' : 'border-zinc-800 hover:border-zinc-700'} rounded-xl p-4 space-y-1 transition-colors">
-			<p class="text-2xl font-semibold {failedRecent.length > 0 ? 'text-red-400' : 'text-white'}">{failedRecent.length}</p>
-			<p class="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">Failed (recent)</p>
+		<a href="/runs" class="group flex items-center gap-3 border {failedRecent.length > 0 ? 'border-red-900' : 'border-zinc-800'} hover:border-red-800 rounded-xl p-4 transition-colors"
+			style={failedRecent.length > 0 ? 'background: rgba(127,29,29,0.12);' : ''}>
+			<div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background: {failedRecent.length > 0 ? 'rgba(239,68,68,0.12)' : 'var(--color-zinc-800)'};">
+				<svg class="h-5 w-5 {failedRecent.length > 0 ? 'text-red-400' : 'text-zinc-500'}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+				</svg>
+			</div>
+			<div>
+				<p class="text-2xl font-semibold {failedRecent.length > 0 ? 'text-red-400' : 'text-white'} leading-none">{failedRecent.length}</p>
+				<p class="text-xs text-zinc-500 mt-0.5 group-hover:text-zinc-400 transition-colors">Failed (recent)</p>
+			</div>
 		</a>
+
 	</div>
 
-	<!-- ── Drift alert banner ───────────────────────────────────────────────── -->
-	{#if driftStacks.length > 0}
-		<div class="border border-orange-800 bg-orange-950/40 rounded-xl px-5 py-3 flex items-center gap-3">
-			<span class="text-orange-400 text-sm font-medium">Drift detected</span>
-			<span class="text-orange-300 text-sm">
-				{driftStacks.slice(0, 3).join(', ')}{driftStacks.length > 3 ? ` and ${driftStacks.length - 3} more` : ''} reported infrastructure changes on the last drift check.
-			</span>
-		</div>
-	{/if}
-
-	<!-- ── Awaiting approval ────────────────────────────────────────────────── -->
-	{#if awaitingApproval.length > 0}
-		<section id="awaiting" class="space-y-3">
-			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide flex items-center gap-2">
-				<span class="inline-block w-2 h-2 rounded-full bg-yellow-500"></span>
-				Awaiting approval
+	<!-- ── Zone 1: Action Required ─────────────────────────────────────────── -->
+	{#if hasActionRequired}
+		<section class="space-y-3">
+			<h2 class="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-zinc-500">
+				<span class="inline-block w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+				Action Required
 			</h2>
-			<div class="border border-yellow-900/60 rounded-xl overflow-hidden divide-y divide-zinc-700">
-				{#each awaitingApproval as run (run.id)}
-					{@const delta = planDelta(run)}
-					<div class="flex items-center gap-3 px-4 py-3 hover:bg-zinc-900/50 transition-colors">
-						<div class="flex-1 min-w-0">
-							<div class="flex items-center gap-2 flex-wrap">
-								<a href="/stacks/{run.stack_id}" class="text-sm text-zinc-200 hover:text-white font-medium truncate">{run.stack_name}</a>
-								<span class="text-zinc-600 text-xs">·</span>
-								<a href="/runs/{run.id}" class="text-xs text-zinc-500 hover:text-zinc-300 font-mono">{run.id.slice(0, 8)}</a>
-								{#if delta}
-									<span class="text-xs font-mono text-yellow-400">{delta}</span>
-								{/if}
-								{#if run.commit_sha}
-									<span class="text-xs text-zinc-600 font-mono">{run.commit_sha.slice(0, 7)}</span>
+
+			{#if driftStacks.length > 0}
+				<div class="border border-orange-800 bg-orange-950/40 rounded-xl px-5 py-3 flex items-center gap-3">
+					<svg class="h-4 w-4 text-orange-400 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"/>
+					</svg>
+					<span class="text-orange-400 text-sm font-medium">Drift detected</span>
+					<span class="text-orange-300 text-sm">
+						{driftStacks.slice(0, 3).join(', ')}{driftStacks.length > 3 ? ` and ${driftStacks.length - 3} more` : ''} reported infrastructure changes.
+					</span>
+				</div>
+			{/if}
+
+			{#if awaitingApproval.length > 0}
+				<div id="awaiting" class="border border-yellow-900/60 rounded-xl overflow-hidden divide-y divide-zinc-800">
+					{#each awaitingApproval as run (run.id)}
+						{@const delta = planDelta(run)}
+						<div class="flex items-center gap-3 px-4 py-3 hover:bg-zinc-900/50 transition-colors">
+							<div class="flex-1 min-w-0">
+								<div class="flex items-center gap-2 flex-wrap">
+									<a href="/stacks/{run.stack_id}" class="text-sm text-zinc-200 hover:text-white font-medium truncate">{run.stack_name}</a>
+									<span class="text-zinc-600 text-xs">·</span>
+									<a href="/runs/{run.id}" class="text-xs text-zinc-500 hover:text-zinc-300 font-mono">{run.id.slice(0, 8)}</a>
+									{#if delta}
+										<span class="text-xs font-mono text-yellow-400">{delta}</span>
+									{/if}
+									{#if run.commit_sha}
+										<span class="text-xs text-zinc-600 font-mono">{run.commit_sha.slice(0, 7)}</span>
+									{/if}
+								</div>
+								{#if run.commit_message}
+									<p class="text-xs text-zinc-500 truncate mt-0.5">{run.commit_message}</p>
 								{/if}
 							</div>
-							{#if run.commit_message}
-								<p class="text-xs text-zinc-500 truncate mt-0.5">{run.commit_message}</p>
-							{/if}
+							<span class="text-xs text-zinc-600 shrink-0">{fmtAgo(run.queued_at)}</span>
+							<div class="flex items-center gap-2 shrink-0">
+								<button onclick={() => confirm(run)} disabled={!!actioning[run.id]}
+									class="text-xs bg-green-900/60 hover:bg-green-800/60 text-green-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+									{actioning[run.id] === 'confirming' ? 'Approving…' : 'Approve'}
+								</button>
+								<button onclick={() => discard(run)} disabled={!!actioning[run.id]}
+									class="text-xs border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+									{actioning[run.id] === 'discarding' ? 'Discarding…' : 'Discard'}
+								</button>
+							</div>
 						</div>
-						<span class="text-xs text-zinc-600 shrink-0">{fmtAgo(run.queued_at)}</span>
-						<div class="flex items-center gap-2 shrink-0">
-							<button onclick={() => confirm(run)} disabled={!!actioning[run.id]}
-								class="text-xs bg-green-900/60 hover:bg-green-800/60 text-green-300 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-								{actioning[run.id] === 'confirming' ? 'Approving…' : 'Approve'}
-							</button>
-							<button onclick={() => discard(run)} disabled={!!actioning[run.id]}
-								class="text-xs border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-								{actioning[run.id] === 'discarding' ? 'Discarding…' : 'Discard'}
-							</button>
-						</div>
-					</div>
-				{/each}
-			</div>
+					{/each}
+				</div>
+			{/if}
 		</section>
 	{/if}
 
-	<!-- ── Active runs ──────────────────────────────────────────────────────── -->
+	<!-- ── Zone 2: Live runs ────────────────────────────────────────────────── -->
 	{#if activeRuns.length > 0}
 		<section class="space-y-3">
-			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide flex items-center gap-2">
-				<span class="inline-block w-2 h-2 rounded-full bg-teal-400 animate-pulse"></span>
-				Active runs
+			<h2 class="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-zinc-500">
+				<span class="inline-block w-1.5 h-1.5 rounded-full bg-teal-400 animate-pulse"></span>
+				Live
 			</h2>
-			<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-700">
+			<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800">
 				{#each activeRuns as run (run.id)}
 					<div class="flex items-center gap-3 px-4 py-3 hover:bg-zinc-900/50 transition-colors">
 						<span class="w-2 h-2 rounded-full flex-shrink-0 {statusDot[run.status] ?? 'bg-zinc-500'}"></span>
@@ -372,71 +416,75 @@
 		</section>
 	{/if}
 
-	<!-- ── Recent runs + Audit feed ────────────────────────────────────────── -->
-	<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+	<!-- ── Zone 3: History ─────────────────────────────────────────────────── -->
+	<section class="space-y-3">
+		<h2 class="text-xs font-semibold uppercase tracking-widest text-zinc-500">History</h2>
+		<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-		<!-- Recent runs -->
-		<section class="space-y-3">
-			<div class="flex items-center justify-between">
-				<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Recent runs</h2>
-				<a href="/runs" class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">View all →</a>
-			</div>
-			{#if recentRuns.length === 0}
-				<p class="text-zinc-600 text-sm">No runs yet.</p>
-			{:else}
-				<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-700">
-					{#each recentRuns as run (run.id)}
-						{@const delta = planDelta(run)}
-						<a href="/runs/{run.id}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-900/50 transition-colors group">
-							<span class="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-0.5 {statusDot[run.status] ?? 'bg-zinc-500'}"></span>
-							<div class="flex-1 min-w-0">
-								<div class="flex items-center gap-1.5 flex-wrap">
-									<span class="text-sm text-zinc-200 group-hover:text-white truncate">{run.stack_name}</span>
-									<span class="text-xs {statusColour[run.status]} capitalize">{run.status}</span>
-									{#if delta}
-										<span class="text-xs font-mono text-zinc-400">{delta}</span>
+			<!-- Recent runs -->
+			<div class="space-y-3">
+				<div class="flex items-center justify-between">
+					<p class="text-sm font-medium text-zinc-400">Recent runs</p>
+					<a href="/runs" class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">View all →</a>
+				</div>
+				{#if recentRuns.length === 0}
+					<p class="text-zinc-600 text-sm">No runs yet.</p>
+				{:else}
+					<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800">
+						{#each recentRuns as run (run.id)}
+							{@const delta = planDelta(run)}
+							<a href="/runs/{run.id}" class="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-900/50 transition-colors group">
+								<span class="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-0.5 {statusDot[run.status] ?? 'bg-zinc-500'}"></span>
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-1.5 flex-wrap">
+										<span class="text-sm text-zinc-200 group-hover:text-white truncate">{run.stack_name}</span>
+										<span class="text-xs {statusColour[run.status]} capitalize">{run.status}</span>
+										{#if delta}
+											<span class="text-xs font-mono text-zinc-400">{delta}</span>
+										{/if}
+									</div>
+									{#if run.commit_message}
+										<p class="text-xs text-zinc-600 truncate">{run.commit_message}</p>
 									{/if}
 								</div>
-								{#if run.commit_message}
-									<p class="text-xs text-zinc-600 truncate">{run.commit_message}</p>
-								{/if}
-							</div>
-							<span class="text-xs text-zinc-600 shrink-0">{fmtAgo(run.queued_at)}</span>
-						</a>
-					{/each}
-				</div>
-			{/if}
-		</section>
-
-		<!-- Audit feed -->
-		<section class="space-y-3">
-			<div class="flex items-center justify-between">
-				<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Recent activity</h2>
-				<a href="/audit" class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">View all →</a>
+								<span class="text-xs text-zinc-600 shrink-0">{fmtAgo(run.queued_at)}</span>
+							</a>
+						{/each}
+					</div>
+				{/if}
 			</div>
-			{#if recentAudit.length === 0}
-				<p class="text-zinc-600 text-sm">No activity yet.</p>
-			{:else}
-				<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-700">
-					{#each recentAudit as ev (ev.id)}
-						{@const icon = auditIcon(ev)}
-						<div class="flex items-start gap-3 px-4 py-2.5">
-							<div class="w-6 h-6 rounded-full {icon.bg} flex items-center justify-center flex-shrink-0 mt-0.5">
-								<span class="{icon.fg} text-xs">{icon.symbol}</span>
-							</div>
-							<div class="flex-1 min-w-0">
-								<p class="text-sm text-zinc-300 truncate">{auditVerb(ev.action)}</p>
-								{#if ev.resource_id}
-									<p class="text-xs text-zinc-600 font-mono truncate">{ev.resource_id.slice(0, 8)}</p>
-								{/if}
-							</div>
-							<span class="text-xs text-zinc-600 shrink-0">{fmtAgo(ev.occurred_at)}</span>
-						</div>
-					{/each}
+
+			<!-- Audit feed -->
+			<div class="space-y-3">
+				<div class="flex items-center justify-between">
+					<p class="text-sm font-medium text-zinc-400">Recent activity</p>
+					<a href="/audit" class="text-xs text-zinc-600 hover:text-zinc-400 transition-colors">View all →</a>
 				</div>
-			{/if}
-		</section>
-	</div>
+				{#if recentAudit.length === 0}
+					<p class="text-zinc-600 text-sm">No activity yet.</p>
+				{:else}
+					<div class="border border-zinc-800 rounded-xl overflow-hidden divide-y divide-zinc-800">
+						{#each recentAudit as ev (ev.id)}
+							{@const icon = auditIcon(ev)}
+							<div class="flex items-start gap-3 px-4 py-2.5">
+								<div class="w-6 h-6 rounded-full {icon.bg} flex items-center justify-center flex-shrink-0 mt-0.5">
+									<span class="{icon.fg} text-xs">{icon.symbol}</span>
+								</div>
+								<div class="flex-1 min-w-0">
+									<p class="text-sm text-zinc-300 truncate">{auditVerb(ev.action)}</p>
+									{#if ev.resource_id}
+										<p class="text-xs text-zinc-600 font-mono truncate">{ev.resource_id.slice(0, 8)}</p>
+									{/if}
+								</div>
+								<span class="text-xs text-zinc-600 shrink-0">{fmtAgo(ev.occurred_at)}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			</div>
+
+		</div>
+	</section>
 
 	{/if}
 </div>
