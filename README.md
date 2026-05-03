@@ -397,6 +397,8 @@ cd api && go test -race ./...
 - [x] Stack pinning — pin any stack to float it to the top of the stacks list; toggle via the pin icon on each row
 - [x] Bulk approve — "Approve all (N)" button on the dashboard Action Required zone; confirms all pending runs in one click
 - [x] Starter policies — [`ponack/crucible-policies`](https://github.com/ponack/crucible-policies) public repo with 8 ready-made OPA policies (destroy protection, cost gates, business-hours controls, and more); one-click quick-connect from the Policy Git Sources page
+- [x] Policy sync fix — `org_id` ambiguity in the policy git sync worker caused all sync jobs to fail silently; fixed column qualification in the JOIN query
+- [x] Policy input shape — cost fields (`cost_add`, `cost_change`, `cost_remove`) added to OPA policy input; `approval` type added to UI type labels, badges, templates, and input schema
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
 
