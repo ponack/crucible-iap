@@ -332,6 +332,13 @@
 
 		// Load outgoing webhooks independently.
 		stacks.outgoingWebhooks.list(stackID).then(r => (outgoingWebhooks = r)).catch(() => {});
+
+		// Poll recent runs every 10s so the list stays fresh while the user
+		// is on this page (new runs created externally won't show otherwise).
+		const runsPoller = setInterval(() => {
+			runs.list(stackID).then(r => (recentRuns = r.data)).catch(() => {});
+		}, 10_000);
+		return () => clearInterval(runsPoller);
 	});
 
 	function resetForm() {
