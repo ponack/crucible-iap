@@ -74,6 +74,8 @@
 	});
 	onDestroy(() => clearInterval(pollTimer));
 
+	let bulkActioning = $state(false);
+
 	async function confirm(run: Run) {
 		actioning = { ...actioning, [run.id]: 'confirming' };
 		try {
@@ -90,6 +92,15 @@
 			awaitingApproval = awaitingApproval.filter((r) => r.id !== run.id);
 		} catch (e) { toast.error((e as Error).message); }
 		const { [run.id]: _, ...rest } = actioning; actioning = rest;
+	}
+
+	async function approveAll() {
+		bulkActioning = true;
+		const pending = [...awaitingApproval];
+		await Promise.allSettled(pending.map((r) => runs.confirm(r.id).catch(() => {})));
+		awaitingApproval = [];
+		bulkActioning = false;
+		toast.success(`Approved ${pending.length} run${pending.length !== 1 ? 's' : ''}`);
 	}
 
 	async function cancel(run: Run) {
@@ -325,10 +336,19 @@
 	<!-- ── Zone 1: Action Required ─────────────────────────────────────────── -->
 	{#if hasActionRequired}
 		<section class="space-y-3">
-			<h2 class="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-zinc-500">
-				<span class="inline-block w-1.5 h-1.5 rounded-full bg-orange-400"></span>
-				Action Required
-			</h2>
+			<div class="flex items-center justify-between">
+				<h2 class="text-xs font-semibold uppercase tracking-widest flex items-center gap-2 text-zinc-500">
+					<span class="inline-block w-1.5 h-1.5 rounded-full bg-orange-400"></span>
+					Action Required
+				</h2>
+				{#if awaitingApproval.length > 1}
+					<button onclick={approveAll} disabled={bulkActioning}
+						class="text-xs px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+						style="background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);">
+						{bulkActioning ? 'Approving…' : `Approve all (${awaitingApproval.length})`}
+					</button>
+				{/if}
+			</div>
 
 			{#if driftStacks.length > 0}
 				<div class="border border-orange-800 bg-orange-950/40 rounded-xl px-5 py-3 flex items-center gap-3">

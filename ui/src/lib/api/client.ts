@@ -145,8 +145,25 @@ export interface Stack {
 	preview_branch?: string;
 	worker_pool_id?: string;
 	worker_pool_name?: string;
+	is_pinned: boolean;
+	tags: TagRef[];
 	created_at: string;
 	updated_at: string;
+}
+
+export interface TagRef {
+	id: string;
+	name: string;
+	color: string;
+}
+
+export interface Tag {
+	id: string;
+	org_id: string;
+	name: string;
+	color: string;
+	stack_count: number;
+	created_at: string;
 }
 
 // ── Worker pools ──────────────────────────────────────────────────────────────
@@ -264,11 +281,17 @@ export interface StackToken {
 }
 
 export const stacks = {
-	list: (offset = 0, limit = 50, filters: { q?: string; tool?: string; status?: string } = {}) => {
+	list: (
+		offset = 0,
+		limit = 50,
+		filters: { q?: string; tool?: string; status?: string; tags?: string[]; pinned?: boolean } = {}
+	) => {
 		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
 		if (filters.q) p.set('q', filters.q);
 		if (filters.tool) p.set('tool', filters.tool);
 		if (filters.status) p.set('status', filters.status);
+		if (filters.pinned) p.set('pinned', 'true');
+		filters.tags?.forEach((t) => p.append('tag', t));
 		return request<Paginated<Stack>>(`/stacks?${p}`);
 	},
 	get: (id: string) => request<Stack>(`/stacks/${id}`),
@@ -277,6 +300,11 @@ export const stacks = {
 	update: (id: string, data: Partial<Stack>) =>
 		request<Stack>(`/stacks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 	delete: (id: string) => request<null>(`/stacks/${id}`, { method: 'DELETE' }),
+	pin: (id: string) => request<null>(`/stacks/${id}/pin`, { method: 'POST' }),
+	unpin: (id: string) => request<null>(`/stacks/${id}/pin`, { method: 'DELETE' }),
+	listTags: (id: string) => request<TagRef[]>(`/stacks/${id}/tags`),
+	setTags: (id: string, tagIDs: string[]) =>
+		request<null>(`/stacks/${id}/tags`, { method: 'PUT', body: JSON.stringify({ tag_ids: tagIDs }) }),
 
 	tokens: {
 		list: (stackID: string) => request<StackToken[]>(`/stacks/${stackID}/tokens`),
@@ -546,10 +574,15 @@ export interface RunScanResult {
 }
 
 export const runs = {
-	listAll: (offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
+	listAll: (
+		offset = 0,
+		limit = 50,
+		filters: { status?: string; type?: string; tags?: string[] } = {}
+	) => {
 		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
 		if (filters.status) p.set('status', filters.status);
 		if (filters.type) p.set('type', filters.type);
+		filters.tags?.forEach((t) => p.append('tag', t));
 		return request<Paginated<Run>>(`/runs?${p}`);
 	},
 	list: (stackID: string, offset = 0, limit = 50, filters: { status?: string; type?: string } = {}) => {
@@ -1240,4 +1273,13 @@ export const cloudOIDC = {
 			body: JSON.stringify(cfg)
 		}),
 	delete: (stackID: string) => request<null>(`/stacks/${stackID}/cloud-oidc`, { method: 'DELETE' })
+};
+
+export const orgTags = {
+	list: () => request<Tag[]>('/tags'),
+	create: (name: string, color: string) =>
+		request<Tag>('/tags', { method: 'POST', body: JSON.stringify({ name, color }) }),
+	update: (id: string, data: { name?: string; color?: string }) =>
+		request<null>(`/tags/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+	delete: (id: string) => request<null>(`/tags/${id}`, { method: 'DELETE' })
 };

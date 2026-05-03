@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, cloudOIDC, stackTemplates, workerPools, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -17,6 +17,33 @@
 	let allPolicies = $state<Policy[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	// Tags
+	let allOrgTags = $state<Tag[]>([]);
+	let tagPickerOpen = $state(false);
+	let savingTags = $state(false);
+
+	async function loadOrgTags() {
+		try { allOrgTags = await orgTags.list(); } catch { /* non-fatal */ }
+	}
+
+	async function toggleStackTag(tagID: string) {
+		if (!stack) return;
+		savingTags = true;
+		try {
+			const current = stack.tags.map((t) => t.id);
+			const next = current.includes(tagID)
+				? current.filter((id) => id !== tagID)
+				: [...current, tagID];
+			await stacks.setTags(stack.id, next);
+			const updated = await stacks.get(stack.id);
+			stack = updated;
+		} catch (e) {
+			toast.error((e as Error).message);
+		} finally {
+			savingTags = false;
+		}
+	}
 
 	// Edit form state
 	let editing = $state(false);
@@ -283,6 +310,8 @@
 		} finally {
 			loading = false;
 		}
+
+		loadOrgTags();
 
 		// Restore webhook secret for this session (cleared on tab close).
 		newWebhookSecret = sessionStorage.getItem(`webhook_secret_${stackID}`);
@@ -1055,6 +1084,18 @@
 				{#if stack.description}
 					<span class="text-zinc-400 text-sm">{stack.description}</span>
 				{/if}
+				<!-- Tag pills in header -->
+				{#if stack.tags?.length > 0}
+					<div class="flex items-center gap-1.5 mt-1 flex-wrap">
+						{#each stack.tags as tag (tag.id)}
+							<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
+								style="border-color: {tag.color}33; background: {tag.color}18; color: var(--color-zinc-300);">
+								<span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {tag.color};"></span>
+								{tag.name}
+							</span>
+						{/each}
+					</div>
+				{/if}
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
@@ -1444,6 +1485,69 @@
 			</div>
 		{/if}
 	</section>
+
+	<!-- Tags -->
+	{#if stack.my_stack_role !== 'viewer'}
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Tags</h2>
+			{#if allOrgTags.length > 0}
+				<div class="relative">
+					<button
+						onclick={() => (tagPickerOpen = !tagPickerOpen)}
+						class="text-xs px-3 py-1.5 rounded-lg transition-colors"
+						style="background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);">
+						Edit tags
+					</button>
+					{#if tagPickerOpen}
+						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+						<div class="fixed inset-0 z-10" onclick={() => (tagPickerOpen = false)}></div>
+						<div class="absolute top-full mt-1 right-0 z-20 min-w-48 rounded-xl border border-zinc-700 shadow-xl py-1"
+							style="background: var(--color-zinc-900);">
+							{#each allOrgTags as tag (tag.id)}
+								{@const selected = stack.tags?.some((t) => t.id === tag.id)}
+								<button
+									onclick={() => toggleStackTag(tag.id)}
+									disabled={savingTags}
+									class="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-zinc-800 transition-colors text-left disabled:opacity-50">
+									<span class="w-3 h-3 rounded-full flex-shrink-0 {selected ? 'ring-2 ring-offset-1' : ''}"
+										style="background: {tag.color}; {selected ? `ring-color: ${tag.color}; ring-offset-color: var(--color-zinc-900);` : ''}">
+									</span>
+									<span class="flex-1 text-zinc-200">{tag.name}</span>
+									{#if selected}
+										<svg class="h-3.5 w-3.5 flex-shrink-0" style="color: var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+											<path d="m4.5 12.75 6 6 9-13.5"/>
+										</svg>
+									{/if}
+								</button>
+							{/each}
+							{#if allOrgTags.length === 0}
+								<p class="px-3 py-2 text-xs text-zinc-500">No tags yet — create them in Settings → Tags.</p>
+							{/if}
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<a href="/settings/tags" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+					Create tags in Settings →
+				</a>
+			{/if}
+		</div>
+		{#if stack.tags?.length > 0}
+			<div class="flex items-center gap-2 flex-wrap">
+				{#each stack.tags as tag (tag.id)}
+					<span class="inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-full border"
+						style="border-color: {tag.color}33; background: {tag.color}18; color: var(--color-zinc-200);">
+						<span class="w-2 h-2 rounded-full flex-shrink-0" style="background: {tag.color};"></span>
+						{tag.name}
+					</span>
+				{/each}
+			</div>
+		{:else}
+			<p class="text-zinc-600 text-sm">No tags on this stack.{allOrgTags.length === 0 ? ' Create tags in Settings → Tags first.' : ''}</p>
+		{/if}
+	</section>
+	{/if}
 
 	<!-- Policies -->
 	<section class="space-y-3">

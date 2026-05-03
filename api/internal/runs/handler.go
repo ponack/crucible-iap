@@ -120,6 +120,14 @@ func (h *Handler) ListAll(c echo.Context) error {
 		args = append(args, typ)
 		conds = append(conds, fmt.Sprintf("r.type = $%d", len(args)))
 	}
+	if tagNames := c.QueryParams()["tag"]; len(tagNames) > 0 {
+		args = append(args, tagNames)
+		conds = append(conds, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM stack_tags stg
+			JOIN tags tg ON tg.id = stg.tag_id
+			WHERE stg.stack_id = r.stack_id AND tg.name = ANY($%d)
+		)`, len(args)))
+	}
 
 	where := strings.Join(conds, " AND ")
 	args = append(args, p.Limit, p.Offset)

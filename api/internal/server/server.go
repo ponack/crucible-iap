@@ -41,6 +41,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/updater"
 	"github.com/ponack/crucible-iap/internal/agent"
+	"github.com/ponack/crucible-iap/internal/tags"
 	"github.com/ponack/crucible-iap/internal/varsets"
 	"github.com/ponack/crucible-iap/internal/vault"
 	"github.com/ponack/crucible-iap/internal/webhooks"
@@ -139,6 +140,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	integrationHandler := integrations.NewHandler(s.pool, v)
 	workerPoolHandler := workerpools.NewHandler(s.pool)
 	policyGitHandler := policygit.NewHandler(s.pool, q)
+	tagHandler := tags.NewHandler(s.pool)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -240,6 +242,10 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.DELETE("/stacks/:id", stackHandler.Delete, admin)
 	api.POST("/stacks/:id/lock", stackHandler.Lock, member)
 	api.POST("/stacks/:id/unlock", stackHandler.Unlock, member)
+	api.POST("/stacks/:id/pin", stackHandler.Pin, member)
+	api.DELETE("/stacks/:id/pin", stackHandler.Unpin, member)
+	api.GET("/stacks/:id/tags", tagHandler.ListForStack)
+	api.PUT("/stacks/:id/tags", tagHandler.SetTags, member)
 
 	// Stack tokens
 	api.POST("/stacks/:id/tokens", stackHandler.CreateToken, member)
@@ -278,6 +284,11 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/stacks/:id/notifications/test-email", stackHandler.TestEmailNotification, member)
 
 	// Variable sets
+	api.GET("/tags", tagHandler.List)
+	api.POST("/tags", tagHandler.Create, member)
+	api.PATCH("/tags/:tagID", tagHandler.Update, member)
+	api.DELETE("/tags/:tagID", tagHandler.Delete, admin)
+
 	api.GET("/variable-sets", varSetHandler.List)
 	api.POST("/variable-sets", varSetHandler.Create, member)
 	api.GET("/variable-sets/:id", varSetHandler.Get)

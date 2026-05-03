@@ -9,6 +9,7 @@
 		{ label: 'Organization', href: '/settings/organization' },
 		{ label: 'Integrations', href: '/settings/integrations' },
 		{ label: 'API Tokens', href: '/settings/api-tokens' },
+		{ label: 'Tags', href: '/settings/tags' },
 		{ label: 'Export / Import', href: '/settings/export' }
 	];
 

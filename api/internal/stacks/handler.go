@@ -17,6 +17,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/pagination"
+	"github.com/ponack/crucible-iap/internal/tags"
 	"github.com/ponack/crucible-iap/internal/tokenauth"
 	vaultpkg "github.com/ponack/crucible-iap/internal/vault"
 	"github.com/robfig/cron/v3"
@@ -124,6 +125,8 @@ type Stack struct {
 	PreviewBranch        *string    `json:"preview_branch,omitempty"`
 	WorkerPoolID         *string    `json:"worker_pool_id,omitempty"`
 	WorkerPoolName       *string    `json:"worker_pool_name,omitempty"`
+	IsPinned             bool       `json:"is_pinned"`
+	Tags                 []tags.TagRef `json:"tags"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -164,6 +167,17 @@ func (h *Handler) List(c echo.Context) error {
 		args = append(args, status)
 		conds = append(conds, fmt.Sprintf("lr.status = $%d", len(args)))
 	}
+	if c.QueryParam("pinned") == "true" {
+		conds = append(conds, "s.is_pinned = true")
+	}
+	if tagNames := c.QueryParams()["tag"]; len(tagNames) > 0 {
+		args = append(args, tagNames)
+		conds = append(conds, fmt.Sprintf(`EXISTS (
+			SELECT 1 FROM stack_tags stg
+			JOIN tags tg ON tg.id = stg.tag_id
+			WHERE stg.stack_id = s.id AND tg.name = ANY($%d)
+		)`, len(args)))
+	}
 
 	where := strings.Join(conds, " AND ")
 	args = append(args, p.Limit, p.Offset)
@@ -174,7 +188,7 @@ func (h *Handler) List(c echo.Context) error {
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
 		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift,
-		       s.is_disabled, s.is_locked, s.created_at, s.updated_at,
+		       s.is_disabled, s.is_locked, s.is_pinned, s.created_at, s.updated_at,
 		       COALESCE(lr.status::text,''), lr.queued_at,
 		       (SELECT COUNT(*) FROM stack_dependencies WHERE downstream_id = s.id),
 		       (SELECT COUNT(*) FROM stack_dependencies WHERE upstream_id = s.id),
@@ -192,7 +206,7 @@ func (h *Handler) List(c echo.Context) error {
 		    ORDER BY queued_at DESC LIMIT 1
 		) lr ON true
 		WHERE %s
-		ORDER BY s.created_at DESC
+		ORDER BY s.is_pinned DESC, s.created_at DESC
 		LIMIT $%d OFFSET $%d
 	`, access.StackRoleSQL, access.IsRestrictedSQL, where, nLimit, nOffset), args...)
 	if err != nil {
@@ -207,7 +221,7 @@ func (h *Handler) List(c echo.Context) error {
 		if err := rows.Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 			&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 			&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
-			&s.IsDisabled, &s.IsLocked, &s.CreatedAt, &s.UpdatedAt,
+			&s.IsDisabled, &s.IsLocked, &s.IsPinned, &s.CreatedAt, &s.UpdatedAt,
 			&s.LastRunStatus, &s.LastRunAt,
 			&s.UpstreamCount, &s.DownstreamCount,
 			&s.MyStackRole, &s.IsRestricted,
@@ -218,10 +232,12 @@ func (h *Handler) List(c echo.Context) error {
 		}
 		s.UpstreamStacks = []StackRef{}
 		s.DownstreamStacks = []StackRef{}
+		s.Tags = []tags.TagRef{}
 		out = append(out, s)
 	}
 
 	h.populateDependencyNames(c.Request().Context(), out)
+	h.populateTags(c.Request().Context(), out)
 
 	return c.JSON(http.StatusOK, pagination.Wrap(out, p, total))
 }
@@ -276,6 +292,56 @@ func (h *Handler) populateDependencyNames(ctx context.Context, stacks []Stack) {
 			}
 		}
 	}
+}
+
+func (h *Handler) populateTags(ctx context.Context, stacks []Stack) {
+	if len(stacks) == 0 {
+		return
+	}
+	ids := make([]string, len(stacks))
+	idx := make(map[string]int, len(stacks))
+	for i, s := range stacks {
+		ids[i] = s.ID
+		idx[s.ID] = i
+	}
+	tagMap := tags.BulkLoadStackTags(ctx, h.pool, ids)
+	for sid, ts := range tagMap {
+		if i, ok := idx[sid]; ok {
+			stacks[i].Tags = ts
+		}
+	}
+}
+
+// Pin marks a stack as pinned so it floats to the top of the list.
+func (h *Handler) Pin(c echo.Context) error {
+	return h.setPinned(c, true)
+}
+
+// Unpin removes the pinned flag from a stack.
+func (h *Handler) Unpin(c echo.Context) error {
+	return h.setPinned(c, false)
+}
+
+func (h *Handler) setPinned(c echo.Context, pinned bool) error {
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+	stackID := c.Param("id")
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE stacks SET is_pinned = $3, updated_at = now()
+		WHERE id = $1 AND org_id = $2
+	`, stackID, orgID, pinned)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+	action := "stack.pinned"
+	if !pinned {
+		action = "stack.unpinned"
+	}
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: action,
+		ResourceID: stackID, ResourceType: "stack", OrgID: orgID, IPAddress: c.RealIP(),
+	})
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handler) Create(c echo.Context) error {
@@ -359,7 +425,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.vcs_integration_id, s.secret_integration_id,
 		       EXISTS(SELECT 1 FROM stack_state_backends WHERE stack_id = s.id),
 		       COALESCE((SELECT sb.provider FROM stack_state_backends sb WHERE sb.stack_id = s.id), ''),
-		       s.is_disabled, s.is_locked, COALESCE(s.lock_reason,''), s.scheduled_destroy_at, s.created_at, s.updated_at,
+		       s.is_disabled, s.is_locked, COALESCE(s.lock_reason,''), s.scheduled_destroy_at, s.is_pinned, s.created_at, s.updated_at,
 		       s.module_namespace, s.module_name, s.module_provider,
 		       s.pre_plan_hook, s.post_plan_hook, s.pre_apply_hook, s.post_apply_hook,
 		       COALESCE(s.plan_schedule,''), COALESCE(s.apply_schedule,''), COALESCE(s.destroy_schedule,''),
@@ -384,7 +450,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.NotifyEmail, &s.NotifyEvents,
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,
-		&s.IsDisabled, &s.IsLocked, &s.LockReason, &s.ScheduledDestroyAt, &s.CreatedAt, &s.UpdatedAt,
+		&s.IsDisabled, &s.IsLocked, &s.LockReason, &s.ScheduledDestroyAt, &s.IsPinned, &s.CreatedAt, &s.UpdatedAt,
 		&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 		&s.PrePlanHook, &s.PostPlanHook, &s.PreApplyHook, &s.PostApplyHook,
 		&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
@@ -401,6 +467,12 @@ func (h *Handler) Get(c echo.Context) error {
 		s.WebhookSecret = *webhookSecretPtr
 	}
 	s.WebhookURL = c.Scheme() + "://" + c.Request().Host + "/api/v1/webhooks/" + s.ID
+	tagMap := tags.BulkLoadStackTags(c.Request().Context(), h.pool, []string{s.ID})
+	if ts, ok := tagMap[s.ID]; ok {
+		s.Tags = ts
+	} else {
+		s.Tags = []tags.TagRef{}
+	}
 	return c.JSON(http.StatusOK, s)
 }
 
