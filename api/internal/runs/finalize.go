@@ -159,22 +159,27 @@ func (f *Finalizer) evaluatePlanPolicies(ctx context.Context, log *slog.Logger, 
 
 	var runType, runTrigger, stackName, stackSlug string
 	var planAdd, planChange, planDestroy int
+	var costAdd, costChange, costRemove *float64
 	if err := f.pool.QueryRow(ctx, `
 		SELECT r.type, r.trigger,
 		       COALESCE(r.plan_add, 0), COALESCE(r.plan_change, 0), COALESCE(r.plan_destroy, 0),
+		       r.cost_add, r.cost_change, r.cost_remove,
 		       s.name, s.slug
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE r.id = $1
-	`, args.RunID).Scan(&runType, &runTrigger, &planAdd, &planChange, &planDestroy, &stackName, &stackSlug); err != nil {
+	`, args.RunID).Scan(&runType, &runTrigger, &planAdd, &planChange, &planDestroy,
+		&costAdd, &costChange, &costRemove, &stackName, &stackSlug); err != nil {
 		return false, false, fmt.Errorf("fetch run context: %w", err)
 	}
 
+	runInput := map[string]any{
+		"id": args.RunID, "type": runType, "trigger": runTrigger,
+		"plan_add": planAdd, "plan_change": planChange, "plan_destroy": planDestroy,
+		"cost_add": costAdd, "cost_change": costChange, "cost_remove": costRemove,
+	}
 	input := map[string]any{
-		"run": map[string]any{
-			"id": args.RunID, "type": runType, "trigger": runTrigger,
-			"plan_add": planAdd, "plan_change": planChange, "plan_destroy": planDestroy,
-		},
+		"run":   runInput,
 		"stack": map[string]any{"id": args.StackID, "name": stackName, "slug": stackSlug},
 	}
 
