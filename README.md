@@ -392,6 +392,11 @@ cd api && go test -race ./...
 - [x] Cold / Hot / Neutral Forge theme switcher — three named forge themes selectable from color-swatch dot buttons in the sidebar; Cold Forge (teal-slate, hue 185 OKLCH, `#2DD4BF`), Hot Forge (copper-amber, hue 42 OKLCH, `#D4883C`), Neutral Forge (standard zinc, hue 286, `#818cf8` indigo accent — pre-redesign look); each combines independently with dark / light mode for six total palette combinations; persists to `localStorage` with anti-FOUC protection
 - [x] Dashboard redesign — priority-zone layout (Action Required → Live → History); stat cards with Heroicons icons and alert-colour tinting when values are non-zero; "+ New stack" CTA in the header; update-available notice demoted to a subtle link; version display removed from the main content area
 - [x] Ember / Frost / Gold Forge themes — three additional forge palette options: Ember Forge (hue 15, `#E05252` deep red), Frost Forge (hue 220, `#60A5FA` arctic blue), Gold Forge (hue 78, `#F5C542` warm gold); sidebar now shows six dot swatches; each has a paired light-mode variant and anti-FOUC protection
+- [x] Stack tags — org-scoped, color-coded labels managed in Settings → Tags; attach multiple tags to any stack; tag pills visible in the stack list and stack detail header
+- [x] Tag filtering — filter the stacks list and runs list by one or more tags via a dropdown with color swatches and active filter pills
+- [x] Stack pinning — pin any stack to float it to the top of the stacks list; toggle via the pin icon on each row
+- [x] Bulk approve — "Approve all (N)" button on the dashboard Action Required zone; confirms all pending runs in one click
+- [x] Starter policies — [`ponack/crucible-policies`](https://github.com/ponack/crucible-policies) public repo with 8 ready-made OPA policies (destroy protection, cost gates, business-hours controls, and more); one-click quick-connect from the Policy Git Sources page
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
 
