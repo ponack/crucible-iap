@@ -1024,6 +1024,24 @@ export const stackTemplates = {
 
 // ── Blueprints ────────────────────────────────────────────────────────────────
 
+export interface BlueprintExport {
+	schema_version: number;
+	name: string;
+	description: string;
+	tool: string;
+	tool_version: string;
+	repo_url: string;
+	repo_branch: string;
+	project_root: string;
+	runner_image: string;
+	auto_apply: boolean;
+	drift_detection: boolean;
+	drift_schedule: string;
+	auto_remediate_drift: boolean;
+	vcs_provider: string;
+	params: Omit<BlueprintParam, 'id'>[];
+}
+
 export interface BlueprintParam {
 	id: string;
 	name: string;
@@ -1079,7 +1097,10 @@ export const blueprints = {
 		request<{ stack_id: string }>(`/blueprints/${id}/deploy`, {
 			method: 'POST',
 			body: JSON.stringify({ stack_name: stackName, values })
-		})
+		}),
+	export: (id: string) => request<BlueprintExport>(`/blueprints/${id}/export`),
+	importBlueprint: (data: BlueprintExport) =>
+		request<Blueprint>('/blueprints/import', { method: 'POST', body: JSON.stringify(data) })
 };
 
 // ── Export / Import ───────────────────────────────────────────────────────────
