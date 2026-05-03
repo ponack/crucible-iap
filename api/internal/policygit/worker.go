@@ -104,10 +104,10 @@ func (w *PolicySyncWorker) loadSource(ctx context.Context, id string) (sourceCon
 	var s sourceConfig
 	s.id = id
 	err := w.pool.QueryRow(ctx, `
-		SELECT org_id, repo_url, branch, path, vcs_provider, vcs_base_url,
-		       COALESCE(vcs_integration_id::text,''),
+		SELECT pgs.org_id, pgs.repo_url, pgs.branch, pgs.path, pgs.vcs_provider, pgs.vcs_base_url,
+		       COALESCE(pgs.vcs_integration_id::text,''),
 		       COALESCE(oi.config_enc, ''::bytea),
-		       mirror_mode
+		       pgs.mirror_mode
 		FROM policy_git_sources pgs
 		LEFT JOIN org_integrations oi ON oi.id = pgs.vcs_integration_id
 		WHERE pgs.id = $1
