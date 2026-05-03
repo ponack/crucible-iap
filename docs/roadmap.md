@@ -147,6 +147,27 @@ Three named forge themes selectable from color-swatch pill buttons in the sideba
 
 Selection persists to `localStorage` under the key `forge`. The anti-FOUC script in `<head>` reads both `theme` and `forge` before first paint so there is no flash of wrong theme on hard reload in any combination.
 
+### Dashboard Redesign ✓
+
+Priority-zone layout shipped in v0.8.5:
+
+- **Action Required zone** — drift alert banner and awaiting-approval list promoted to the top of the page so urgent items are always visible first.
+- **Live zone** — active runs shown in a dedicated pulsing section, only rendered when runs are in flight.
+- **History zone** — recent runs and audit feed demoted to a two-column grid at the bottom; always shown.
+- **Stat cards** — Heroicons icons with alert-colour tinting (yellow for pending approvals, red for failures, teal pulse background for active runs); neutral when values are zero.
+- **+ New stack CTA** — accent-styled button in the page header for quick access from the dashboard.
+- Version display removed from the main content area; update-available notice demoted to a subtle link under the page title.
+
+### Ember / Frost / Gold Forge Themes ✓
+
+Three additional forge palette options added in v0.8.5, bringing the total to six themes × two light/dark modes = twelve combinations:
+
+- **Ember Forge** — hue 15 (deep red), `#E05252` accent, `#160a0a` dark page background; evokes smouldering embers
+- **Frost Forge** — hue 220 (arctic blue), `#60A5FA` accent, `#080f18` dark page background; crisp cold-blue palette
+- **Gold Forge** — hue 78 (warm gold), `#F5C542` accent, `#130f00` dark page background; rich earthy gold
+
+Sidebar dot-swatch row extended to six swatches. Anti-FOUC script updated to restore all six forge classes before first paint.
+
 ---
 
 ## Medium Term
