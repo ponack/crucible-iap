@@ -124,6 +124,22 @@
 		}
 	}
 
+	async function exportBlueprint() {
+		if (!bp) return;
+		try {
+			const data = await blueprints.export(id);
+			const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `${bp.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-blueprint.json`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} catch (e) {
+			toast.error((e as Error).message);
+		}
+	}
+
 	async function saveParam(e: SubmitEvent) {
 		e.preventDefault();
 		paramSaving = true;
@@ -213,6 +229,10 @@
 				</a>
 			{/if}
 			{#if auth.isAdmin}
+				<button onclick={exportBlueprint}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Export JSON
+				</button>
 				<button onclick={togglePublish} disabled={publishing}
 					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 					{publishing ? '…' : bp.is_published ? 'Unpublish' : 'Publish'}

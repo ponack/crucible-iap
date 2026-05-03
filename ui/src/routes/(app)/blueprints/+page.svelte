@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { blueprints, type Blueprint } from '$lib/api/client';
+	import { blueprints, type Blueprint, type BlueprintExport } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 
@@ -21,6 +21,11 @@
 		project_root: '.',
 		vcs_provider: 'github'
 	});
+
+	let importing = $state(false);
+	let importSaving = $state(false);
+	let importError = $state<string | null>(null);
+	let importJSON = $state('');
 
 	onMount(async () => {
 		try {
@@ -44,6 +49,28 @@
 			saving = false;
 		}
 	}
+
+	function handleImportFile(e: Event) {
+		const file = (e.target as HTMLInputElement).files?.[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = (ev) => { importJSON = (ev.target?.result as string) ?? ''; };
+		reader.readAsText(file);
+	}
+
+	async function importBlueprint(e: SubmitEvent) {
+		e.preventDefault();
+		importSaving = true;
+		importError = null;
+		try {
+			const data: BlueprintExport = JSON.parse(importJSON);
+			const b = await blueprints.importBlueprint(data);
+			goto(`/blueprints/${b.id}`);
+		} catch (e) {
+			importError = e instanceof SyntaxError ? 'Invalid JSON' : (e as Error).message;
+			importSaving = false;
+		}
+	}
 </script>
 
 <div class="max-w-4xl space-y-6 p-6">
@@ -53,11 +80,18 @@
 			<p class="text-sm text-zinc-500 mt-0.5">Parameterized stack templates that app teams can self-serve deploy.</p>
 		</div>
 		{#if auth.isAdmin}
-			<button
-				onclick={() => (creating = !creating)}
-				class="rounded-lg bg-teal-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-teal-500">
-				{creating ? 'Cancel' : 'New blueprint'}
-			</button>
+			<div class="flex gap-2">
+				<button
+					onclick={() => { importing = !importing; creating = false; }}
+					class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-zinc-800">
+					{importing ? 'Cancel' : 'Import'}
+				</button>
+				<button
+					onclick={() => { creating = !creating; importing = false; }}
+					class="rounded-lg bg-teal-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-teal-500">
+					{creating ? 'Cancel' : 'New blueprint'}
+				</button>
+			</div>
 		{/if}
 	</div>
 
@@ -112,6 +146,32 @@
 					<button type="submit" disabled={saving}
 						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
 						{saving ? 'Creating…' : 'Create'}
+					</button>
+				</div>
+			</form>
+		</div>
+	{/if}
+
+	{#if importing}
+		<div class="space-y-4 rounded-xl border border-zinc-800 p-5">
+			<h2 class="text-sm font-medium text-zinc-300">Import blueprint</h2>
+			{#if importError}
+				<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{importError}</div>
+			{/if}
+			<form onsubmit={importBlueprint} class="space-y-4">
+				<div class="space-y-1.5">
+					<label class="field-label" for="imp-file">Upload JSON file</label>
+					<input id="imp-file" type="file" accept=".json,application/json" onchange={handleImportFile}
+						class="block w-full text-sm text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-zinc-800 file:px-3 file:py-1.5 file:text-sm file:text-zinc-300 hover:file:bg-zinc-700" />
+				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="imp-json">Or paste JSON</label>
+					<textarea id="imp-json" class="field-input font-mono text-xs" rows="6" bind:value={importJSON} placeholder="Paste exported blueprint JSON here…"></textarea>
+				</div>
+				<div class="flex justify-end">
+					<button type="submit" disabled={importSaving || !importJSON.trim()}
+						class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-teal-500 disabled:opacity-50">
+						{importSaving ? 'Importing…' : 'Import'}
 					</button>
 				</div>
 			</form>

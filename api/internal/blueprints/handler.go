@@ -198,6 +198,194 @@ func (h *Handler) Create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, b)
 }
 
+// BlueprintExport is the portable, org-agnostic representation of a blueprint
+// used for export/import. It omits id, org_id, is_published, and timestamps.
+type BlueprintExport struct {
+	SchemaVersion      int            `json:"schema_version"`
+	Name               string         `json:"name"`
+	Description        string         `json:"description"`
+	Tool               string         `json:"tool"`
+	ToolVersion        string         `json:"tool_version,omitempty"`
+	RepoURL            string         `json:"repo_url,omitempty"`
+	RepoBranch         string         `json:"repo_branch"`
+	ProjectRoot        string         `json:"project_root"`
+	RunnerImage        string         `json:"runner_image,omitempty"`
+	AutoApply          bool           `json:"auto_apply"`
+	DriftDetection     bool           `json:"drift_detection"`
+	DriftSchedule      string         `json:"drift_schedule,omitempty"`
+	AutoRemediateDrift bool           `json:"auto_remediate_drift"`
+	VCSProvider        string         `json:"vcs_provider"`
+	Params             []ParamExport  `json:"params"`
+}
+
+type ParamExport struct {
+	Name         string   `json:"name"`
+	Label        string   `json:"label"`
+	Description  string   `json:"description"`
+	Type         string   `json:"type"`
+	Options      []string `json:"options"`
+	DefaultValue string   `json:"default_value"`
+	Required     bool     `json:"required"`
+	EnvPrefix    string   `json:"env_prefix"`
+	SortOrder    int      `json:"sort_order"`
+}
+
+// Export returns a portable JSON representation of a blueprint (no IDs or timestamps).
+func (h *Handler) Export(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var b Blueprint
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT id, name, description, tool, tool_version, repo_url, repo_branch,
+		       project_root, runner_image, auto_apply, drift_detection, drift_schedule,
+		       auto_remediate_drift, vcs_provider, is_published, created_at, updated_at
+		FROM blueprints WHERE id = $1 AND org_id = $2
+	`, id, orgID).Scan(
+		&b.ID, &b.Name, &b.Description, &b.Tool, &b.ToolVersion, &b.RepoURL,
+		&b.RepoBranch, &b.ProjectRoot, &b.RunnerImage, &b.AutoApply,
+		&b.DriftDetection, &b.DriftSchedule, &b.AutoRemediateDrift,
+		&b.VCSProvider, &b.IsPublished, &b.CreatedAt, &b.UpdatedAt,
+	)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "blueprint not found")
+	}
+
+	params, err := h.loadParams(c, id)
+	if err != nil {
+		return err
+	}
+
+	exp := BlueprintExport{
+		SchemaVersion:      1,
+		Name:               b.Name,
+		Description:        b.Description,
+		Tool:               b.Tool,
+		ToolVersion:        b.ToolVersion,
+		RepoURL:            b.RepoURL,
+		RepoBranch:         b.RepoBranch,
+		ProjectRoot:        b.ProjectRoot,
+		RunnerImage:        b.RunnerImage,
+		AutoApply:          b.AutoApply,
+		DriftDetection:     b.DriftDetection,
+		DriftSchedule:      b.DriftSchedule,
+		AutoRemediateDrift: b.AutoRemediateDrift,
+		VCSProvider:        b.VCSProvider,
+		Params:             make([]ParamExport, len(params)),
+	}
+	for i, p := range params {
+		options := p.Options
+		if options == nil {
+			options = []string{}
+		}
+		exp.Params[i] = ParamExport{
+			Name: p.Name, Label: p.Label, Description: p.Description,
+			Type: p.Type, Options: options, DefaultValue: p.DefaultValue,
+			Required: p.Required, EnvPrefix: p.EnvPrefix, SortOrder: p.SortOrder,
+		}
+	}
+
+	filename := slugify(b.Name) + "-blueprint.json"
+	c.Response().Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	return c.JSON(http.StatusOK, exp)
+}
+
+// Import creates a new blueprint from a BlueprintExport payload.
+func (h *Handler) Import(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	userID := c.Get("userID").(string)
+
+	var req BlueprintExport
+	if err := c.Bind(&req); err != nil || req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid blueprint export — name is required")
+	}
+	if req.Tool == "" {
+		req.Tool = "opentofu"
+	}
+	if req.RepoBranch == "" {
+		req.RepoBranch = "main"
+	}
+	if req.ProjectRoot == "" {
+		req.ProjectRoot = "."
+	}
+	if req.VCSProvider == "" {
+		req.VCSProvider = "github"
+	}
+
+	tx, err := h.pool.Begin(c.Request().Context())
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to begin transaction")
+	}
+	defer tx.Rollback(c.Request().Context())
+
+	var b Blueprint
+	err = tx.QueryRow(c.Request().Context(), `
+		INSERT INTO blueprints
+		  (org_id, name, description, tool, tool_version, repo_url, repo_branch,
+		   project_root, runner_image, auto_apply, drift_detection, drift_schedule,
+		   auto_remediate_drift, vcs_provider)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		RETURNING id, name, description, tool, tool_version, repo_url, repo_branch,
+		          project_root, runner_image, auto_apply, drift_detection,
+		          drift_schedule, auto_remediate_drift, vcs_provider, is_published, created_at, updated_at
+	`, orgID, req.Name, req.Description, req.Tool, req.ToolVersion, req.RepoURL,
+		req.RepoBranch, req.ProjectRoot, req.RunnerImage, req.AutoApply,
+		req.DriftDetection, req.DriftSchedule, req.AutoRemediateDrift, req.VCSProvider,
+	).Scan(
+		&b.ID, &b.Name, &b.Description, &b.Tool, &b.ToolVersion, &b.RepoURL,
+		&b.RepoBranch, &b.ProjectRoot, &b.RunnerImage, &b.AutoApply,
+		&b.DriftDetection, &b.DriftSchedule, &b.AutoRemediateDrift,
+		&b.VCSProvider, &b.IsPublished, &b.CreatedAt, &b.UpdatedAt,
+	)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusConflict, "a blueprint with this name already exists")
+	}
+
+	for _, p := range req.Params {
+		if p.Name == "" {
+			continue
+		}
+		opts := p.Options
+		if opts == nil {
+			opts = []string{}
+		}
+		if _, err := tx.Exec(c.Request().Context(), `
+			INSERT INTO blueprint_params
+			  (blueprint_id, name, label, description, type, options, default_value, required, env_prefix, sort_order)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		`, b.ID, p.Name, p.Label, p.Description, p.Type, opts,
+			p.DefaultValue, p.Required, p.EnvPrefix, p.SortOrder); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to insert param: "+p.Name)
+		}
+	}
+
+	if err := tx.Commit(c.Request().Context()); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to commit")
+	}
+
+	b.Params = make([]Param, len(req.Params))
+	for i, p := range req.Params {
+		b.Params[i] = Param{
+			Name: p.Name, Label: p.Label, Description: p.Description,
+			Type: p.Type, Options: p.Options, DefaultValue: p.DefaultValue,
+			Required: p.Required, EnvPrefix: p.EnvPrefix, SortOrder: p.SortOrder,
+		}
+	}
+
+	ctx, _ := json.Marshal(map[string]string{"name": b.Name})
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID:      userID,
+		Action:       "blueprint.imported",
+		ResourceID:   b.ID,
+		ResourceType: "blueprint",
+		OrgID:        orgID,
+		IPAddress:    c.RealIP(),
+		Context:      ctx,
+	})
+
+	return c.JSON(http.StatusCreated, b)
+}
+
 // Update patches a blueprint's fields.
 func (h *Handler) Update(c echo.Context) error {
 	id := c.Param("id")

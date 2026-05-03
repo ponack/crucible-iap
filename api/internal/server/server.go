@@ -324,7 +324,9 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	// Blueprints
 	api.GET("/blueprints", blueprintHandler.List)
 	api.POST("/blueprints", blueprintHandler.Create, admin)
+	api.POST("/blueprints/import", blueprintHandler.Import, admin)
 	api.GET("/blueprints/:id", blueprintHandler.Get)
+	api.GET("/blueprints/:id/export", blueprintHandler.Export, admin)
 	api.PATCH("/blueprints/:id", blueprintHandler.Update, admin)
 	api.DELETE("/blueprints/:id", blueprintHandler.Delete, admin)
 	api.PUT("/blueprints/:id/publish", blueprintHandler.Publish, admin)
