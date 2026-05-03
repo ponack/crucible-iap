@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { runs, type Run, type PageMeta } from '$lib/api/client';
+	import { runs, orgTags, type Run, type Tag, type PageMeta } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 
@@ -10,16 +10,23 @@
 	let allRuns = $state<Run[]>([]);
 	let pagination = $state<PageMeta | null>(null);
 	let offset = $state(0);
+	let allTags = $state<Tag[]>([]);
+	let tagDropdownOpen = $state(false);
 
 	let filterStatus = $state('');
 	let filterType = $state('');
 	let filterStack = $state(page.url.searchParams.get('stack') ?? '');
+	let filterTags = $state<string[]>([]);
 
 	async function load() {
 		loading = true;
 		error = null;
 		try {
-			const filters = { status: filterStatus || undefined, type: filterType || undefined };
+			const filters = {
+				status: filterStatus || undefined,
+				type: filterType || undefined,
+				tags: filterTags.length ? filterTags : undefined
+			};
 			const res = filterStack
 				? await runs.list(filterStack, offset, 50, filters)
 				: await runs.listAll(offset, 50, filters);
@@ -32,15 +39,26 @@
 		}
 	}
 
-	onMount(load);
+	onMount(async () => {
+		const [, tagsRes] = await Promise.allSettled([load(), orgTags.list()]);
+		if (tagsRes.status === 'fulfilled') allTags = tagsRes.value;
+	});
 
 	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
 	function next() { offset += pagination?.limit ?? 50; load(); }
 
 	function applyFilters() { offset = 0; load(); }
-	function clearFilters() { filterStatus = ''; filterType = ''; filterStack = ''; offset = 0; load(); }
+	function clearFilters() { filterStatus = ''; filterType = ''; filterStack = ''; filterTags = []; offset = 0; load(); }
 
-	const hasFilters = $derived(filterStatus !== '' || filterType !== '' || filterStack !== '');
+	function toggleTagFilter(name: string) {
+		filterTags = filterTags.includes(name)
+			? filterTags.filter((t) => t !== name)
+			: [...filterTags, name];
+		offset = 0;
+		load();
+	}
+
+	const hasFilters = $derived(filterStatus !== '' || filterType !== '' || filterStack !== '' || filterTags.length > 0);
 
 	function fmtDate(iso: string) {
 		return new Date(iso).toLocaleString();
@@ -65,8 +83,7 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-lg font-semibold text-white">Runs</h1>
 		<div class="flex items-center gap-2">
-			<select bind:value={filterStatus} onchange={applyFilters}
-				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-teal-500">
+			<select bind:value={filterStatus} onchange={applyFilters} class="field-input w-44 py-1.5">
 				<option value="">Any status</option>
 				<option value="queued">Queued</option>
 				<option value="planning">Planning</option>
@@ -78,13 +95,43 @@
 				<option value="canceled">Canceled</option>
 				<option value="discarded">Discarded</option>
 			</select>
-			<select bind:value={filterType} onchange={applyFilters}
-				class="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-teal-500">
+			<select bind:value={filterType} onchange={applyFilters} class="field-input w-36 py-1.5">
 				<option value="">Any type</option>
 				<option value="tracked">Tracked</option>
 				<option value="proposed">Proposed</option>
 				<option value="destroy">Destroy</option>
 			</select>
+			{#if allTags.length > 0}
+				<div class="relative">
+					<button
+						onclick={() => (tagDropdownOpen = !tagDropdownOpen)}
+						class="field-input py-1.5 flex items-center gap-1.5 w-auto px-3 text-sm"
+						style={filterTags.length ? 'border-color: var(--accent); color: var(--accent);' : ''}>
+						<svg class="h-3.5 w-3.5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+							<path d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L9.568 3Z"/>
+							<path d="M6 6h.008v.008H6V6Z"/>
+						</svg>
+						Tags{filterTags.length ? ` (${filterTags.length})` : ''}
+					</button>
+					{#if tagDropdownOpen}
+						<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+						<div class="fixed inset-0 z-10" onclick={() => (tagDropdownOpen = false)}></div>
+						<div class="absolute top-full mt-1 right-0 z-20 min-w-44 rounded-xl border border-zinc-700 shadow-xl py-1"
+							style="background: var(--color-zinc-900);">
+							{#each allTags as tag (tag.id)}
+								<button onclick={() => { toggleTagFilter(tag.name); tagDropdownOpen = false; }}
+									class="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-zinc-800 transition-colors text-left">
+									<span class="w-3 h-3 rounded-full flex-shrink-0" style="background: {tag.color};"></span>
+									<span class="flex-1 text-zinc-200">{tag.name}</span>
+									{#if filterTags.includes(tag.name)}
+										<svg class="h-3.5 w-3.5" style="color: var(--accent);" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m4.5 12.75 6 6 9-13.5"/></svg>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
 			{#if hasFilters}
 				<button onclick={clearFilters} class="text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
 					Clear
