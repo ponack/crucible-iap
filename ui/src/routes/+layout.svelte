@@ -278,41 +278,24 @@
 			</nav>
 
 			<!-- Forge theme switcher -->
-			<div class="px-3 py-2.5 flex items-center gap-1.5" style="border-top: 1px solid var(--color-zinc-800);">
-				<span class="text-[10px] text-zinc-600 uppercase tracking-widest mr-1">Forge</span>
-				<button
-					onclick={() => switchForge('cold')}
-					title="Cold Forge"
-					class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
-					style={forge === 'cold'
-						? 'background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);'
-						: 'color: var(--color-zinc-500); border: 1px solid transparent;'}
-				>
-					<span class="h-2 w-2 rounded-full flex-shrink-0" style="background: #2DD4BF;"></span>
-					Cold
-				</button>
-				<button
-					onclick={() => switchForge('hot')}
-					title="Hot Forge"
-					class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
-					style={forge === 'hot'
-						? 'background: rgba(212,136,60,0.08); color: #D4883C; border: 1px solid rgba(212,136,60,0.18);'
-						: 'color: var(--color-zinc-500); border: 1px solid transparent;'}
-				>
-					<span class="h-2 w-2 rounded-full flex-shrink-0" style="background: #D4883C;"></span>
-					Hot
-				</button>
-				<button
-					onclick={() => switchForge('neutral')}
-					title="Neutral Forge"
-					class="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors"
-					style={forge === 'neutral'
-						? 'background: rgba(129,140,248,0.08); color: #818cf8; border: 1px solid rgba(129,140,248,0.18);'
-						: 'color: var(--color-zinc-500); border: 1px solid transparent;'}
-				>
-					<span class="h-2 w-2 rounded-full flex-shrink-0" style="background: #818cf8;"></span>
-					Neutral
-				</button>
+			<div class="px-4 py-2.5 flex items-center gap-3" style="border-top: 1px solid var(--color-zinc-800);">
+				<span class="text-[10px] text-zinc-600 uppercase tracking-widest">Forge</span>
+				<div class="flex items-center gap-2">
+					{#each [
+						{ key: 'cold',    color: '#2DD4BF', label: 'Cold Forge' },
+						{ key: 'hot',     color: '#D4883C', label: 'Hot Forge' },
+						{ key: 'neutral', color: '#818cf8', label: 'Neutral Forge' }
+					] as f}
+						<button
+							onclick={() => switchForge(f.key as 'cold' | 'hot' | 'neutral')}
+							title={f.label}
+							class="h-4 w-4 rounded-full transition-all duration-150 flex-shrink-0"
+							style="background: {f.color}; {forge === f.key
+								? `box-shadow: 0 0 0 2px var(--color-zinc-900), 0 0 0 3.5px ${f.color};`
+								: 'opacity: 0.4;'}"
+						></button>
+					{/each}
+				</div>
 			</div>
 
 			<!-- Footer -->
