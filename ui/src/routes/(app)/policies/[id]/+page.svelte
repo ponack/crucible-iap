@@ -145,6 +145,7 @@
 		post_plan: 'Post-plan',
 		pre_plan: 'Pre-plan',
 		pre_apply: 'Pre-apply',
+		approval: 'Approval',
 		trigger: 'Trigger',
 		login: 'Login'
 	};

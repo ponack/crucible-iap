@@ -841,7 +841,7 @@ export interface Policy {
 	id: string;
 	name: string;
 	description?: string;
-	type: 'pre_plan' | 'post_plan' | 'pre_apply' | 'trigger' | 'login';
+	type: 'pre_plan' | 'post_plan' | 'pre_apply' | 'approval' | 'trigger' | 'login';
 	body: string;
 	is_active: boolean;
 	created_at: string;
