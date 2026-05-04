@@ -84,10 +84,10 @@
 			<p class="text-xs text-zinc-600">Unique name for the new stack that will be created.</p>
 		</div>
 
-		{#if bp.params.length > 0}
+		{#if (bp.params?.length ?? 0) > 0}
 			<div class="space-y-4 rounded-xl border border-zinc-800 p-4">
 				<h2 class="text-sm font-medium text-zinc-300">Parameters</h2>
-				{#each bp.params.sort((a, b) => a.sort_order - b.sort_order) as p (p.id)}
+				{#each (bp.params ?? []).sort((a, b) => a.sort_order - b.sort_order) as p (p.id)}
 					<div class="space-y-1.5">
 						<label class="field-label" for="param-{p.name}">
 							{p.label || p.name}

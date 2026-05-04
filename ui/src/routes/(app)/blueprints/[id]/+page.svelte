@@ -469,11 +469,11 @@
 			</div>
 		{/if}
 
-		{#if bp.params.length === 0 && !addingParam}
+		{#if (bp.params?.length ?? 0) === 0 && !addingParam}
 			<div class="rounded-xl border border-zinc-800 p-6 text-center">
 				<p class="text-zinc-600 text-xs">No parameters defined. Add params to let deployers customise this blueprint.</p>
 			</div>
-		{:else if bp.params.length > 0}
+		{:else if (bp.params?.length ?? 0) > 0}
 			<div class="rounded-xl border border-zinc-800 overflow-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
@@ -487,7 +487,7 @@
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-zinc-700">
-						{#each bp.params.sort((a, b) => a.sort_order - b.sort_order) as p (p.id)}
+						{#each (bp.params ?? []).sort((a, b) => a.sort_order - b.sort_order) as p (p.id)}
 							<tr class="hover:bg-zinc-900/50 transition-colors">
 								<td class="px-4 py-2.5 text-zinc-200 font-mono text-xs">
 									{p.env_prefix}{p.name}
