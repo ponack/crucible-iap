@@ -34,7 +34,7 @@ type Blueprint struct {
 	AutoRemediateDrift bool      `json:"auto_remediate_drift"`
 	VCSProvider        string    `json:"vcs_provider"`
 	IsPublished        bool      `json:"is_published"`
-	Params             []Param   `json:"params,omitempty"`
+	Params             []Param   `json:"params"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
@@ -80,7 +80,7 @@ func (h *Handler) List(c echo.Context) error {
 
 	out := []Blueprint{}
 	for rows.Next() {
-		var b Blueprint
+		b := Blueprint{Params: []Param{}}
 		if err := rows.Scan(
 			&b.ID, &b.Name, &b.Description, &b.Tool, &b.ToolVersion, &b.RepoURL,
 			&b.RepoBranch, &b.ProjectRoot, &b.RunnerImage, &b.AutoApply,
