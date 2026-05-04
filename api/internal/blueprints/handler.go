@@ -23,14 +23,14 @@ type Blueprint struct {
 	Name               string    `json:"name"`
 	Description        string    `json:"description"`
 	Tool               string    `json:"tool"`
-	ToolVersion        string    `json:"tool_version,omitempty"`
-	RepoURL            string    `json:"repo_url,omitempty"`
+	ToolVersion        string    `json:"tool_version"`
+	RepoURL            string    `json:"repo_url"`
 	RepoBranch         string    `json:"repo_branch"`
 	ProjectRoot        string    `json:"project_root"`
-	RunnerImage        string    `json:"runner_image,omitempty"`
+	RunnerImage        string    `json:"runner_image"`
 	AutoApply          bool      `json:"auto_apply"`
 	DriftDetection     bool      `json:"drift_detection"`
-	DriftSchedule      string    `json:"drift_schedule,omitempty"`
+	DriftSchedule      string    `json:"drift_schedule"`
 	AutoRemediateDrift bool      `json:"auto_remediate_drift"`
 	VCSProvider        string    `json:"vcs_provider"`
 	IsPublished        bool      `json:"is_published"`
