@@ -401,6 +401,7 @@ cd api && go test -race ./...
 - [x] Run navigation correctness — navigating away from a confirmed plan+apply run no longer shows the previous run's data; stale `pollFinal` callbacks from the confirm flow are now cancelled on navigation; the stack detail page refreshes its run list every 10 s so newly created runs appear without a page reload
 - [x] Blueprint params fix — blueprints with no parameters no longer cause the detail page to hang on "Loading…"; Go's `json:"omitempty"` was silently dropping the `params` field from API responses when empty; the detail and deploy pages now guard against a missing field defensively
 - [x] Blueprint detail hang (all blueprints) — `tool_version`, `repo_url`, `runner_image`, and `drift_schedule` were also tagged `omitempty`; any blueprint with empty values for those fields caused the same Svelte 5 re-render hang; all four fields now always present in API responses
+- [x] Blueprint detail and deploy page hang (final fix) — `Array.sort()` mutates in place; calling it on a Svelte 5 reactive proxy throws `state_unsafe_mutation`, which Svelte catches and rolls back — leaving the page permanently on "Loading..."; fixed by spreading a copy before sorting: `[...params].sort(...)`
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
 
