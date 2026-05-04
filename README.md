@@ -10,8 +10,10 @@ A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible pl
 | **Dashboard** — active runs, approvals, recent activity. | **Plan → confirm → apply** — review the plan diff, then click Confirm. |
 | ![Stack detail with tags](assets/screenshots/stack-detail-tags.png) | ![Self-service blueprints](assets/screenshots/blueprint-list.png) |
 | **Stack detail** — tags, pinning, dependency graph, drift config. | **Blueprints** — parameterized templates app teams deploy via a form. |
-| ![Policy test playground](assets/screenshots/policy-test-playground.png) | ![Policy git sources](assets/screenshots/policy-git-sources.png) |
-| **Policy playground** — test OPA/Rego rules against synthetic input. | **Policy GitOps** — sync `.rego` files from a git repo on push. |
+| ![Blueprint detail](assets/screenshots/blueprint-details.png) | ![Policy test playground](assets/screenshots/policy-test-playground.png) |
+| **Blueprint detail** — param table, types, defaults, publish controls. | **Policy playground** — test OPA/Rego rules against synthetic input. |
+| ![Policy git sources](assets/screenshots/policy-git-sources.png) | |
+| **Policy GitOps** — sync `.rego` files from a git repo on push. | |
 
 > **Not a technical user?** Visit the [Crucible IAP product page](https://www.forgedinfeatherstechnology.com/crucible-iap) for screenshots, feature highlights, and an overview of what Crucible can do for your team.
 
