@@ -6,10 +6,12 @@ A self-hosted, privacy-first alternative to Spacelift. Push code → Crucible pl
 
 | | |
 | :---: | :---: |
-| ![Dashboard](assets/screenshots/dashboard.png) | ![Plan awaiting approval](assets/screenshots/run-plan-awaiting-approval.png) |
-| **Dashboard** — active runs, approvals, recent activity. | **Plan → confirm → apply** — review the plan, then click Confirm. |
-| ![Policy-as-code](assets/screenshots/policy-as-code.png) | ![Built-in monitoring](assets/screenshots/built-in-monitoring.png) |
-| **Policy-as-code** — OPA/Rego guards with a test playground. | **Built-in monitoring** — Prometheus + Grafana, embedded in-app. |
+| ![Dashboard](assets/screenshots/dashboard.png) | ![Plan approval](assets/screenshots/run-plan-approval.png) |
+| **Dashboard** — active runs, approvals, recent activity. | **Plan → confirm → apply** — review the plan diff, then click Confirm. |
+| ![Stack detail with tags](assets/screenshots/stack-detail-tags.png) | ![Self-service blueprints](assets/screenshots/blueprint-list.png) |
+| **Stack detail** — tags, pinning, dependency graph, drift config. | **Blueprints** — parameterized templates app teams deploy via a form. |
+| ![Policy test playground](assets/screenshots/policy-test-playground.png) | ![Policy git sources](assets/screenshots/policy-git-sources.png) |
+| **Policy playground** — test OPA/Rego rules against synthetic input. | **Policy GitOps** — sync `.rego` files from a git repo on push. |
 
 > **Not a technical user?** Visit the [Crucible IAP product page](https://www.forgedinfeatherstechnology.com/crucible-iap) for screenshots, feature highlights, and an overview of what Crucible can do for your team.
 
@@ -56,11 +58,7 @@ docker compose up -d
 
 Crucible IAP will be available at `https://localhost` (self-signed cert — accept the browser warning on first visit). Caddy provisions a real TLS certificate automatically when `CRUCIBLE_BASE_URL` is a public hostname and `CADDY_ACME_EMAIL` is set.
 
-After login, the dashboard greets you with a one-click path to your first stack:
-
-![First-run welcome screen](assets/screenshots/first-run-welcome.png)
-
-Click **Create your first stack** to connect a Git repo — or [**use the `crucible-quickstart` template**](https://github.com/ponack/crucible-quickstart/generate) for a ready-to-run OpenTofu stack you can point Crucible at in under a minute.
+After login, the dashboard greets you with a one-click path to your first stack. Click **Create your first stack** to connect a Git repo — or [**use the `crucible-quickstart` template**](https://github.com/ponack/crucible-quickstart/generate) for a ready-to-run OpenTofu stack you can point Crucible at in under a minute.
 
 ## Deployment options
 
