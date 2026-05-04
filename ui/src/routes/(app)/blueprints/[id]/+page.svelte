@@ -487,7 +487,7 @@
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-zinc-700">
-						{#each (bp.params ?? []).sort((a, b) => a.sort_order - b.sort_order) as p (p.id)}
+						{#each [...(bp.params ?? [])].sort((a, b) => a.sort_order - b.sort_order) as p (p.id)}
 							<tr class="hover:bg-zinc-900/50 transition-colors">
 								<td class="px-4 py-2.5 text-zinc-200 font-mono text-xs">
 									{p.env_prefix}{p.name}
