@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/access"
@@ -686,6 +687,73 @@ func (h *Handler) Delete(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+type cloneSourceConfig struct {
+	description        string
+	tool               string
+	toolVersion        string
+	repoURL            string
+	repoBranch         string
+	projectRoot        string
+	runnerImage        string
+	autoApply          bool
+	driftDetection     bool
+	driftSchedule      string
+	autoRemediateDrift bool
+	vcsProvider        string
+	vcsBaseURL         string
+	workerPoolID       *string
+	prePlanHook        *string
+	postPlanHook       *string
+	preApplyHook       *string
+	postApplyHook      *string
+	maxConcurrentRuns  *int
+}
+
+type cloneEnvRow struct {
+	name     string
+	isSecret bool
+	encValue []byte
+}
+
+func loadCloneSource(ctx context.Context, pool *pgxpool.Pool, srcID, orgID string) (cloneSourceConfig, error) {
+	var s cloneSourceConfig
+	err := pool.QueryRow(ctx, `
+		SELECT COALESCE(description,''), tool, COALESCE(tool_version,''),
+		       repo_url, repo_branch, project_root, COALESCE(runner_image,''),
+		       auto_apply, drift_detection, COALESCE(drift_schedule,''), auto_remediate_drift,
+		       vcs_provider, COALESCE(vcs_base_url,''),
+		       worker_pool_id, pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
+		       max_concurrent_runs
+		FROM stacks WHERE id = $1 AND org_id = $2
+	`, srcID, orgID).Scan(
+		&s.description, &s.tool, &s.toolVersion,
+		&s.repoURL, &s.repoBranch, &s.projectRoot, &s.runnerImage,
+		&s.autoApply, &s.driftDetection, &s.driftSchedule, &s.autoRemediateDrift,
+		&s.vcsProvider, &s.vcsBaseURL,
+		&s.workerPoolID, &s.prePlanHook, &s.postPlanHook, &s.preApplyHook, &s.postApplyHook,
+		&s.maxConcurrentRuns,
+	)
+	return s, err
+}
+
+func loadCloneEnvVars(ctx context.Context, pool *pgxpool.Pool, srcID string) ([]cloneEnvRow, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT name, is_secret, value_enc FROM stack_env_vars WHERE stack_id = $1`, srcID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []cloneEnvRow
+	for rows.Next() {
+		var r cloneEnvRow
+		if err := rows.Scan(&r.name, &r.isSecret, &r.encValue); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // Clone creates a new stack copied from an existing one.
 // Copies: tool config, repo config, hooks, worker pool, description, env vars (re-encrypted), tags.
 // Does NOT copy: state, runs, tokens, VCS/notification secrets, locks, schedules, PR-preview config.
@@ -694,6 +762,7 @@ func (h *Handler) Clone(c echo.Context) error {
 	srcID := c.Param("id")
 	orgID := c.Get("orgID").(string)
 	userID, _ := c.Get("userID").(string)
+	ctx := c.Request().Context()
 
 	var req struct {
 		Name string `json:"name"`
@@ -709,44 +778,7 @@ func (h *Handler) Clone(c echo.Context) error {
 		req.Slug = slugify(req.Name)
 	}
 
-	// Fetch source stack config.
-	var src struct {
-		description        string
-		tool               string
-		toolVersion        string
-		repoURL            string
-		repoBranch         string
-		projectRoot        string
-		runnerImage        string
-		autoApply          bool
-		driftDetection     bool
-		driftSchedule      string
-		autoRemediateDrift bool
-		vcsProvider        string
-		vcsBaseURL         string
-		workerPoolID       *string
-		prePlanHook        *string
-		postPlanHook       *string
-		preApplyHook       *string
-		postApplyHook      *string
-		maxConcurrentRuns  *int
-	}
-	err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT COALESCE(description,''), tool, COALESCE(tool_version,''),
-		       repo_url, repo_branch, project_root, COALESCE(runner_image,''),
-		       auto_apply, drift_detection, COALESCE(drift_schedule,''), auto_remediate_drift,
-		       vcs_provider, COALESCE(vcs_base_url,''),
-		       worker_pool_id, pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
-		       max_concurrent_runs
-		FROM stacks WHERE id = $1 AND org_id = $2
-	`, srcID, orgID).Scan(
-		&src.description, &src.tool, &src.toolVersion,
-		&src.repoURL, &src.repoBranch, &src.projectRoot, &src.runnerImage,
-		&src.autoApply, &src.driftDetection, &src.driftSchedule, &src.autoRemediateDrift,
-		&src.vcsProvider, &src.vcsBaseURL,
-		&src.workerPoolID, &src.prePlanHook, &src.postPlanHook, &src.preApplyHook, &src.postApplyHook,
-		&src.maxConcurrentRuns,
-	)
+	src, err := loadCloneSource(ctx, h.pool, srcID, orgID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -756,29 +788,10 @@ func (h *Handler) Clone(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to generate webhook secret")
 	}
 
-	// Read source env vars before the transaction (vault decrypt is out-of-band).
-	type envRow struct {
-		name     string
-		isSecret bool
-		encValue []byte
-	}
-	srcRows, err := h.pool.Query(c.Request().Context(),
-		`SELECT name, is_secret, value_enc FROM stack_env_vars WHERE stack_id = $1`, srcID)
+	envVars, err := loadCloneEnvVars(ctx, h.pool, srcID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	var envVars []envRow
-	for srcRows.Next() {
-		var r envRow
-		if err := srcRows.Scan(&r.name, &r.isSecret, &r.encValue); err != nil {
-			srcRows.Close()
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
-		envVars = append(envVars, r)
-	}
-	srcRows.Close()
-
-	ctx := c.Request().Context()
 
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
@@ -809,26 +822,10 @@ func (h *Handler) Clone(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	// Copy env vars: decrypt with source key, re-encrypt with new stack key.
-	for _, r := range envVars {
-		plain, err := h.vault.Decrypt(srcID, r.encValue)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to decrypt env var: "+r.name)
-		}
-		newEnc, err := h.vault.Encrypt(newID, plain)
-		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "failed to encrypt env var: "+r.name)
-		}
-		if _, err := tx.Exec(ctx,
-			`INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc, is_secret)
-			 VALUES ($1, $2, $3, $4, $5)`,
-			newID, orgID, r.name, newEnc, r.isSecret,
-		); err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
-		}
+	if err := h.copyEnvVars(ctx, tx, srcID, newID, orgID, envVars); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
-	// Copy tags.
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO stack_tags (stack_id, tag_id)
 		 SELECT $1, tag_id FROM stack_tags WHERE stack_id = $2`,
@@ -849,6 +846,27 @@ func (h *Handler) Clone(c echo.Context) error {
 	})
 
 	return c.JSON(http.StatusCreated, map[string]string{"stack_id": newID})
+}
+
+func (h *Handler) copyEnvVars(ctx context.Context, tx pgx.Tx, srcID, newID, orgID string, rows []cloneEnvRow) error {
+	for _, r := range rows {
+		plain, err := h.vault.Decrypt(srcID, r.encValue)
+		if err != nil {
+			return fmt.Errorf("decrypt %q: %w", r.name, err)
+		}
+		newEnc, err := h.vault.Encrypt(newID, plain)
+		if err != nil {
+			return fmt.Errorf("encrypt %q: %w", r.name, err)
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc, is_secret)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			newID, orgID, r.name, newEnc, r.isSecret,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // nullStr returns nil for empty strings so optional columns stay NULL.
