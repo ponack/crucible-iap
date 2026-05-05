@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -683,6 +684,179 @@ func (h *Handler) Delete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// Clone creates a new stack copied from an existing one.
+// Copies: tool config, repo config, hooks, worker pool, description, env vars (re-encrypted), tags.
+// Does NOT copy: state, runs, tokens, VCS/notification secrets, locks, schedules, PR-preview config.
+// POST /api/v1/stacks/:id/clone
+func (h *Handler) Clone(c echo.Context) error {
+	srcID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	var req struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	}
+	if req.Slug == "" {
+		req.Slug = slugify(req.Name)
+	}
+
+	// Fetch source stack config.
+	var src struct {
+		description        string
+		tool               string
+		toolVersion        string
+		repoURL            string
+		repoBranch         string
+		projectRoot        string
+		runnerImage        string
+		autoApply          bool
+		driftDetection     bool
+		driftSchedule      string
+		autoRemediateDrift bool
+		vcsProvider        string
+		vcsBaseURL         string
+		workerPoolID       *string
+		prePlanHook        *string
+		postPlanHook       *string
+		preApplyHook       *string
+		postApplyHook      *string
+		maxConcurrentRuns  *int
+	}
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT COALESCE(description,''), tool, COALESCE(tool_version,''),
+		       repo_url, repo_branch, project_root, COALESCE(runner_image,''),
+		       auto_apply, drift_detection, COALESCE(drift_schedule,''), auto_remediate_drift,
+		       vcs_provider, COALESCE(vcs_base_url,''),
+		       worker_pool_id, pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
+		       max_concurrent_runs
+		FROM stacks WHERE id = $1 AND org_id = $2
+	`, srcID, orgID).Scan(
+		&src.description, &src.tool, &src.toolVersion,
+		&src.repoURL, &src.repoBranch, &src.projectRoot, &src.runnerImage,
+		&src.autoApply, &src.driftDetection, &src.driftSchedule, &src.autoRemediateDrift,
+		&src.vcsProvider, &src.vcsBaseURL,
+		&src.workerPoolID, &src.prePlanHook, &src.postPlanHook, &src.preApplyHook, &src.postApplyHook,
+		&src.maxConcurrentRuns,
+	)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	secret, err := webhookSecret()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to generate webhook secret")
+	}
+
+	// Read source env vars before the transaction (vault decrypt is out-of-band).
+	type envRow struct {
+		name     string
+		isSecret bool
+		encValue []byte
+	}
+	srcRows, err := h.pool.Query(c.Request().Context(),
+		`SELECT name, is_secret, value_enc FROM stack_env_vars WHERE stack_id = $1`, srcID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	var envVars []envRow
+	for srcRows.Next() {
+		var r envRow
+		if err := srcRows.Scan(&r.name, &r.isSecret, &r.encValue); err != nil {
+			srcRows.Close()
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		envVars = append(envVars, r)
+	}
+	srcRows.Close()
+
+	ctx := c.Request().Context()
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var newID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO stacks
+		  (org_id, slug, name, description, tool, tool_version,
+		   repo_url, repo_branch, project_root, runner_image,
+		   auto_apply, drift_detection, drift_schedule, auto_remediate_drift,
+		   vcs_provider, vcs_base_url,
+		   worker_pool_id, pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
+		   max_concurrent_runs, created_by, webhook_secret)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULLIF($13,''),$14,$15,$16,
+		        $17,$18,$19,$20,$21,$22,$23,$24)
+		RETURNING id
+	`, orgID, req.Slug, req.Name, src.description, src.tool, nullStr(src.toolVersion),
+		src.repoURL, src.repoBranch, src.projectRoot, nullStr(src.runnerImage),
+		src.autoApply, src.driftDetection, src.driftSchedule, src.autoRemediateDrift,
+		src.vcsProvider, nullStr(src.vcsBaseURL),
+		src.workerPoolID, src.prePlanHook, src.postPlanHook, src.preApplyHook, src.postApplyHook,
+		src.maxConcurrentRuns, userID, secret,
+	).Scan(&newID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	// Copy env vars: decrypt with source key, re-encrypt with new stack key.
+	for _, r := range envVars {
+		plain, err := h.vault.Decrypt(srcID, r.encValue)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to decrypt env var: "+r.name)
+		}
+		newEnc, err := h.vault.Encrypt(newID, plain)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to encrypt env var: "+r.name)
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc, is_secret)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			newID, orgID, r.name, newEnc, r.isSecret,
+		); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+	}
+
+	// Copy tags.
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO stack_tags (stack_id, tag_id)
+		 SELECT $1, tag_id FROM stack_tags WHERE stack_id = $2`,
+		newID, srcID,
+	); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	ctxJSON, _ := json.Marshal(map[string]string{"source_id": srcID, "new_id": newID, "name": req.Name})
+	audit.Record(ctx, h.pool, audit.Event{
+		ActorID: userID, Action: "stack.clone",
+		ResourceID: newID, ResourceType: "stack", OrgID: orgID, IPAddress: c.RealIP(),
+		Context: ctxJSON,
+	})
+
+	return c.JSON(http.StatusCreated, map[string]string{"stack_id": newID})
+}
+
+// nullStr returns nil for empty strings so optional columns stay NULL.
+func nullStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // ── Stack token management ─────────────────────────────────────────────────────

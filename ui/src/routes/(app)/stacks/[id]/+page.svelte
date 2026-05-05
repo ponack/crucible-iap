@@ -165,6 +165,12 @@
 	// Lock/unlock (maintenance mode)
 	let togglingLocked = $state(false);
 
+	// Clone
+	let showCloneModal = $state(false);
+	let cloneName = $state('');
+	let cloning = $state(false);
+	let cloneError = $state<string | null>(null);
+
 	// Remote state sources
 	let remoteSources = $state<RemoteStateSource[]>([]);
 	let addingRemoteSource = $state('');
@@ -388,6 +394,21 @@
 			editError = (e as Error).message;
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function cloneStack(e: SubmitEvent) {
+		e.preventDefault();
+		cloning = true;
+		cloneError = null;
+		try {
+			const { stack_id } = await stacks.clone(stackID, cloneName);
+			showCloneModal = false;
+			goto(`/stacks/${stack_id}`);
+		} catch (err) {
+			cloneError = (err as Error).message;
+		} finally {
+			cloning = false;
 		}
 	}
 
@@ -1140,6 +1161,12 @@
 				class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
 				{editing ? 'Cancel' : 'Edit'}
 			</button>
+			{#if auth.isMemberOrAbove}
+				<button onclick={() => { cloneName = `Copy of ${stack?.name ?? ''}`; cloneError = null; showCloneModal = true; }}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Clone
+				</button>
+			{/if}
 			{#if auth.isMemberOrAbove}
 				<button onclick={toggleDisabled} disabled={togglingDisabled}
 					class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
@@ -2870,6 +2897,51 @@
 		</form>
 	</section>
 
+</div>
+{/if}
+
+<!-- Clone modal -->
+{#if showCloneModal && stack}
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+	<div class="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-full max-w-md space-y-4 shadow-2xl">
+		<div class="space-y-1">
+			<h2 class="text-white font-semibold text-base">Clone stack</h2>
+			<p class="text-zinc-400 text-sm">
+				Copies tool config, repo settings, hooks, worker pool, env vars, and tags from
+				<span class="text-white font-medium">{stack.name}</span>. State, runs, and notification secrets are not copied.
+			</p>
+		</div>
+		<form onsubmit={cloneStack} class="space-y-4">
+			<div class="space-y-1.5">
+				<label class="text-xs text-zinc-400" for="clone-name">New stack name</label>
+				<input
+					id="clone-name"
+					class="field-input"
+					bind:value={cloneName}
+					placeholder="Copy of {stack.name}"
+					required
+					autocomplete="off"
+				/>
+			</div>
+			{#if cloneError}
+				<p class="text-xs text-red-400">{cloneError}</p>
+			{/if}
+			<div class="flex gap-3 pt-1">
+				<button
+					type="submit"
+					disabled={cloning || !cloneName.trim()}
+					class="flex-1 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-4 py-2 rounded-lg transition-colors font-medium">
+					{cloning ? 'Cloning…' : 'Clone stack'}
+				</button>
+				<button
+					type="button"
+					onclick={() => { showCloneModal = false; cloneError = null; }}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-4 py-2 rounded-lg transition-colors">
+					Cancel
+				</button>
+			</div>
+		</form>
+	</div>
 </div>
 {/if}
 

@@ -240,6 +240,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/stacks/:id", stackHandler.Get)
 	api.PATCH("/stacks/:id", stackHandler.Update, member)
 	api.DELETE("/stacks/:id", stackHandler.Delete, admin)
+	api.POST("/stacks/:id/clone", stackHandler.Clone, member)
 	api.POST("/stacks/:id/lock", stackHandler.Lock, member)
 	api.POST("/stacks/:id/unlock", stackHandler.Unlock, member)
 	api.POST("/stacks/:id/pin", stackHandler.Pin, member)
