@@ -612,6 +612,7 @@ export const runs = {
 	approve: (id: string) => request<null>(`/runs/${id}/approve`, { method: 'POST' }),
 	discard: (id: string) => request<null>(`/runs/${id}/discard`, { method: 'POST' }),
 	cancel: (id: string) => request<null>(`/runs/${id}/cancel`, { method: 'POST' }),
+	retrigger: (id: string) => request<Run>(`/runs/${id}/retrigger`, { method: 'POST' }),
 	remove: (id: string) => request<null>(`/runs/${id}`, { method: 'DELETE' }),
 	annotate: (id: string, annotation: string) =>
 		request<null>(`/runs/${id}/annotation`, {

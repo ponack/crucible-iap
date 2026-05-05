@@ -21,6 +21,7 @@
 	let explanation = $state<string | null>(null);
 	let explaining = $state(false);
 	let explainError = $state<string | null>(null);
+	let retriggering = $state(false);
 
 	let logEl = $state<HTMLElement | undefined>(undefined);
 	let sse: EventSource | null = null;
@@ -159,6 +160,17 @@
 			toast.error((e as Error).message);
 		} finally {
 			acting = null;
+		}
+	}
+
+	async function retrigger() {
+		retriggering = true;
+		try {
+			const newRun = await runs.retrigger(runID);
+			goto(`/runs/${newRun.id}`);
+		} catch (e) {
+			toast.error((e as Error).message);
+			retriggering = false;
 		}
 	}
 
@@ -406,6 +418,12 @@
 				<button onclick={explainFailure} disabled={explaining}
 					class="border border-teal-900 hover:border-teal-700 text-teal-400 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
 					{explaining ? 'Analysing…' : '✦ Explain failure'}
+				</button>
+			{/if}
+			{#if terminalStatuses.has(run.status) && run.my_stack_role !== 'viewer'}
+				<button onclick={retrigger} disabled={retriggering}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+					{retriggering ? 'Queuing…' : '↺ Re-trigger'}
 				</button>
 			{/if}
 		</div>

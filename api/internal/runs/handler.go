@@ -982,6 +982,102 @@ func (h *Handler) TriggerDrift(c echo.Context) error {
 	return c.JSON(http.StatusCreated, r)
 }
 
+// Retrigger creates a new run using the same type and variable overrides as an existing
+// terminal run. Useful for retrying transient failures without a new push.
+// POST /api/v1/runs/:id/retrigger
+func (h *Handler) Retrigger(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	// Load source run and gate on terminal status.
+	var src struct {
+		stackID      string
+		runType      string
+		status       string
+		varOverrides []string
+	}
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT r.stack_id, r.type, r.status, r.var_overrides
+		FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1 AND s.org_id = $2
+	`, id, orgID).Scan(&src.stackID, &src.runType, &src.status, &src.varOverrides); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+
+	terminal := map[string]bool{"failed": true, "canceled": true, "discarded": true, "finished": true}
+	if !terminal[src.status] {
+		return echo.NewHTTPError(http.StatusBadRequest, "only terminal runs (failed, canceled, discarded, finished) can be re-triggered")
+	}
+
+	// Check stack access and fetch stack config.
+	role, err := access.StackRole(c.Request().Context(), h.pool, src.stackID, userID, orgID)
+	if err != nil || role == "" || role == "viewer" {
+		return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+	}
+
+	var stack struct {
+		tool         string
+		runnerImage  string
+		repoURL      string
+		repoBranch   string
+		projectRoot  string
+		isLocked     bool
+		lockReason   *string
+		workerPoolID *string
+	}
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root,
+		       is_locked, lock_reason, worker_pool_id
+		FROM stacks WHERE id = $1
+	`, src.stackID).Scan(&stack.tool, &stack.runnerImage, &stack.repoURL, &stack.repoBranch,
+		&stack.projectRoot, &stack.isLocked, &stack.lockReason, &stack.workerPoolID); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+	if err := lockedError(stack.isLocked, stack.lockReason); err != nil {
+		return err
+	}
+
+	var r Run
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		INSERT INTO runs (stack_id, worker_pool_id, type, trigger, var_overrides)
+		VALUES ($1, $2, $3, 'manual', $4)
+		RETURNING id, stack_id, status, type, trigger, is_drift, queued_at, var_overrides
+	`, src.stackID, stack.workerPoolID, src.runType, src.varOverrides).Scan(
+		&r.ID, &r.StackID, &r.Status, &r.Type, &r.Trigger, &r.IsDrift, &r.QueuedAt, &r.VarOverrides,
+	); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if r.VarOverrides == nil {
+		r.VarOverrides = []string{}
+	}
+
+	if stack.workerPoolID == nil {
+		if _, err := h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
+			RunID:        r.ID,
+			StackID:      src.stackID,
+			Tool:         stack.tool,
+			RunnerImage:  stack.runnerImage,
+			RepoURL:      stack.repoURL,
+			RepoBranch:   stack.repoBranch,
+			ProjectRoot:  stack.projectRoot,
+			RunType:      src.runType,
+			APIURL:       h.runnerAPIURL(c),
+			VarOverrides: src.varOverrides,
+		}); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to enqueue run: "+err.Error())
+		}
+	}
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID: userID, Action: "run.retriggered",
+		ResourceID: r.ID, ResourceType: "run",
+	})
+
+	return c.JSON(http.StatusCreated, r)
+}
+
 // Annotate sets or clears the operator note on a run.
 func (h *Handler) Annotate(c echo.Context) error {
 	id := c.Param("id")
