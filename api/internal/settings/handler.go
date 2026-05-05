@@ -98,8 +98,11 @@ type Settings struct {
 	InfracostPricingAPIEndpoint     string    `json:"infracost_pricing_api_endpoint,omitempty"`
 	ScanTool                        string    `json:"scan_tool,omitempty"`
 	ScanSeverityThreshold           string    `json:"scan_severity_threshold,omitempty"`
-	AnthropicAPIKeySet              bool      `json:"anthropic_api_key_set"`
-	UpdatedAt                       time.Time `json:"updated_at"`
+	AIProvider  string `json:"ai_provider"`
+	AIModel     string `json:"ai_model,omitempty"`
+	AIBaseURL   string `json:"ai_base_url,omitempty"`
+	AIAPIKeySet bool   `json:"ai_api_key_set"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Handler struct {
@@ -186,7 +189,25 @@ type settingsUpdateReq struct {
 	InfracostPricingAPIEndpoint     *string `json:"infracost_pricing_api_endpoint"`
 	ScanTool                        *string `json:"scan_tool"`
 	ScanSeverityThreshold           *string `json:"scan_severity_threshold"`
-	AnthropicAPIKey                 *string `json:"anthropic_api_key"`
+	AIAPIKey  *string `json:"ai_api_key"`
+	AIProvider *string `json:"ai_provider"`
+	AIModel    *string `json:"ai_model"`
+	AIBaseURL  *string `json:"ai_base_url"`
+}
+
+func validateEnum(val *string, allowEmpty bool, choices ...string) error {
+	if val == nil {
+		return nil
+	}
+	if allowEmpty && *val == "" {
+		return nil
+	}
+	for _, c := range choices {
+		if *val == c {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid value %q", *val)
 }
 
 // validateSettingsUpdate checks all field constraints for a settings update request.
@@ -198,29 +219,20 @@ func validateSettingsUpdate(req *settingsUpdateReq) error {
 	if req.SMTPPort != nil && (*req.SMTPPort < 1 || *req.SMTPPort > 65535) {
 		return fmt.Errorf("smtp_port must be between 1 and 65535")
 	}
-	if req.DefaultVCSProvider != nil {
-		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}
-		if !valid[*req.DefaultVCSProvider] {
-			return fmt.Errorf("default_vcs_provider must be github, gitlab, or gitea")
-		}
+	if err := validateEnum(req.DefaultVCSProvider, false, "github", "gitlab", "gitea"); err != nil {
+		return fmt.Errorf("default_vcs_provider must be github, gitlab, or gitea")
 	}
-	if req.OIDCProvider != nil && *req.OIDCProvider != "" {
-		valid := map[string]bool{"aws": true, "gcp": true, "azure": true, "vault": true, "authentik": true, "generic": true}
-		if !valid[*req.OIDCProvider] {
-			return fmt.Errorf("oidc_provider must be aws, gcp, azure, vault, authentik, or generic")
-		}
+	if err := validateEnum(req.OIDCProvider, true, "aws", "gcp", "azure", "vault", "authentik", "generic"); err != nil {
+		return fmt.Errorf("oidc_provider must be aws, gcp, azure, vault, authentik, or generic")
 	}
-	if req.ScanTool != nil {
-		valid := map[string]bool{"none": true, "checkov": true, "trivy": true}
-		if !valid[*req.ScanTool] {
-			return fmt.Errorf("scan_tool must be none, checkov, or trivy")
-		}
+	if err := validateEnum(req.ScanTool, false, "none", "checkov", "trivy"); err != nil {
+		return fmt.Errorf("scan_tool must be none, checkov, or trivy")
 	}
-	if req.ScanSeverityThreshold != nil {
-		valid := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true}
-		if !valid[*req.ScanSeverityThreshold] {
-			return fmt.Errorf("scan_severity_threshold must be CRITICAL, HIGH, MEDIUM, or LOW")
-		}
+	if err := validateEnum(req.ScanSeverityThreshold, false, "CRITICAL", "HIGH", "MEDIUM", "LOW"); err != nil {
+		return fmt.Errorf("scan_severity_threshold must be CRITICAL, HIGH, MEDIUM, or LOW")
+	}
+	if err := validateEnum(req.AIProvider, true, "anthropic", "openai"); err != nil {
+		return fmt.Errorf("ai_provider must be anthropic or openai")
 	}
 	return nil
 }
@@ -277,7 +289,10 @@ func (h *Handler) Update(c echo.Context) error {
 			infracost_pricing_api_endpoint   = COALESCE($38, infracost_pricing_api_endpoint),
 			scan_tool                        = COALESCE($39, scan_tool),
 			scan_severity_threshold          = COALESCE($40, scan_severity_threshold),
-			anthropic_api_key                = COALESCE($41, anthropic_api_key),
+			ai_api_key                       = COALESCE($41, ai_api_key),
+			ai_provider                      = COALESCE($42, ai_provider),
+			ai_model                         = COALESCE($43, ai_model),
+			ai_base_url                      = COALESCE($44, ai_base_url),
 			updated_at                       = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
@@ -295,7 +310,7 @@ func (h *Handler) Update(c echo.Context) error {
 		req.OIDCAudienceOverride,
 		req.InfracostAPIKey, req.InfracostPricingAPIEndpoint,
 		req.ScanTool, req.ScanSeverityThreshold,
-		req.AnthropicAPIKey)
+		req.AIAPIKey, req.AIProvider, req.AIModel, req.AIBaseURL)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -338,7 +353,10 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(infracost_pricing_api_endpoint, ''),
 		       COALESCE(scan_tool, 'none'),
 		       COALESCE(scan_severity_threshold, 'HIGH'),
-		       (anthropic_api_key IS NOT NULL AND anthropic_api_key != ''),
+		       COALESCE(ai_provider, 'anthropic'),
+		       COALESCE(ai_model, ''),
+		       COALESCE(ai_base_url, ''),
+		       (ai_api_key IS NOT NULL AND ai_api_key != ''),
 		       updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
@@ -356,7 +374,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		&s.OIDCAudienceOverride,
 		&s.InfracostPricingAPIEndpoint,
 		&s.ScanTool, &s.ScanSeverityThreshold,
-		&s.AnthropicAPIKeySet,
+		&s.AIProvider, &s.AIModel, &s.AIBaseURL, &s.AIAPIKeySet,
 		&s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
@@ -374,14 +392,15 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 	return &s, nil
 }
 
-// LoadAnthropicAPIKey fetches the stored Anthropic API key.
-// Falls back to an empty string if not set; callers should also check the env var.
-func LoadAnthropicAPIKey(ctx context.Context, pool *pgxpool.Pool) (string, error) {
-	var key string
-	err := pool.QueryRow(ctx, `
-		SELECT COALESCE(anthropic_api_key, '') FROM system_settings WHERE id = true
-	`).Scan(&key)
-	return key, err
+// LoadAISettings fetches the AI provider configuration from the DB.
+// Callers should apply env-var and legacy ANTHROPIC_API_KEY fallbacks.
+func LoadAISettings(ctx context.Context, pool *pgxpool.Pool) (provider, model, apiKey, baseURL string, err error) {
+	err = pool.QueryRow(ctx, `
+		SELECT COALESCE(ai_provider,'anthropic'), COALESCE(ai_model,''),
+		       COALESCE(ai_api_key,''), COALESCE(ai_base_url,'')
+		FROM system_settings WHERE id = true
+	`).Scan(&provider, &model, &apiKey, &baseURL)
+	return
 }
 
 // LoadInfracost fetches the Infracost API key and optional pricing endpoint.

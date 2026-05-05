@@ -47,8 +47,9 @@
 	let infracostError = $state<string | null>(null);
 
 	// AI settings
-	let anthropicKeyInput = $state('');
-	let anthropicKeySet = $state(false);
+	let aiForm = $state({ ai_provider: 'anthropic' as 'anthropic' | 'openai', ai_model: '', ai_base_url: '' });
+	let aiKeyInput = $state('');
+	let aiKeySet = $state(false);
 	let savingAI = $state(false);
 	let aiSaved = $state(false);
 	let aiError = $state<string | null>(null);
@@ -85,7 +86,10 @@
 				oidc_audience_override: s.oidc_audience_override ?? ''
 			};
 			infracostForm.infracost_pricing_api_endpoint = s.infracost_pricing_api_endpoint ?? '';
-			anthropicKeySet = s.anthropic_api_key_set ?? false;
+			aiForm.ai_provider = (s.ai_provider ?? 'anthropic') as 'anthropic' | 'openai';
+			aiForm.ai_model = s.ai_model ?? '';
+			aiForm.ai_base_url = s.ai_base_url ?? '';
+			aiKeySet = s.ai_api_key_set ?? false;
 			scanForm = {
 				scan_tool: (s.scan_tool ?? 'none') as 'none' | 'checkov' | 'trivy',
 				scan_severity_threshold: (s.scan_severity_threshold ?? 'HIGH') as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
@@ -168,11 +172,15 @@
 		aiSaved = false;
 		aiError = null;
 		try {
-			if (anthropicKeyInput) {
-				const res = await system.settings.update({ anthropic_api_key: anthropicKeyInput });
-				anthropicKeySet = res.anthropic_api_key_set ?? true;
-				anthropicKeyInput = '';
-			}
+			const payload: Parameters<typeof system.settings.update>[0] = {
+				ai_provider: aiForm.ai_provider,
+				ai_model: aiForm.ai_model || undefined,
+				ai_base_url: aiForm.ai_base_url || undefined,
+			};
+			if (aiKeyInput) payload.ai_api_key = aiKeyInput;
+			const res = await system.settings.update(payload);
+			aiKeySet = res.ai_api_key_set ?? aiKeySet;
+			aiKeyInput = '';
 			aiSaved = true;
 			setTimeout(() => (aiSaved = false), 3000);
 		} catch (err) {
@@ -564,22 +572,48 @@
 			<div class="px-6 py-4 flex items-center justify-between">
 				<div>
 					<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">AI troubleshooting</p>
-					<p class="text-xs text-zinc-600">Enables the "Explain failure" button on failed runs using Claude Haiku.</p>
+					<p class="text-xs text-zinc-600">Enables the "Explain failure" button on failed runs. Supports Anthropic, OpenAI, OpenRouter, OpenWebUI, and any OpenAI-compatible provider.</p>
 				</div>
-				{#if anthropicKeySet}
+				{#if aiKeySet}
 					<span class="text-xs px-2 py-0.5 rounded-full bg-teal-900/50 text-teal-400 border border-teal-800">Configured</span>
 				{:else}
 					<span class="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-500 border border-zinc-700">Not configured</span>
 				{/if}
 			</div>
 			<form class="px-6 py-5 space-y-4" onsubmit={saveAI}>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="ai-provider">Provider</label>
+						<select id="ai-provider" class="field-input" bind:value={aiForm.ai_provider}>
+							<option value="anthropic">Anthropic (Claude)</option>
+							<option value="openai">OpenAI-compatible</option>
+						</select>
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="ai-model">
+							Model <span class="font-normal text-zinc-500">(optional — uses provider default if blank)</span>
+						</label>
+						<input id="ai-model" class="field-input font-mono text-sm" bind:value={aiForm.ai_model}
+							placeholder={aiForm.ai_provider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4o-mini'} />
+					</div>
+				</div>
+				{#if aiForm.ai_provider === 'openai'}
+					<div class="space-y-1.5">
+						<label class="field-label" for="ai-base-url">
+							Base URL <span class="font-normal text-zinc-500">(optional — leave blank for OpenAI; set for OpenRouter, OpenWebUI, Ollama, etc.)</span>
+						</label>
+						<input id="ai-base-url" class="field-input font-mono text-sm" bind:value={aiForm.ai_base_url}
+							placeholder="https://openrouter.ai/api/v1" />
+					</div>
+				{/if}
 				<div class="space-y-1.5">
-					<label class="field-label" for="anthropic-api-key">
-						Anthropic API key <span class="font-normal text-zinc-500">(write-only — leave blank to keep current)</span>
+					<label class="field-label" for="ai-api-key">
+						API key <span class="font-normal text-zinc-500">(write-only — leave blank to keep current)</span>
 					</label>
-					<input id="anthropic-api-key" type="password" class="field-input font-mono text-sm"
-						bind:value={anthropicKeyInput}
-						placeholder="sk-ant-••••••••••••••••••••••••••••••••" autocomplete="off" />
+					<input id="ai-api-key" type="password" class="field-input font-mono text-sm"
+						bind:value={aiKeyInput}
+						placeholder={aiForm.ai_provider === 'anthropic' ? 'sk-ant-••••••••••••••••••••••••••••••••' : 'sk-••••••••••••••••••••••••••••••••'}
+						autocomplete="off" />
 				</div>
 				{#if aiError}
 					<p class="text-xs text-red-400">{aiError}</p>

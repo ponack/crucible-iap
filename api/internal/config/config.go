@@ -61,8 +61,13 @@ type Config struct {
 	// If empty, falls back to the URL derived from the incoming HTTP request.
 	RunnerAPIURL string `mapstructure:"RUNNER_API_URL"`
 
-	// AI run troubleshooting — opt-in via ANTHROPIC_API_KEY
+	// AI run troubleshooting. AI_PROVIDER: "anthropic" (default) or "openai".
+	// ANTHROPIC_API_KEY kept for backward-compat; AI_API_KEY takes precedence.
 	AnthropicAPIKey string `mapstructure:"ANTHROPIC_API_KEY"`
+	AIAPIKey        string `mapstructure:"AI_API_KEY"`
+	AIProvider      string `mapstructure:"AI_PROVIDER"`
+	AIModel         string `mapstructure:"AI_MODEL"`
+	AIBaseURL       string `mapstructure:"AI_BASE_URL"`
 }
 
 func Load() (*Config, error) {

@@ -831,8 +831,11 @@ export interface SystemSettings {
 	infracost_pricing_api_endpoint?: string;
 	scan_tool?: 'none' | 'checkov' | 'trivy';
 	scan_severity_threshold?: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
-	anthropic_api_key?: string; // write-only — never returned by GET, only sent on update
-	anthropic_api_key_set?: boolean;
+	ai_provider?: 'anthropic' | 'openai';
+	ai_model?: string;
+	ai_base_url?: string;
+	ai_api_key?: string; // write-only — never returned by GET, only sent on update
+	ai_api_key_set?: boolean;
 	updated_at: string;
 }
 
