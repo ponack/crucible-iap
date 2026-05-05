@@ -195,6 +195,21 @@ type settingsUpdateReq struct {
 	AIBaseURL  *string `json:"ai_base_url"`
 }
 
+func validateEnum(val *string, allowEmpty bool, choices ...string) error {
+	if val == nil {
+		return nil
+	}
+	if allowEmpty && *val == "" {
+		return nil
+	}
+	for _, c := range choices {
+		if *val == c {
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid value %q", *val)
+}
+
 // validateSettingsUpdate checks all field constraints for a settings update request.
 func validateSettingsUpdate(req *settingsUpdateReq) error {
 	if err := validateRunnerFields(req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
@@ -204,35 +219,20 @@ func validateSettingsUpdate(req *settingsUpdateReq) error {
 	if req.SMTPPort != nil && (*req.SMTPPort < 1 || *req.SMTPPort > 65535) {
 		return fmt.Errorf("smtp_port must be between 1 and 65535")
 	}
-	if req.DefaultVCSProvider != nil {
-		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}
-		if !valid[*req.DefaultVCSProvider] {
-			return fmt.Errorf("default_vcs_provider must be github, gitlab, or gitea")
-		}
+	if err := validateEnum(req.DefaultVCSProvider, false, "github", "gitlab", "gitea"); err != nil {
+		return fmt.Errorf("default_vcs_provider must be github, gitlab, or gitea")
 	}
-	if req.OIDCProvider != nil && *req.OIDCProvider != "" {
-		valid := map[string]bool{"aws": true, "gcp": true, "azure": true, "vault": true, "authentik": true, "generic": true}
-		if !valid[*req.OIDCProvider] {
-			return fmt.Errorf("oidc_provider must be aws, gcp, azure, vault, authentik, or generic")
-		}
+	if err := validateEnum(req.OIDCProvider, true, "aws", "gcp", "azure", "vault", "authentik", "generic"); err != nil {
+		return fmt.Errorf("oidc_provider must be aws, gcp, azure, vault, authentik, or generic")
 	}
-	if req.ScanTool != nil {
-		valid := map[string]bool{"none": true, "checkov": true, "trivy": true}
-		if !valid[*req.ScanTool] {
-			return fmt.Errorf("scan_tool must be none, checkov, or trivy")
-		}
+	if err := validateEnum(req.ScanTool, false, "none", "checkov", "trivy"); err != nil {
+		return fmt.Errorf("scan_tool must be none, checkov, or trivy")
 	}
-	if req.ScanSeverityThreshold != nil {
-		valid := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true}
-		if !valid[*req.ScanSeverityThreshold] {
-			return fmt.Errorf("scan_severity_threshold must be CRITICAL, HIGH, MEDIUM, or LOW")
-		}
+	if err := validateEnum(req.ScanSeverityThreshold, false, "CRITICAL", "HIGH", "MEDIUM", "LOW"); err != nil {
+		return fmt.Errorf("scan_severity_threshold must be CRITICAL, HIGH, MEDIUM, or LOW")
 	}
-	if req.AIProvider != nil && *req.AIProvider != "" {
-		valid := map[string]bool{"anthropic": true, "openai": true}
-		if !valid[*req.AIProvider] {
-			return fmt.Errorf("ai_provider must be anthropic or openai")
-		}
+	if err := validateEnum(req.AIProvider, true, "anthropic", "openai"); err != nil {
+		return fmt.Errorf("ai_provider must be anthropic or openai")
 	}
 	return nil
 }
