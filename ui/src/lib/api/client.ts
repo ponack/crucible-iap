@@ -300,6 +300,11 @@ export const stacks = {
 	update: (id: string, data: Partial<Stack>) =>
 		request<Stack>(`/stacks/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 	delete: (id: string) => request<null>(`/stacks/${id}`, { method: 'DELETE' }),
+	clone: (id: string, name: string, slug?: string) =>
+		request<{ stack_id: string }>(`/stacks/${id}/clone`, {
+			method: 'POST',
+			body: JSON.stringify({ name, slug: slug || undefined })
+		}),
 	pin: (id: string) => request<null>(`/stacks/${id}/pin`, { method: 'POST' }),
 	unpin: (id: string) => request<null>(`/stacks/${id}/pin`, { method: 'DELETE' }),
 	listTags: (id: string) => request<TagRef[]>(`/stacks/${id}/tags`),

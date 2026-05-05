@@ -6,11 +6,13 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/access"
@@ -683,6 +685,196 @@ func (h *Handler) Delete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+type cloneSourceConfig struct {
+	description        string
+	tool               string
+	toolVersion        string
+	repoURL            string
+	repoBranch         string
+	projectRoot        string
+	runnerImage        string
+	autoApply          bool
+	driftDetection     bool
+	driftSchedule      string
+	autoRemediateDrift bool
+	vcsProvider        string
+	vcsBaseURL         string
+	workerPoolID       *string
+	prePlanHook        *string
+	postPlanHook       *string
+	preApplyHook       *string
+	postApplyHook      *string
+	maxConcurrentRuns  *int
+}
+
+type cloneEnvRow struct {
+	name     string
+	isSecret bool
+	encValue []byte
+}
+
+func loadCloneSource(ctx context.Context, pool *pgxpool.Pool, srcID, orgID string) (cloneSourceConfig, error) {
+	var s cloneSourceConfig
+	err := pool.QueryRow(ctx, `
+		SELECT COALESCE(description,''), tool, COALESCE(tool_version,''),
+		       repo_url, repo_branch, project_root, COALESCE(runner_image,''),
+		       auto_apply, drift_detection, COALESCE(drift_schedule,''), auto_remediate_drift,
+		       vcs_provider, COALESCE(vcs_base_url,''),
+		       worker_pool_id, pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
+		       max_concurrent_runs
+		FROM stacks WHERE id = $1 AND org_id = $2
+	`, srcID, orgID).Scan(
+		&s.description, &s.tool, &s.toolVersion,
+		&s.repoURL, &s.repoBranch, &s.projectRoot, &s.runnerImage,
+		&s.autoApply, &s.driftDetection, &s.driftSchedule, &s.autoRemediateDrift,
+		&s.vcsProvider, &s.vcsBaseURL,
+		&s.workerPoolID, &s.prePlanHook, &s.postPlanHook, &s.preApplyHook, &s.postApplyHook,
+		&s.maxConcurrentRuns,
+	)
+	return s, err
+}
+
+func loadCloneEnvVars(ctx context.Context, pool *pgxpool.Pool, srcID string) ([]cloneEnvRow, error) {
+	rows, err := pool.Query(ctx,
+		`SELECT name, is_secret, value_enc FROM stack_env_vars WHERE stack_id = $1`, srcID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []cloneEnvRow
+	for rows.Next() {
+		var r cloneEnvRow
+		if err := rows.Scan(&r.name, &r.isSecret, &r.encValue); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Clone creates a new stack copied from an existing one.
+// Copies: tool config, repo config, hooks, worker pool, description, env vars (re-encrypted), tags.
+// Does NOT copy: state, runs, tokens, VCS/notification secrets, locks, schedules, PR-preview config.
+// POST /api/v1/stacks/:id/clone
+func (h *Handler) Clone(c echo.Context) error {
+	srcID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+	ctx := c.Request().Context()
+
+	var req struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
+	}
+	if req.Slug == "" {
+		req.Slug = slugify(req.Name)
+	}
+
+	src, err := loadCloneSource(ctx, h.pool, srcID, orgID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	secret, err := webhookSecret()
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to generate webhook secret")
+	}
+
+	envVars, err := loadCloneEnvVars(ctx, h.pool, srcID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var newID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO stacks
+		  (org_id, slug, name, description, tool, tool_version,
+		   repo_url, repo_branch, project_root, runner_image,
+		   auto_apply, drift_detection, drift_schedule, auto_remediate_drift,
+		   vcs_provider, vcs_base_url,
+		   worker_pool_id, pre_plan_hook, post_plan_hook, pre_apply_hook, post_apply_hook,
+		   max_concurrent_runs, created_by, webhook_secret)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NULLIF($13,''),$14,$15,$16,
+		        $17,$18,$19,$20,$21,$22,$23,$24)
+		RETURNING id
+	`, orgID, req.Slug, req.Name, src.description, src.tool, nullStr(src.toolVersion),
+		src.repoURL, src.repoBranch, src.projectRoot, nullStr(src.runnerImage),
+		src.autoApply, src.driftDetection, src.driftSchedule, src.autoRemediateDrift,
+		src.vcsProvider, nullStr(src.vcsBaseURL),
+		src.workerPoolID, src.prePlanHook, src.postPlanHook, src.preApplyHook, src.postApplyHook,
+		src.maxConcurrentRuns, userID, secret,
+	).Scan(&newID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if err := h.copyEnvVars(ctx, tx, srcID, newID, orgID, envVars); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO stack_tags (stack_id, tag_id)
+		 SELECT $1, tag_id FROM stack_tags WHERE stack_id = $2`,
+		newID, srcID,
+	); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	ctxJSON, _ := json.Marshal(map[string]string{"source_id": srcID, "new_id": newID, "name": req.Name})
+	audit.Record(ctx, h.pool, audit.Event{
+		ActorID: userID, Action: "stack.clone",
+		ResourceID: newID, ResourceType: "stack", OrgID: orgID, IPAddress: c.RealIP(),
+		Context: ctxJSON,
+	})
+
+	return c.JSON(http.StatusCreated, map[string]string{"stack_id": newID})
+}
+
+func (h *Handler) copyEnvVars(ctx context.Context, tx pgx.Tx, srcID, newID, orgID string, rows []cloneEnvRow) error {
+	for _, r := range rows {
+		plain, err := h.vault.Decrypt(srcID, r.encValue)
+		if err != nil {
+			return fmt.Errorf("decrypt %q: %w", r.name, err)
+		}
+		newEnc, err := h.vault.Encrypt(newID, plain)
+		if err != nil {
+			return fmt.Errorf("encrypt %q: %w", r.name, err)
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO stack_env_vars (stack_id, org_id, name, value_enc, is_secret)
+			 VALUES ($1, $2, $3, $4, $5)`,
+			newID, orgID, r.name, newEnc, r.isSecret,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// nullStr returns nil for empty strings so optional columns stay NULL.
+func nullStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // ── Stack token management ─────────────────────────────────────────────────────
