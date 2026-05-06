@@ -146,12 +146,33 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
 	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
 
-	// ── Public ─────────────────────────────────────────────────────────────────
-	e.GET("/.well-known/terraform.json", s.handleTerraformDiscovery)
-	e.GET("/health", s.handleHealth)
 	if oidc != nil {
 		oidc.RegisterRoutes(e)
 	}
+	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler)
+	api := s.registerAuthGroup(e)
+	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, member, admin)
+	s.registerPolicyRoutes(api, policyHandler, policyGitHandler, member, admin)
+	s.registerStackRoutes(api, stackHandler, tagHandler, envVarHandler, stateHandler,
+		webhookHandler, outgoingHandler, varSetHandler, stackMembersHandler,
+		depsHandler, integrationHandler, member, admin)
+	s.registerRunRoutes(api, runHandler, member, admin)
+	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
+		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
+	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, admin, member)
+	s.registerAgentRoutes(e, agentHandler, runHandler)
+}
+
+func (s *Server) registerPublicRoutes(
+	e *echo.Echo,
+	authHandler *auth.Handler,
+	orgHandler *orgs.Handler,
+	webhookHandler *webhooks.Handler,
+	policyGitHandler *policygit.Handler,
+	stateHandler *state.Handler,
+) {
+	e.GET("/.well-known/terraform.json", s.handleTerraformDiscovery)
+	e.GET("/health", s.handleHealth)
 	e.GET("/metrics", metrics.Handler())
 	e.GET("/auth/config", authHandler.GetAuthConfig)
 
@@ -164,8 +185,6 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	localAuthRL := newRL(10.0/60, 5)
 	// Moderate per-IP limit on token refresh and OAuth callback — these exchange
 	// bearer tokens / OAuth codes, so brute-force is a real concern at 200 req/s.
-	// /auth/login is excluded: it only issues an IdP redirect, two of which occur
-	// per SSO flow, making a tight limit a source of spurious 429s.
 	authTokenRL := newRL(20.0/60, 5)
 	e.GET("/auth/login", authHandler.Login)
 	e.GET("/auth/callback", authHandler.Callback, authTokenRL)
@@ -178,7 +197,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	e.POST("/api/v1/webhooks/:stackID", webhookHandler.Receive)
 	e.POST("/api/v1/policy-git-webhooks/:id", policyGitHandler.ReceiveWebhook)
 
-	// ── Terraform state backend (HTTP Basic auth per stack token) ──────────────
+	// Terraform state backend (HTTP Basic auth per stack token)
 	tfState := e.Group("/api/v1/state/:stackID")
 	tfState.Use(auth.BasicAuthMiddleware(s.pool, s.cfg.SecretKey))
 	tfState.GET("", stateHandler.Get)
@@ -186,17 +205,26 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	tfState.DELETE("", stateHandler.Delete)
 	tfState.Add("LOCK", "", stateHandler.Lock)
 	tfState.Add("UNLOCK", "", stateHandler.Unlock)
+}
 
-	// ── Authenticated API ──────────────────────────────────────────────────────
+func (s *Server) registerAuthGroup(e *echo.Echo) *echo.Group {
 	api := e.Group("/api/v1")
 	api.Use(auth.JWTMiddleware(s.cfg.SecretKey))
+	return api
+}
 
-	// Service account tokens
+func (s *Server) registerOrgRoutes(
+	api *echo.Group,
+	orgHandler *orgs.Handler,
+	authHandler *auth.Handler,
+	satHandler *serviceaccounts.Handler,
+	integrationHandler *integrations.Handler,
+	member, admin echo.MiddlewareFunc,
+) {
 	api.GET("/org/service-account-tokens", satHandler.List, admin)
 	api.POST("/org/service-account-tokens", satHandler.Create, admin)
 	api.DELETE("/org/service-account-tokens/:id", satHandler.Delete, admin)
 
-	// Org members & invites
 	api.GET("/org/me", orgHandler.Me)
 	api.GET("/org/members", orgHandler.ListMembers)
 	api.PATCH("/org/members/:userID", orgHandler.UpdateMember, admin)
@@ -210,12 +238,22 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.PATCH("/org", orgHandler.UpdateOrg, admin)
 	api.POST("/auth/switch-org", authHandler.SwitchOrg)
 
-	// SSO group → role mappings
 	api.GET("/org/sso-group-maps", orgHandler.ListGroupMaps, admin)
 	api.POST("/org/sso-group-maps", orgHandler.CreateGroupMap, admin)
 	api.DELETE("/org/sso-group-maps/:id", orgHandler.DeleteGroupMap, admin)
 
-	// Policy git sources
+	api.GET("/integrations", integrationHandler.List)
+	api.POST("/integrations", integrationHandler.Create, member)
+	api.PUT("/integrations/:id", integrationHandler.Update, member)
+	api.DELETE("/integrations/:id", integrationHandler.Delete, admin)
+}
+
+func (s *Server) registerPolicyRoutes(
+	api *echo.Group,
+	policyHandler *policies.Handler,
+	policyGitHandler *policygit.Handler,
+	member, admin echo.MiddlewareFunc,
+) {
 	api.GET("/policy-git-sources", policyGitHandler.List)
 	api.POST("/policy-git-sources", policyGitHandler.Create, member)
 	api.GET("/policy-git-sources/:id", policyGitHandler.Get)
@@ -223,7 +261,6 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.DELETE("/policy-git-sources/:id", policyGitHandler.Delete, admin)
 	api.POST("/policy-git-sources/:id/sync", policyGitHandler.TriggerSync, member)
 
-	// Policies
 	api.POST("/policies/validate", policyHandler.Validate)
 	api.GET("/policies", policyHandler.List)
 	api.POST("/policies", policyHandler.Create, member)
@@ -234,7 +271,25 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.PUT("/policies/:id/org-default", policyHandler.SetOrgDefault, admin)
 	api.DELETE("/policies/:id/org-default", policyHandler.UnsetOrgDefault, admin)
 
-	// Stacks
+	api.GET("/stacks/:id/policies", policyHandler.ListStackPolicies)
+	api.PUT("/stacks/:id/policies/:policyID", policyHandler.AttachPolicy, member)
+	api.DELETE("/stacks/:id/policies/:policyID", policyHandler.DetachPolicy, member)
+}
+
+func (s *Server) registerStackRoutes(
+	api *echo.Group,
+	stackHandler *stacks.Handler,
+	tagHandler *tags.Handler,
+	envVarHandler *envvars.Handler,
+	stateHandler *state.Handler,
+	webhookHandler *webhooks.Handler,
+	outgoingHandler *outgoing.Handler,
+	varSetHandler *varsets.Handler,
+	stackMembersHandler *stackmembers.Handler,
+	depsHandler *deps.Handler,
+	integrationHandler *integrations.Handler,
+	member, admin echo.MiddlewareFunc,
+) {
 	api.GET("/stacks", stackHandler.List)
 	api.POST("/stacks", stackHandler.Create, member)
 	api.GET("/stacks/:id", stackHandler.Get)
@@ -247,29 +302,25 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.DELETE("/stacks/:id/pin", stackHandler.Unpin, member)
 	api.GET("/stacks/:id/tags", tagHandler.ListForStack)
 	api.PUT("/stacks/:id/tags", tagHandler.SetTags, member)
+	api.GET("/tags", tagHandler.List)
+	api.POST("/tags", tagHandler.Create, member)
+	api.PATCH("/tags/:tagID", tagHandler.Update, member)
+	api.DELETE("/tags/:tagID", tagHandler.Delete, admin)
 
-	// Stack tokens
 	api.POST("/stacks/:id/tokens", stackHandler.CreateToken, member)
 	api.GET("/stacks/:id/tokens", stackHandler.ListTokens)
 	api.DELETE("/stacks/:id/tokens/:tokenID", stackHandler.RevokeToken, member)
 
-	// Stack env vars (write-only values; list returns names only)
 	api.GET("/stacks/:stackID/env", envVarHandler.List, member)
 	api.PUT("/stacks/:stackID/env", envVarHandler.Upsert, member)
 	api.DELETE("/stacks/:stackID/env/:name", envVarHandler.Delete, member)
 
-	// Stack policies
-	api.GET("/stacks/:id/policies", policyHandler.ListStackPolicies)
-	api.PUT("/stacks/:id/policies/:policyID", policyHandler.AttachPolicy, member)
-	api.DELETE("/stacks/:id/policies/:policyID", policyHandler.DetachPolicy, member)
 
-	// Webhook secret rotation, delivery log, and re-delivery
 	api.POST("/stacks/:id/webhook/rotate", webhookHandler.RotateSecret, member)
 	api.GET("/stacks/:id/webhook-deliveries", webhookHandler.ListDeliveries)
 	api.GET("/stacks/:id/webhook-deliveries/:deliveryID/payload", webhookHandler.GetDeliveryPayload)
 	api.POST("/stacks/:id/webhook-deliveries/:deliveryID/redeliver", webhookHandler.Redeliver, member)
 
-	// Outgoing webhooks (generic HTTP POST on run events)
 	api.GET("/stacks/:id/outgoing-webhooks", outgoingHandler.List)
 	api.POST("/stacks/:id/outgoing-webhooks", outgoingHandler.Create, member)
 	api.PATCH("/stacks/:id/outgoing-webhooks/:whID", outgoingHandler.Update, member)
@@ -277,7 +328,6 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.DELETE("/stacks/:id/outgoing-webhooks/:whID", outgoingHandler.Delete, member)
 	api.GET("/stacks/:id/outgoing-webhooks/:whID/deliveries", outgoingHandler.ListDeliveries)
 
-	// Stack notification config (VCS token, Slack webhook, event list)
 	api.PUT("/stacks/:id/notifications", stackHandler.UpdateNotifications, member)
 	api.POST("/stacks/:id/notifications/test", stackHandler.TestNotification, member)
 	api.POST("/stacks/:id/notifications/test-gotify", stackHandler.TestGotifyNotification, member)
@@ -286,99 +336,39 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/stacks/:id/notifications/test-discord", stackHandler.TestDiscordNotification, member)
 	api.POST("/stacks/:id/notifications/test-teams", stackHandler.TestTeamsNotification, member)
 
-	// Variable sets
-	api.GET("/tags", tagHandler.List)
-	api.POST("/tags", tagHandler.Create, member)
-	api.PATCH("/tags/:tagID", tagHandler.Update, member)
-	api.DELETE("/tags/:tagID", tagHandler.Delete, admin)
-
-	api.GET("/variable-sets", varSetHandler.List)
-	api.POST("/variable-sets", varSetHandler.Create, member)
-	api.GET("/variable-sets/:id", varSetHandler.Get)
-	api.PATCH("/variable-sets/:id", varSetHandler.Update, member)
-	api.DELETE("/variable-sets/:id", varSetHandler.Delete, admin)
-	api.PUT("/variable-sets/:id/vars/:name", varSetHandler.UpsertVar, member)
-	api.DELETE("/variable-sets/:id/vars/:name", varSetHandler.DeleteVar, member)
-
-	// Stack variable set attachment
 	api.GET("/stacks/:id/variable-sets", varSetHandler.ListForStack)
 	api.PUT("/stacks/:id/variable-sets/:vsID", varSetHandler.AttachToStack, member)
 	api.DELETE("/stacks/:id/variable-sets/:vsID", varSetHandler.DetachFromStack, member)
 
-	// Worker pools
-	api.GET("/worker-pools", workerPoolHandler.List)
-	api.POST("/worker-pools", workerPoolHandler.Create, admin)
-	api.GET("/worker-pools/:id", workerPoolHandler.Get)
-	api.PATCH("/worker-pools/:id", workerPoolHandler.Update, admin)
-	api.DELETE("/worker-pools/:id", workerPoolHandler.Delete, admin)
-	api.POST("/worker-pools/:id/rotate-token", workerPoolHandler.RotateToken, admin)
-
-	// Stack templates
-	api.GET("/stack-templates", tmplHandler.List)
-	api.POST("/stack-templates", tmplHandler.Create, member)
-	api.GET("/stack-templates/:id", tmplHandler.Get)
-	api.PATCH("/stack-templates/:id", tmplHandler.Update, member)
-	api.DELETE("/stack-templates/:id", tmplHandler.Delete, admin)
-
-	// Config export / import
-	api.GET("/export", exportHandler.Export, admin)
-	api.POST("/import", exportHandler.Import, admin)
-
-	// Blueprints
-	api.GET("/blueprints", blueprintHandler.List)
-	api.POST("/blueprints", blueprintHandler.Create, admin)
-	api.POST("/blueprints/import", blueprintHandler.Import, admin)
-	api.GET("/blueprints/:id", blueprintHandler.Get)
-	api.GET("/blueprints/:id/export", blueprintHandler.Export, admin)
-	api.PATCH("/blueprints/:id", blueprintHandler.Update, admin)
-	api.DELETE("/blueprints/:id", blueprintHandler.Delete, admin)
-	api.PUT("/blueprints/:id/publish", blueprintHandler.Publish, admin)
-	api.PUT("/blueprints/:id/params/:name", blueprintHandler.UpsertParam, admin)
-	api.DELETE("/blueprints/:id/params/:name", blueprintHandler.DeleteParam, admin)
-	api.POST("/blueprints/:id/deploy", blueprintHandler.Deploy, member)
-
-	// Org-level integrations (VCS credentials, secret stores)
-	api.GET("/integrations", integrationHandler.List)
-	api.POST("/integrations", integrationHandler.Create, member)
-	api.PUT("/integrations/:id", integrationHandler.Update, member)
-	api.DELETE("/integrations/:id", integrationHandler.Delete, admin)
-
-	// Stack integration assignment
-	api.PUT("/stacks/:id/integrations", stackHandler.SetIntegrations, member)
-
-	// Stack state lock management
-	api.DELETE("/stacks/:id/lock", stateHandler.ForceUnlock, admin)
-
-	// Stack state resource explorer
-	api.GET("/stacks/:id/state/resources", stateHandler.ListResources)
-
-	// Stack external state backend (S3, GCS, Azure Blob)
-	api.GET("/stacks/:id/state-backend", stackHandler.GetStateBackend, member)
-	api.PUT("/stacks/:id/state-backend", stackHandler.UpsertStateBackend, member)
-	api.DELETE("/stacks/:id/state-backend", stackHandler.DeleteStateBackend, member)
-
-	// Remote state sources (cross-stack terraform_remote_state)
-	api.GET("/stacks/:id/remote-state-sources", stackHandler.ListRemoteStateSources)
-	api.POST("/stacks/:id/remote-state-sources", stackHandler.AddRemoteStateSource, member)
-	api.DELETE("/stacks/:id/remote-state-sources/:source_id", stackHandler.RemoveRemoteStateSource, member)
-
-	// Stack-level RBAC members (admin only to manage)
 	api.GET("/stacks/:id/members", stackMembersHandler.List)
 	api.PUT("/stacks/:id/members/:userID", stackMembersHandler.Upsert, admin)
 	api.DELETE("/stacks/:id/members/:userID", stackMembersHandler.Remove, admin)
 
-	// Cloud OIDC workload identity federation
 	api.GET("/stacks/:id/cloud-oidc", stackHandler.GetOIDC)
 	api.PUT("/stacks/:id/cloud-oidc", stackHandler.UpsertOIDC, member)
 	api.DELETE("/stacks/:id/cloud-oidc", stackHandler.DeleteOIDC, member)
 
-	// Stack dependency graph
 	api.GET("/stacks/:id/upstream", depsHandler.ListUpstream)
 	api.GET("/stacks/:id/downstream", depsHandler.ListDownstream)
 	api.PUT("/stacks/:id/downstream/:downstreamID", depsHandler.AddDownstream, member)
 	api.DELETE("/stacks/:id/downstream/:downstreamID", depsHandler.RemoveDownstream, member)
 
-	// Runs
+	api.PUT("/stacks/:id/integrations", stackHandler.SetIntegrations, member)
+	api.DELETE("/stacks/:id/lock", stateHandler.ForceUnlock, admin)
+	api.GET("/stacks/:id/state/resources", stateHandler.ListResources)
+	api.GET("/stacks/:id/state-backend", stackHandler.GetStateBackend, member)
+	api.PUT("/stacks/:id/state-backend", stackHandler.UpsertStateBackend, member)
+	api.DELETE("/stacks/:id/state-backend", stackHandler.DeleteStateBackend, member)
+	api.GET("/stacks/:id/remote-state-sources", stackHandler.ListRemoteStateSources)
+	api.POST("/stacks/:id/remote-state-sources", stackHandler.AddRemoteStateSource, member)
+	api.DELETE("/stacks/:id/remote-state-sources/:source_id", stackHandler.RemoveRemoteStateSource, member)
+}
+
+func (s *Server) registerRunRoutes(
+	api *echo.Group,
+	runHandler *runs.Handler,
+	member, admin echo.MiddlewareFunc,
+) {
 	api.GET("/runs", runHandler.ListAll)
 	api.GET("/stacks/:stackID/runs", runHandler.List)
 	api.POST("/stacks/:stackID/runs", runHandler.Create, member)
@@ -396,12 +386,22 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/runs/:id/explain", runHandler.ExplainFailure)
 	api.DELETE("/runs/:id", runHandler.Delete, admin)
 	api.PATCH("/runs/:id/annotation", runHandler.Annotate, member)
+}
 
-	// Audit log
+func (s *Server) registerSystemRoutes(
+	api *echo.Group,
+	auditHandler *audit.Handler,
+	settingsHandler *settings.Handler,
+	tmplHandler *templates.Handler,
+	blueprintHandler *blueprints.Handler,
+	exportHandler *export.Handler,
+	workerPoolHandler *workerpools.Handler,
+	varSetHandler *varsets.Handler,
+	admin, member echo.MiddlewareFunc,
+) {
 	api.GET("/audit", auditHandler.List)
 	api.GET("/audit/export", auditHandler.Export)
 
-	// System settings
 	api.GET("/system/settings", settingsHandler.Get)
 	api.PUT("/system/settings", settingsHandler.Update, admin)
 	api.POST("/system/notifications/test-slack", settingsHandler.TestOrgSlack, admin)
@@ -410,13 +410,55 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/system/notifications/test-discord", settingsHandler.TestOrgDiscord, admin)
 	api.POST("/system/notifications/test-teams", settingsHandler.TestOrgTeams, admin)
 
-	// Module registry (management API)
+	api.GET("/stack-templates", tmplHandler.List)
+	api.POST("/stack-templates", tmplHandler.Create, member)
+	api.GET("/stack-templates/:id", tmplHandler.Get)
+	api.PATCH("/stack-templates/:id", tmplHandler.Update, member)
+	api.DELETE("/stack-templates/:id", tmplHandler.Delete, admin)
+
+	api.GET("/blueprints", blueprintHandler.List)
+	api.POST("/blueprints", blueprintHandler.Create, admin)
+	api.POST("/blueprints/import", blueprintHandler.Import, admin)
+	api.GET("/blueprints/:id", blueprintHandler.Get)
+	api.GET("/blueprints/:id/export", blueprintHandler.Export, admin)
+	api.PATCH("/blueprints/:id", blueprintHandler.Update, admin)
+	api.DELETE("/blueprints/:id", blueprintHandler.Delete, admin)
+	api.PUT("/blueprints/:id/publish", blueprintHandler.Publish, admin)
+	api.PUT("/blueprints/:id/params/:name", blueprintHandler.UpsertParam, admin)
+	api.DELETE("/blueprints/:id/params/:name", blueprintHandler.DeleteParam, admin)
+	api.POST("/blueprints/:id/deploy", blueprintHandler.Deploy, member)
+
+	api.GET("/export", exportHandler.Export, admin)
+	api.POST("/import", exportHandler.Import, admin)
+
+	api.GET("/worker-pools", workerPoolHandler.List)
+	api.POST("/worker-pools", workerPoolHandler.Create, admin)
+	api.GET("/worker-pools/:id", workerPoolHandler.Get)
+	api.PATCH("/worker-pools/:id", workerPoolHandler.Update, admin)
+	api.DELETE("/worker-pools/:id", workerPoolHandler.Delete, admin)
+	api.POST("/worker-pools/:id/rotate-token", workerPoolHandler.RotateToken, admin)
+
+	api.GET("/variable-sets", varSetHandler.List)
+	api.POST("/variable-sets", varSetHandler.Create, member)
+	api.GET("/variable-sets/:id", varSetHandler.Get)
+	api.PATCH("/variable-sets/:id", varSetHandler.Update, member)
+	api.DELETE("/variable-sets/:id", varSetHandler.Delete, admin)
+	api.PUT("/variable-sets/:id/vars/:name", varSetHandler.UpsertVar, member)
+	api.DELETE("/variable-sets/:id/vars/:name", varSetHandler.DeleteVar, member)
+}
+
+func (s *Server) registerRegistryRoutes(
+	e *echo.Echo,
+	api *echo.Group,
+	registryHandler *registry.Handler,
+	providersHandler *providers.Handler,
+	admin, member echo.MiddlewareFunc,
+) {
 	api.GET("/registry/modules", registryHandler.List)
 	api.GET("/registry/modules/:id", registryHandler.Get)
 	api.POST("/registry/modules", registryHandler.Publish, member)
 	api.DELETE("/registry/modules/:id", registryHandler.Yank, member)
 
-	// ── Terraform Module Registry Protocol v1 ─────────────────────────────────
 	regv1 := e.Group("/registry/v1/modules")
 	regv1.Use(auth.JWTMiddleware(s.cfg.SecretKey))
 	regv1.GET("/search", registryHandler.Search)
@@ -425,7 +467,6 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	regv1.GET("/:namespace/:name/:provider/:version/download", registryHandler.Download)
 	regv1.GET("/:namespace/:name/:provider/:version/archive", registryHandler.Archive)
 
-	// Provider registry (management API)
 	api.GET("/registry/providers", providersHandler.List)
 	api.GET("/registry/providers/:id", providersHandler.Get)
 	api.POST("/registry/providers", providersHandler.Publish, member)
@@ -434,27 +475,30 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/registry/provider-gpg-keys", providersHandler.AddGPGKey, admin)
 	api.DELETE("/registry/provider-gpg-keys/:id", providersHandler.DeleteGPGKey, admin)
 
-	// Provider Registry Protocol v1
 	provv1 := e.Group("/registry/v1/providers")
 	provv1.Use(auth.JWTMiddleware(s.cfg.SecretKey))
 	provv1.GET("/:namespace/:type/versions", providersHandler.Versions)
 	provv1.GET("/:namespace/:type/:version/download/:os/:arch", providersHandler.DownloadInfo)
 	provv1.GET("/:namespace/:type/:version/archive/:os/:arch", providersHandler.Archive)
 	provv1.GET("/:namespace/:type/:version/shasums", providersHandler.Shasums)
+}
 
-	// ── External worker-agent endpoints (pool bearer token auth) ──────────────
+func (s *Server) registerAgentRoutes(
+	e *echo.Echo,
+	agentHandler *agent.Handler,
+	runHandler *runs.Handler,
+) {
 	agentGroup := e.Group("/api/v1/agent")
 	agentGroup.Use(agentHandler.PoolAuthMiddleware)
 	agentGroup.POST("/claim", agentHandler.Claim)
 	agentGroup.POST("/runs/:runID/log", agentHandler.AppendLog)
 	agentGroup.POST("/runs/:runID/finish", agentHandler.Finish)
 
-	// ── Internal runner callbacks ──────────────────────────────────────────────
 	internal := e.Group("/api/v1/internal")
 	internal.Use(auth.RunnerAuthMiddleware(s.cfg.SecretKey))
 	internal.POST("/runs/:id/status", runHandler.ReportStatus)
 	internal.POST("/runs/:id/plan", runHandler.UploadPlan)
-	internal.GET("/runs/:id/plan", runHandler.DownloadPlanInternal) // apply phase: runner fetches its own plan
+	internal.GET("/runs/:id/plan", runHandler.DownloadPlanInternal)
 	internal.POST("/runs/:id/plan-summary", runHandler.ReportPlanSummary)
 	internal.POST("/runs/:id/cost", runHandler.ReportCost)
 	internal.POST("/runs/:id/scan-results", runHandler.ReportScanResults)

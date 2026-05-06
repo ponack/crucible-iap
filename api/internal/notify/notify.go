@@ -341,23 +341,10 @@ func runTitle(stackName string, success bool) string {
 // TestSlack sends a test message to the Slack webhook configured on a stack.
 // Returns an error if no webhook is configured or the POST fails.
 func (n *Notifier) TestSlack(ctx context.Context, stackID string) error {
-	var slackWebhookEnc []byte
-	var stackName string
-	err := n.pool.QueryRow(ctx, `
-		SELECT name, slack_webhook_enc FROM stacks WHERE id = $1
-	`, stackID).Scan(&stackName, &slackWebhookEnc)
-	if err != nil {
-		return fmt.Errorf("stack not found")
-	}
-	if len(slackWebhookEnc) == 0 {
-		return fmt.Errorf("no Slack webhook configured for this stack")
-	}
-	webhookURL := n.decryptStr(stackID, slackWebhookEnc)
-	if webhookURL == "" {
-		return fmt.Errorf("failed to decrypt Slack webhook")
-	}
-	return n.slackPostErr(ctx, webhookURL,
-		fmt.Sprintf("✅ *%s* — Crucible test notification. Your Slack webhook is working correctly.", stackName))
+	return n.testStackWebhook(ctx, stackID, "slack_webhook_enc", "text", "Slack",
+		func(name string) string {
+			return fmt.Sprintf("✅ *%s* — Crucible test notification. Your Slack webhook is working correctly.", name)
+		})
 }
 
 // TestGotify sends a test Gotify message to verify the config is working.
@@ -408,14 +395,7 @@ func (n *Notifier) TestNtfy(ctx context.Context, stackID string) error {
 
 // TestOrgSlack sends a test message to the org-level Slack webhook in system_settings.
 func (n *Notifier) TestOrgSlack(ctx context.Context) error {
-	var webhookURL string
-	err := n.pool.QueryRow(ctx,
-		`SELECT COALESCE(default_slack_webhook,'') FROM system_settings WHERE id = true`,
-	).Scan(&webhookURL)
-	if err != nil || webhookURL == "" {
-		return fmt.Errorf("no Slack webhook configured")
-	}
-	return n.slackPostErr(ctx, webhookURL,
+	return n.testOrgWebhook(ctx, "default_slack_webhook", "text", "Slack",
 		"✅ *Crucible IAP* — Org-level test notification. Your Slack webhook is working correctly.")
 }
 
@@ -587,11 +567,11 @@ func (n *Notifier) gitPostComment(ctx context.Context, baseURL, owner, repo stri
 	}
 }
 
-// ── Slack ─────────────────────────────────────────────────────────────────────
+// ── Generic webhook helpers ───────────────────────────────────────────────────
 
-func (n *Notifier) slackPostErr(ctx context.Context, webhookURL, text string) error {
-	payload := map[string]string{"text": text}
-	b, _ := json.Marshal(payload)
+// webhookPostErr POSTs a JSON body to a webhook URL, returning any error.
+func (n *Notifier) webhookPostErr(ctx context.Context, label, webhookURL string, body any) error {
+	b, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
 	if err != nil {
 		return err
@@ -599,179 +579,102 @@ func (n *Notifier) slackPostErr(ctx context.Context, webhookURL, text string) er
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := n.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("slack request failed: %w", err)
+		return fmt.Errorf("%s request failed: %w", label, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("slack returned HTTP %d — check webhook URL", resp.StatusCode)
+		return fmt.Errorf("%s returned HTTP %d — check webhook URL", label, resp.StatusCode)
 	}
 	return nil
 }
 
-func (n *Notifier) slackPost(ctx context.Context, webhookURL, text string) {
-	if err := n.slackPostErr(ctx, webhookURL, text); err != nil {
-		slog.Warn("notify: slack post failed", "err", err)
+// webhookPost fires webhookPostErr and logs any error. Used for lifecycle notifications.
+func (n *Notifier) webhookPost(ctx context.Context, label, webhookURL string, body any) {
+	if err := n.webhookPostErr(ctx, label, webhookURL, body); err != nil {
+		slog.Warn("notify: webhook post failed", "channel", label, "err", err)
 	}
+}
+
+// testStackWebhook queries the stack's encrypted webhook column, decrypts it, and
+// POSTs a test message. dbCol must be a hardcoded column name — never user input.
+func (n *Notifier) testStackWebhook(ctx context.Context, stackID, dbCol, bodyKey, label string, msgFn func(string) string) error {
+	var enc []byte
+	var stackName string
+	if err := n.pool.QueryRow(ctx,
+		"SELECT name, "+dbCol+" FROM stacks WHERE id = $1", stackID,
+	).Scan(&stackName, &enc); err != nil {
+		return fmt.Errorf("stack not found")
+	}
+	if len(enc) == 0 {
+		return fmt.Errorf("no %s webhook configured for this stack", label)
+	}
+	webhookURL := n.decryptStr(stackID, enc)
+	if webhookURL == "" {
+		return fmt.Errorf("failed to decrypt %s webhook", label)
+	}
+	return n.webhookPostErr(ctx, label, webhookURL, map[string]string{bodyKey: msgFn(stackName)})
+}
+
+// testOrgWebhook queries the org-level webhook URL from system_settings and POSTs a
+// test message. dbCol must be a hardcoded column name — never user input.
+func (n *Notifier) testOrgWebhook(ctx context.Context, dbCol, bodyKey, label, msg string) error {
+	var webhookURL string
+	if err := n.pool.QueryRow(ctx,
+		"SELECT COALESCE("+dbCol+",'') FROM system_settings WHERE id = true",
+	).Scan(&webhookURL); err != nil || webhookURL == "" {
+		return fmt.Errorf("no %s webhook configured", label)
+	}
+	return n.webhookPostErr(ctx, label, webhookURL, map[string]string{bodyKey: msg})
+}
+
+// ── Slack ─────────────────────────────────────────────────────────────────────
+
+func (n *Notifier) slackPostErr(ctx context.Context, webhookURL, text string) error {
+	return n.webhookPostErr(ctx, "Slack", webhookURL, map[string]string{"text": text})
+}
+
+func (n *Notifier) slackPost(ctx context.Context, webhookURL, text string) {
+	n.webhookPost(ctx, "Slack", webhookURL, map[string]string{"text": text})
 }
 
 // ── Discord ───────────────────────────────────────────────────────────────────
 
 func (n *Notifier) discordPost(ctx context.Context, webhookURL, text string) {
-	b, _ := json.Marshal(map[string]string{"content": text})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
-	if err != nil {
-		slog.Warn("notify: discord request build failed", "err", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		slog.Warn("notify: discord post failed", "err", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		slog.Warn("notify: discord returned error", "status", resp.StatusCode)
-	}
+	n.webhookPost(ctx, "Discord", webhookURL, map[string]string{"content": text})
 }
 
 // TestDiscord sends a test message to the Discord webhook configured on a stack.
 func (n *Notifier) TestDiscord(ctx context.Context, stackID string) error {
-	var discordWebhookEnc []byte
-	var stackName string
-	if err := n.pool.QueryRow(ctx,
-		`SELECT name, discord_webhook_enc FROM stacks WHERE id = $1`,
-		stackID,
-	).Scan(&stackName, &discordWebhookEnc); err != nil {
-		return fmt.Errorf("stack not found")
-	}
-	if len(discordWebhookEnc) == 0 {
-		return fmt.Errorf("no Discord webhook configured for this stack")
-	}
-	webhookURL := n.decryptStr(stackID, discordWebhookEnc)
-	if webhookURL == "" {
-		return fmt.Errorf("failed to decrypt Discord webhook")
-	}
-	b, _ := json.Marshal(map[string]string{"content": fmt.Sprintf("✅ **%s** — Crucible test notification. Your Discord webhook is working correctly.", stackName)})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("discord request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("discord returned HTTP %d — check webhook URL", resp.StatusCode)
-	}
-	return nil
+	return n.testStackWebhook(ctx, stackID, "discord_webhook_enc", "content", "Discord",
+		func(name string) string {
+			return fmt.Sprintf("✅ **%s** — Crucible test notification. Your Discord webhook is working correctly.", name)
+		})
 }
 
 // TestOrgDiscord sends a test message to the org-level Discord webhook.
 func (n *Notifier) TestOrgDiscord(ctx context.Context) error {
-	var webhookURL string
-	if err := n.pool.QueryRow(ctx,
-		`SELECT COALESCE(default_discord_webhook,'') FROM system_settings WHERE id = true`,
-	).Scan(&webhookURL); err != nil || webhookURL == "" {
-		return fmt.Errorf("no Discord webhook configured")
-	}
-	b, _ := json.Marshal(map[string]string{"content": "✅ **Crucible IAP** — Org-level test notification. Your Discord webhook is working correctly."})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("discord request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("discord returned HTTP %d", resp.StatusCode)
-	}
-	return nil
+	return n.testOrgWebhook(ctx, "default_discord_webhook", "content", "Discord",
+		"✅ **Crucible IAP** — Org-level test notification. Your Discord webhook is working correctly.")
 }
 
 // ── MS Teams ──────────────────────────────────────────────────────────────────
 
 func (n *Notifier) teamsPost(ctx context.Context, webhookURL, text string) {
-	b, _ := json.Marshal(map[string]string{"text": text})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
-	if err != nil {
-		slog.Warn("notify: teams request build failed", "err", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		slog.Warn("notify: teams post failed", "err", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		slog.Warn("notify: teams returned error", "status", resp.StatusCode)
-	}
+	n.webhookPost(ctx, "Teams", webhookURL, map[string]string{"text": text})
 }
 
 // TestTeams sends a test message to the MS Teams webhook configured on a stack.
 func (n *Notifier) TestTeams(ctx context.Context, stackID string) error {
-	var teamsWebhookEnc []byte
-	var stackName string
-	if err := n.pool.QueryRow(ctx,
-		`SELECT name, teams_webhook_enc FROM stacks WHERE id = $1`,
-		stackID,
-	).Scan(&stackName, &teamsWebhookEnc); err != nil {
-		return fmt.Errorf("stack not found")
-	}
-	if len(teamsWebhookEnc) == 0 {
-		return fmt.Errorf("no Teams webhook configured for this stack")
-	}
-	webhookURL := n.decryptStr(stackID, teamsWebhookEnc)
-	if webhookURL == "" {
-		return fmt.Errorf("failed to decrypt Teams webhook")
-	}
-	b, _ := json.Marshal(map[string]string{"text": fmt.Sprintf("✅ **%s** — Crucible test notification. Your Microsoft Teams webhook is working correctly.", stackName)})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("teams request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("teams returned HTTP %d — check webhook URL", resp.StatusCode)
-	}
-	return nil
+	return n.testStackWebhook(ctx, stackID, "teams_webhook_enc", "text", "Teams",
+		func(name string) string {
+			return fmt.Sprintf("✅ **%s** — Crucible test notification. Your Microsoft Teams webhook is working correctly.", name)
+		})
 }
 
 // TestOrgTeams sends a test message to the org-level MS Teams webhook.
 func (n *Notifier) TestOrgTeams(ctx context.Context) error {
-	var webhookURL string
-	if err := n.pool.QueryRow(ctx,
-		`SELECT COALESCE(default_teams_webhook,'') FROM system_settings WHERE id = true`,
-	).Scan(&webhookURL); err != nil || webhookURL == "" {
-		return fmt.Errorf("no Teams webhook configured")
-	}
-	b, _ := json.Marshal(map[string]string{"text": "✅ **Crucible IAP** — Org-level test notification. Your Microsoft Teams webhook is working correctly."})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := n.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("teams request failed: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("teams returned HTTP %d", resp.StatusCode)
-	}
-	return nil
+	return n.testOrgWebhook(ctx, "default_teams_webhook", "text", "Teams",
+		"✅ **Crucible IAP** — Org-level test notification. Your Microsoft Teams webhook is working correctly.")
 }
 
 // ── Gotify ────────────────────────────────────────────────────────────────────
