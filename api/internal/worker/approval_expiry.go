@@ -3,6 +3,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 // take effect without a restart. Call once after the DB pool is ready.
 func StartApprovalExpiry(ctx context.Context, pool *pgxpool.Pool) {
 	go func() {
+		runApprovalExpiry(ctx, pool) // run immediately on startup to catch any pre-existing expired runs
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
@@ -56,6 +58,7 @@ func runApprovalExpiry(ctx context.Context, pool *pgxpool.Pool) {
 	}
 	defer rows.Close()
 
+	auditCtx, _ := json.Marshal(map[string]any{"timeout_hours": timeoutHours})
 	for rows.Next() {
 		var runID, orgID string
 		if err := rows.Scan(&runID, &orgID); err != nil {
@@ -67,6 +70,7 @@ func runApprovalExpiry(ctx context.Context, pool *pgxpool.Pool) {
 			ResourceID:   runID,
 			ResourceType: "run",
 			OrgID:        orgID,
+			Context:      json.RawMessage(auditCtx),
 		})
 		slog.Info("approval_expiry: discarded stale run", "run_id", runID, "timeout_hours", timeoutHours)
 	}

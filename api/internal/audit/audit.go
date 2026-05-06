@@ -151,26 +151,23 @@ func (h *Handler) Export(c echo.Context) error {
 	defer rows.Close()
 
 	if format == "json" {
-		c.Response().Header().Set("Content-Disposition", `attachment; filename="audit-export.json"`)
-		c.Response().Header().Set("Content-Type", "application/json; charset=utf-8")
-		c.Response().WriteHeader(http.StatusOK)
-		enc := json.NewEncoder(c.Response())
-		_, _ = c.Response().Write([]byte("[\n"))
-		first := true
+		var events []Event
 		for rows.Next() {
 			var e Event
 			if err := rows.Scan(&e.ID, &e.OccurredAt, &e.ActorID, &e.ActorType,
 				&e.Action, &e.ResourceID, &e.ResourceType, &e.Context); err != nil {
 				break
 			}
-			if !first {
-				_, _ = c.Response().Write([]byte(",\n"))
-			}
-			first = false
-			_ = enc.Encode(e)
+			events = append(events, e)
 		}
-		_, _ = c.Response().Write([]byte("]\n"))
-		return nil
+		if err := rows.Err(); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		if events == nil {
+			events = []Event{}
+		}
+		c.Response().Header().Set("Content-Disposition", `attachment; filename="audit-export.json"`)
+		return c.JSON(http.StatusOK, events)
 	}
 
 	c.Response().Header().Set("Content-Disposition", `attachment; filename="audit-export.csv"`)
