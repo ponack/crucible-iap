@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -48,7 +49,8 @@ func NewHandler(cfg *config.Config, pool *pgxpool.Pool) *Handler {
 	if cfg.OIDCIssuerURL != "" {
 		provider, err := gooidc.NewProvider(context.Background(), cfg.OIDCIssuerURL)
 		if err != nil {
-			panic("failed to initialise OIDC provider: " + err.Error())
+			slog.Error("failed to initialise OIDC provider", "issuer", cfg.OIDCIssuerURL, "err", err)
+			os.Exit(1)
 		}
 		h.provider = provider
 		h.oauth2 = &oauth2.Config{

@@ -35,7 +35,7 @@
 		try {
 			policy = await policies.get(id);
 			resetForm();
-			policiesApi.isOrgDefault(id).then((r) => (isOrgDefault = r.is_org_default)).catch(() => {});
+			policiesApi.isOrgDefault(id).then((r) => (isOrgDefault = r.is_org_default)).catch((e) => console.error('isOrgDefault', e));
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {

@@ -37,7 +37,7 @@
 
 	onMount(() => {
 		load();
-		if (auth.isAdmin) providers.listGPGKeys().then((k) => (gpgKeys = k)).catch(() => {});
+		if (auth.isAdmin) providers.listGPGKeys().then((k) => (gpgKeys = k)).catch((e) => console.error('listGPGKeys', e));
 	});
 
 	async function load(q = '') {
