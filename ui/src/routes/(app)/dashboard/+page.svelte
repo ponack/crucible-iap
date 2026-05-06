@@ -97,10 +97,16 @@
 	async function approveAll() {
 		bulkActioning = true;
 		const pending = [...awaitingApproval];
-		await Promise.allSettled(pending.map((r) => runs.confirm(r.id).catch(() => {})));
+		const results = await Promise.allSettled(pending.map((r) => runs.confirm(r.id)));
 		awaitingApproval = [];
 		bulkActioning = false;
-		toast.success(`Approved ${pending.length} run${pending.length !== 1 ? 's' : ''}`);
+		const failed = results.filter((r) => r.status === 'rejected').length;
+		const ok = pending.length - failed;
+		if (failed > 0) {
+			toast.error(`${ok} approved, ${failed} failed`);
+		} else {
+			toast.success(`Approved ${ok} run${ok !== 1 ? 's' : ''}`);
+		}
 	}
 
 	async function cancel(run: Run) {

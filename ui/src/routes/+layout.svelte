@@ -68,10 +68,10 @@
 			goto('/login', { replaceState: true });
 		}
 		if (mounted && !isAuthRoute && auth.isAuthenticated && !auth.orgRole) {
-			org.me().then((r) => auth.setOrgRole(r.role as OrgRole)).catch(() => {});
+			org.me().then((r) => auth.setOrgRole(r.role as OrgRole)).catch((e) => console.error('org.me', e));
 		}
 		if (mounted && !isAuthRoute && auth.isAuthenticated && myOrgs.list.length === 0) {
-			org.list().then((r) => { myOrgs.set(r); }).catch(() => {});
+			org.list().then((r) => { myOrgs.set(r); }).catch((e) => console.error('org.list', e));
 		}
 	});
 

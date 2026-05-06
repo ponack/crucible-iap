@@ -53,7 +53,7 @@
 				smtp_tls: s.smtp_tls ?? true
 			};
 			vcs = { default_vcs_provider: s.default_vcs_provider || 'github', default_vcs_base_url: s.default_vcs_base_url ?? '' };
-		}).catch(() => {});
+		}).catch((e) => console.error('notifications settings.get', e));
 	});
 
 	async function saveSection(data: Partial<Omit<SystemSettings, 'updated_at'>>) {

@@ -277,8 +277,8 @@
 			orgIntegrations = integrationsRes;
 			stackVarSets = stackVarSetsRes;
 			allVarSets = allVarSetsRes;
-		stackTemplates.list().then(t => (allTemplates = t)).catch(() => {});
-			workerPools.list().then(r => (allWorkerPools = r.data)).catch(() => {});
+		stackTemplates.list().then(t => (allTemplates = t)).catch((e) => console.error('stackTemplates.list', e));
+			workerPools.list().then(r => (allWorkerPools = r.data)).catch((e) => console.error('workerPools.list', e));
 			upstreamDeps = upstreamRes;
 			downstreamDeps = downstreamRes;
 			members = membersRes;
@@ -340,10 +340,10 @@
 		}
 
 		// Load state resources independently — no state yet is normal.
-		stacks.state.resources(stackID).then(r => (stateResources = r)).catch(() => {});
+		stacks.state.resources(stackID).then(r => (stateResources = r)).catch((e) => console.error('state.resources', e));
 
 		// Load outgoing webhooks independently.
-		stacks.outgoingWebhooks.list(stackID).then(r => (outgoingWebhooks = r)).catch(() => {});
+		stacks.outgoingWebhooks.list(stackID).then(r => (outgoingWebhooks = r)).catch((e) => console.error('outgoingWebhooks.list', e));
 	});
 
 	// Separate sync onMount so we can return a cleanup — async onMount can't return a cleanup.
@@ -351,7 +351,7 @@
 	// the user is on this page.
 	onMount(() => {
 		const poller = setInterval(() => {
-			runs.list(stackID).then(r => (recentRuns = r.data)).catch(() => {});
+			runs.list(stackID).then(r => (recentRuns = r.data)).catch((e) => console.error('runs.list poll', e));
 		}, 10_000);
 		return () => clearInterval(poller);
 	});
