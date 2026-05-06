@@ -94,7 +94,7 @@
 				scan_tool: (s.scan_tool ?? 'none') as 'none' | 'checkov' | 'trivy',
 				scan_severity_threshold: (s.scan_severity_threshold ?? 'HIGH') as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW'
 			};
-		}).catch(() => {});
+		}).catch((e) => console.error('settings.get', e));
 		loading = false;
 	});
 

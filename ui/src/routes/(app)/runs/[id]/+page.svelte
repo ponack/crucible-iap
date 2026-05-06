@@ -55,8 +55,8 @@
 			run = r;
 			loading = false;
 			startSSE(id, () => token.cancelled);
-			runs.policyResults(id).then((r2) => { if (!token.cancelled) policyResults = r2; }).catch(() => {});
-			runs.scanResults(id).then((r2) => { if (!token.cancelled) scanResults = r2; }).catch(() => {});
+			runs.policyResults(id).then((r2) => { if (!token.cancelled) policyResults = r2; }).catch((e) => console.error('policyResults', e));
+			runs.scanResults(id).then((r2) => { if (!token.cancelled) scanResults = r2; }).catch((e) => console.error('scanResults', e));
 		}).catch((e) => {
 			if (token.cancelled) return;
 			error = (e as Error).message;
@@ -108,7 +108,7 @@
 			sse?.close();
 			sse = null;
 			if (isCancelled()) return;
-			runs.get(id).then((r) => (run = r)).catch(() => {});
+			runs.get(id).then((r) => (run = r)).catch((e) => console.error('run refresh on SSE error', e));
 		};
 	}
 
