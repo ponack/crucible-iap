@@ -63,12 +63,16 @@ type runData struct {
 	gotifyTokenEnc  []byte
 	ntfyURL         string
 	ntfyTokenEnc    []byte
-	notifyEmail     string
-	notifyEvents    []string
+	notifyEmail        string
+	notifyEvents       []string
+	discordWebhookEnc  []byte
+	teamsWebhookEnc    []byte
 	// org-level plain-text fallbacks (set by applyOrgDefaults when stack fields empty)
-	orgGotifyToken  string
-	orgNtfyToken    string
-	orgSlackWebhook string
+	orgGotifyToken   string
+	orgNtfyToken     string
+	orgSlackWebhook  string
+	orgDiscordWebhook string
+	orgTeamsWebhook  string
 }
 
 func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
@@ -83,7 +87,8 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		       COALESCE(s.gotify_url,''), s.gotify_token_enc,
 		       COALESCE(s.ntfy_url,''), s.ntfy_token_enc,
 		       COALESCE(s.notify_email,''),
-		       s.notify_events
+		       s.notify_events,
+		       s.discord_webhook_enc, s.teams_webhook_enc
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE r.id = $1
@@ -98,6 +103,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.ntfyURL, &d.ntfyTokenEnc,
 		&d.notifyEmail,
 		&d.notifyEvents,
+		&d.discordWebhookEnc, &d.teamsWebhookEnc,
 	)
 	if err != nil {
 		return nil, err
@@ -111,41 +117,43 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 // text (no vault encryption), so they are handled separately from stack tokens.
 // If the stack has no notify_events list, defaults to all three event types.
 func (n *Notifier) applyOrgDefaults(ctx context.Context, d *runData) {
-	needsGotify := d.gotifyURL == ""
-	needsNtfy := d.ntfyURL == ""
-	needsSlack := len(d.slackWebhookEnc) == 0
-	needsEvents := len(d.notifyEvents) == 0
-
-	if !needsGotify && !needsNtfy && !needsSlack && !needsEvents {
-		return
+	if len(d.notifyEvents) == 0 {
+		d.notifyEvents = []string{"plan_complete", "run_finished", "run_failed"}
 	}
+	n.fetchAndApplyOrgChannels(ctx, d)
+}
 
+// fetchAndApplyOrgChannels loads org-level channel defaults from system_settings
+// and applies them to any channel the stack has not individually configured.
+func (n *Notifier) fetchAndApplyOrgChannels(ctx context.Context, d *runData) {
+	var defSlack, defDiscord, defTeams string
 	var defGotifyURL, defGotifyToken string
 	var defNtfyURL, defNtfyToken string
-	var defSlackWebhook string
 	_ = n.pool.QueryRow(ctx, `
-		SELECT COALESCE(default_gotify_url,''), COALESCE(default_gotify_token,''),
-		       COALESCE(default_ntfy_url,''),   COALESCE(default_ntfy_token,''),
-		       COALESCE(default_slack_webhook,'')
+		SELECT COALESCE(default_slack_webhook,''),
+		       COALESCE(default_discord_webhook,''),
+		       COALESCE(default_teams_webhook,''),
+		       COALESCE(default_gotify_url,''), COALESCE(default_gotify_token,''),
+		       COALESCE(default_ntfy_url,''),   COALESCE(default_ntfy_token,'')
 		FROM system_settings LIMIT 1
-	`).Scan(&defGotifyURL, &defGotifyToken, &defNtfyURL, &defNtfyToken, &defSlackWebhook)
+	`).Scan(&defSlack, &defDiscord, &defTeams, &defGotifyURL, &defGotifyToken, &defNtfyURL, &defNtfyToken)
 
-	if needsGotify && defGotifyURL != "" {
+	if len(d.slackWebhookEnc) == 0 && defSlack != "" {
+		d.orgSlackWebhook = defSlack
+	}
+	if len(d.discordWebhookEnc) == 0 && defDiscord != "" {
+		d.orgDiscordWebhook = defDiscord
+	}
+	if len(d.teamsWebhookEnc) == 0 && defTeams != "" {
+		d.orgTeamsWebhook = defTeams
+	}
+	if d.gotifyURL == "" && defGotifyURL != "" {
 		d.gotifyURL = defGotifyURL
-		// Store plain-text org token directly; gotifyPost reads gotifyTokenEnc via
-		// decryptStr, so we pre-populate a sentinel and override at call sites via
-		// d.orgGotifyToken instead of re-encrypting. Simpler: store as plaintext field.
 		d.orgGotifyToken = defGotifyToken
 	}
-	if needsNtfy && defNtfyURL != "" {
+	if d.ntfyURL == "" && defNtfyURL != "" {
 		d.ntfyURL = defNtfyURL
 		d.orgNtfyToken = defNtfyToken
-	}
-	if needsSlack && defSlackWebhook != "" {
-		d.orgSlackWebhook = defSlackWebhook
-	}
-	if needsEvents {
-		d.notifyEvents = []string{"plan_complete", "run_finished", "run_failed"}
 	}
 }
 
@@ -172,6 +180,22 @@ func (n *Notifier) slackWebhook(d *runData) string {
 		return n.decryptStr(d.stackID, d.slackWebhookEnc)
 	}
 	return d.orgSlackWebhook
+}
+
+// discordWebhook returns the effective Discord webhook URL.
+func (n *Notifier) discordWebhook(d *runData) string {
+	if len(d.discordWebhookEnc) > 0 {
+		return n.decryptStr(d.stackID, d.discordWebhookEnc)
+	}
+	return d.orgDiscordWebhook
+}
+
+// teamsWebhook returns the effective MS Teams webhook URL.
+func (n *Notifier) teamsWebhook(d *runData) string {
+	if len(d.teamsWebhookEnc) > 0 {
+		return n.decryptStr(d.stackID, d.teamsWebhookEnc)
+	}
+	return d.orgTeamsWebhook
 }
 
 func (n *Notifier) decryptStr(stackID string, enc []byte) string {
@@ -221,6 +245,12 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 	if contains(d.notifyEvents, "plan_complete") {
 		if slackURL := n.slackWebhook(d); slackURL != "" {
 			n.slackPost(ctx, slackURL, n.planSlackMessage(d))
+		}
+		if discordURL := n.discordWebhook(d); discordURL != "" {
+			n.discordPost(ctx, discordURL, n.planSlackMessage(d))
+		}
+		if teamsURL := n.teamsWebhook(d); teamsURL != "" {
+			n.teamsPost(ctx, teamsURL, n.planSlackMessage(d))
 		}
 		if d.gotifyURL != "" {
 			if tok := n.gotifyToken(d); tok != "" {
@@ -276,6 +306,12 @@ func (n *Notifier) sendRunPushNotifications(ctx context.Context, d *runData, suc
 
 	if slackURL := n.slackWebhook(d); slackURL != "" {
 		n.slackPost(ctx, slackURL, n.runSlackMessage(d, success))
+	}
+	if discordURL := n.discordWebhook(d); discordURL != "" {
+		n.discordPost(ctx, discordURL, n.runSlackMessage(d, success))
+	}
+	if teamsURL := n.teamsWebhook(d); teamsURL != "" {
+		n.teamsPost(ctx, teamsURL, n.runSlackMessage(d, success))
 	}
 	if d.gotifyURL != "" {
 		if tok := n.gotifyToken(d); tok != "" {
@@ -576,6 +612,166 @@ func (n *Notifier) slackPost(ctx context.Context, webhookURL, text string) {
 	if err := n.slackPostErr(ctx, webhookURL, text); err != nil {
 		slog.Warn("notify: slack post failed", "err", err)
 	}
+}
+
+// ── Discord ───────────────────────────────────────────────────────────────────
+
+func (n *Notifier) discordPost(ctx context.Context, webhookURL, text string) {
+	b, _ := json.Marshal(map[string]string{"content": text})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		slog.Warn("notify: discord request build failed", "err", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		slog.Warn("notify: discord post failed", "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		slog.Warn("notify: discord returned error", "status", resp.StatusCode)
+	}
+}
+
+// TestDiscord sends a test message to the Discord webhook configured on a stack.
+func (n *Notifier) TestDiscord(ctx context.Context, stackID string) error {
+	var discordWebhookEnc []byte
+	var stackName string
+	if err := n.pool.QueryRow(ctx,
+		`SELECT name, discord_webhook_enc FROM stacks WHERE id = $1`,
+		stackID,
+	).Scan(&stackName, &discordWebhookEnc); err != nil {
+		return fmt.Errorf("stack not found")
+	}
+	if len(discordWebhookEnc) == 0 {
+		return fmt.Errorf("no Discord webhook configured for this stack")
+	}
+	webhookURL := n.decryptStr(stackID, discordWebhookEnc)
+	if webhookURL == "" {
+		return fmt.Errorf("failed to decrypt Discord webhook")
+	}
+	b, _ := json.Marshal(map[string]string{"content": fmt.Sprintf("✅ **%s** — Crucible test notification. Your Discord webhook is working correctly.", stackName)})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("discord request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("discord returned HTTP %d — check webhook URL", resp.StatusCode)
+	}
+	return nil
+}
+
+// TestOrgDiscord sends a test message to the org-level Discord webhook.
+func (n *Notifier) TestOrgDiscord(ctx context.Context) error {
+	var webhookURL string
+	if err := n.pool.QueryRow(ctx,
+		`SELECT COALESCE(default_discord_webhook,'') FROM system_settings WHERE id = true`,
+	).Scan(&webhookURL); err != nil || webhookURL == "" {
+		return fmt.Errorf("no Discord webhook configured")
+	}
+	b, _ := json.Marshal(map[string]string{"content": "✅ **Crucible IAP** — Org-level test notification. Your Discord webhook is working correctly."})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("discord request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("discord returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// ── MS Teams ──────────────────────────────────────────────────────────────────
+
+func (n *Notifier) teamsPost(ctx context.Context, webhookURL, text string) {
+	b, _ := json.Marshal(map[string]string{"text": text})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		slog.Warn("notify: teams request build failed", "err", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		slog.Warn("notify: teams post failed", "err", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		slog.Warn("notify: teams returned error", "status", resp.StatusCode)
+	}
+}
+
+// TestTeams sends a test message to the MS Teams webhook configured on a stack.
+func (n *Notifier) TestTeams(ctx context.Context, stackID string) error {
+	var teamsWebhookEnc []byte
+	var stackName string
+	if err := n.pool.QueryRow(ctx,
+		`SELECT name, teams_webhook_enc FROM stacks WHERE id = $1`,
+		stackID,
+	).Scan(&stackName, &teamsWebhookEnc); err != nil {
+		return fmt.Errorf("stack not found")
+	}
+	if len(teamsWebhookEnc) == 0 {
+		return fmt.Errorf("no Teams webhook configured for this stack")
+	}
+	webhookURL := n.decryptStr(stackID, teamsWebhookEnc)
+	if webhookURL == "" {
+		return fmt.Errorf("failed to decrypt Teams webhook")
+	}
+	b, _ := json.Marshal(map[string]string{"text": fmt.Sprintf("✅ **%s** — Crucible test notification. Your Microsoft Teams webhook is working correctly.", stackName)})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("teams request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("teams returned HTTP %d — check webhook URL", resp.StatusCode)
+	}
+	return nil
+}
+
+// TestOrgTeams sends a test message to the org-level MS Teams webhook.
+func (n *Notifier) TestOrgTeams(ctx context.Context) error {
+	var webhookURL string
+	if err := n.pool.QueryRow(ctx,
+		`SELECT COALESCE(default_teams_webhook,'') FROM system_settings WHERE id = true`,
+	).Scan(&webhookURL); err != nil || webhookURL == "" {
+		return fmt.Errorf("no Teams webhook configured")
+	}
+	b, _ := json.Marshal(map[string]string{"text": "✅ **Crucible IAP** — Org-level test notification. Your Microsoft Teams webhook is working correctly."})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := n.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("teams request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("teams returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // ── Gotify ────────────────────────────────────────────────────────────────────

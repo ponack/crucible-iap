@@ -100,6 +100,8 @@ export interface Stack {
 	vcs_base_url?: string;
 	has_vcs_token: boolean;
 	has_slack_webhook: boolean;
+	has_discord_webhook: boolean;
+	has_teams_webhook: boolean;
 	gotify_url?: string;
 	has_gotify_token: boolean;
 	ntfy_url?: string;
@@ -359,7 +361,11 @@ export const stacks = {
 		testNtfy: (stackID: string) =>
 			request<null>(`/stacks/${stackID}/notifications/test-ntfy`, { method: 'POST' }),
 		testEmail: (stackID: string) =>
-			request<null>(`/stacks/${stackID}/notifications/test-email`, { method: 'POST' })
+			request<null>(`/stacks/${stackID}/notifications/test-email`, { method: 'POST' }),
+		testDiscord: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/notifications/test-discord`, { method: 'POST' }),
+		testTeams: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/notifications/test-teams`, { method: 'POST' })
 	},
 
 	integrations: {
@@ -667,6 +673,17 @@ export const audit = {
 		const res = await fetch(`${BASE}/audit/export?${p}`, { headers });
 		if (!res.ok) throw new Error(`Export failed: ${res.statusText}`);
 		return res.blob();
+	},
+	exportJSON: async (filters: { action?: string; resource_type?: string; actor_id?: string } = {}): Promise<Blob> => {
+		const p = new URLSearchParams({ format: 'json' });
+		if (filters.action) p.set('action', filters.action);
+		if (filters.resource_type) p.set('resource_type', filters.resource_type);
+		if (filters.actor_id) p.set('actor_id', filters.actor_id);
+		const headers: Record<string, string> = {};
+		if (auth.accessToken) headers['Authorization'] = `Bearer ${auth.accessToken}`;
+		const res = await fetch(`${BASE}/audit/export?${p}`, { headers });
+		if (!res.ok) throw new Error(`Export failed: ${res.statusText}`);
+		return res.blob();
 	}
 };
 
@@ -842,6 +859,9 @@ export interface SystemSettings {
 	ai_base_url?: string;
 	ai_api_key?: string; // write-only — never returned by GET, only sent on update
 	ai_api_key_set?: boolean;
+	default_discord_webhook: string;
+	default_teams_webhook: string;
+	approval_timeout_hours: number;
 	updated_at: string;
 }
 
@@ -1153,6 +1173,8 @@ export const system = {
 		testSlack: () => request<void>('/system/notifications/test-slack', { method: 'POST' }),
 		testGotify: () => request<void>('/system/notifications/test-gotify', { method: 'POST' }),
 		testNtfy: () => request<void>('/system/notifications/test-ntfy', { method: 'POST' }),
+		testDiscord: () => request<void>('/system/notifications/test-discord', { method: 'POST' }),
+		testTeams: () => request<void>('/system/notifications/test-teams', { method: 'POST' }),
 	},
 };
 

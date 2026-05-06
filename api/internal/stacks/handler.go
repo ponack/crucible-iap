@@ -82,6 +82,8 @@ type Stack struct {
 	VCSBaseURL           string     `json:"vcs_base_url,omitempty"`
 	HasVCSToken          bool       `json:"has_vcs_token"`
 	HasSlackWebhook      bool       `json:"has_slack_webhook"`
+	HasDiscordWebhook    bool       `json:"has_discord_webhook"`
+	HasTeamsWebhook      bool       `json:"has_teams_webhook"`
 	GotifyURL            string     `json:"gotify_url,omitempty"`
 	HasGotifyToken       bool       `json:"has_gotify_token"`
 	NtfyURL              string     `json:"ntfy_url,omitempty"`
@@ -420,6 +422,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift, s.webhook_secret,
 		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
 		       s.vcs_token_enc IS NOT NULL, s.slack_webhook_enc IS NOT NULL,
+		       s.discord_webhook_enc IS NOT NULL, s.teams_webhook_enc IS NOT NULL,
 		       COALESCE(s.gotify_url,''), s.gotify_token_enc IS NOT NULL,
 		       COALESCE(s.ntfy_url,''), s.ntfy_token_enc IS NOT NULL,
 		       COALESCE(s.notify_email,''),
@@ -448,7 +451,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
 		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL,
-		&s.HasVCSToken, &s.HasSlackWebhook, &s.GotifyURL, &s.HasGotifyToken, &s.NtfyURL, &s.HasNtfyToken,
+		&s.HasVCSToken, &s.HasSlackWebhook, &s.HasDiscordWebhook, &s.HasTeamsWebhook,
+		&s.GotifyURL, &s.HasGotifyToken, &s.NtfyURL, &s.HasNtfyToken,
 		&s.NotifyEmail, &s.NotifyEvents,
 		&s.VCSIntegrationID, &s.SecretIntegrationID,
 		&s.HasStateBackend, &s.StateBackendProvider,

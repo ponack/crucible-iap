@@ -188,6 +188,7 @@ func runWorker() {
 	worker.StartTTLScheduler(ctx, pool, cfg, q)
 	worker.StartScheduleRunner(ctx, pool, cfg, q)
 	worker.StartRetentionScheduler(ctx, pool, cfg, store)
+	worker.StartApprovalExpiry(ctx, pool)
 
 	slog.Info("starting crucible-iap worker",
 		"max_concurrent", cfg.RunnerMaxConcurrent,
