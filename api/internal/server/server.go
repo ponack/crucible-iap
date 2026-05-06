@@ -283,6 +283,8 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/stacks/:id/notifications/test-gotify", stackHandler.TestGotifyNotification, member)
 	api.POST("/stacks/:id/notifications/test-ntfy", stackHandler.TestNtfyNotification, member)
 	api.POST("/stacks/:id/notifications/test-email", stackHandler.TestEmailNotification, member)
+	api.POST("/stacks/:id/notifications/test-discord", stackHandler.TestDiscordNotification, member)
+	api.POST("/stacks/:id/notifications/test-teams", stackHandler.TestTeamsNotification, member)
 
 	// Variable sets
 	api.GET("/tags", tagHandler.List)
@@ -405,6 +407,8 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.POST("/system/notifications/test-slack", settingsHandler.TestOrgSlack, admin)
 	api.POST("/system/notifications/test-gotify", settingsHandler.TestOrgGotify, admin)
 	api.POST("/system/notifications/test-ntfy", settingsHandler.TestOrgNtfy, admin)
+	api.POST("/system/notifications/test-discord", settingsHandler.TestOrgDiscord, admin)
+	api.POST("/system/notifications/test-teams", settingsHandler.TestOrgTeams, admin)
 
 	// Module registry (management API)
 	api.GET("/registry/modules", registryHandler.List)

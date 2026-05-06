@@ -17,16 +17,18 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	var req struct {
-		VCSProvider  *string  `json:"vcs_provider"`  // nil = no change
-		VCSBaseURL   *string  `json:"vcs_base_url"`  // nil = no change; "" = clear
-		VCSToken     *string  `json:"vcs_token"`     // nil = no change; "" = clear
-		SlackWebhook *string  `json:"slack_webhook"` // nil = no change; "" = clear
-		GotifyURL    *string  `json:"gotify_url"`    // nil = no change; "" = clear
-		GotifyToken  *string  `json:"gotify_token"`  // nil = no change; "" = clear
-		NtfyURL      *string  `json:"ntfy_url"`      // nil = no change; "" = clear
-		NtfyToken    *string  `json:"ntfy_token"`    // nil = no change; "" = clear
-		NotifyEmail  *string  `json:"notify_email"`  // nil = no change; "" = clear
-		NotifyEvents []string `json:"notify_events"` // nil = no change; [] = clear all
+		VCSProvider    *string  `json:"vcs_provider"`    // nil = no change
+		VCSBaseURL     *string  `json:"vcs_base_url"`    // nil = no change; "" = clear
+		VCSToken       *string  `json:"vcs_token"`       // nil = no change; "" = clear
+		SlackWebhook   *string  `json:"slack_webhook"`   // nil = no change; "" = clear
+		DiscordWebhook *string  `json:"discord_webhook"` // nil = no change; "" = clear
+		TeamsWebhook   *string  `json:"teams_webhook"`   // nil = no change; "" = clear
+		GotifyURL      *string  `json:"gotify_url"`      // nil = no change; "" = clear
+		GotifyToken    *string  `json:"gotify_token"`    // nil = no change; "" = clear
+		NtfyURL        *string  `json:"ntfy_url"`        // nil = no change; "" = clear
+		NtfyToken      *string  `json:"ntfy_token"`      // nil = no change; "" = clear
+		NotifyEmail    *string  `json:"notify_email"`    // nil = no change; "" = clear
+		NotifyEvents   []string `json:"notify_events"`   // nil = no change; [] = clear all
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -56,6 +58,12 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 	if err := h.setEncryptedField(ctx, stackID, "slack_webhook_enc", req.SlackWebhook); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
 	}
+	if err := h.setEncryptedField(ctx, stackID, "discord_webhook_enc", req.DiscordWebhook); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
+	}
+	if err := h.setEncryptedField(ctx, stackID, "teams_webhook_enc", req.TeamsWebhook); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
+	}
 
 	h.setNullableStr(ctx, stackID, "gotify_url", req.GotifyURL)
 
@@ -63,28 +71,10 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
 	}
 
-	if req.NtfyURL != nil {
-		if *req.NtfyURL == "" {
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET ntfy_url = NULL WHERE id = $1`, stackID)
-		} else {
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET ntfy_url = $1 WHERE id = $2`, *req.NtfyURL, stackID)
-		}
-	}
+	h.setNullableStr(ctx, stackID, "ntfy_url", req.NtfyURL)
 
-	if req.NtfyToken != nil {
-		if *req.NtfyToken == "" {
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET ntfy_token_enc = NULL WHERE id = $1`, stackID)
-		} else {
-			enc, err := h.vault.Encrypt(stackID, []byte(*req.NtfyToken))
-			if err != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
-			}
-			_, _ = h.pool.Exec(c.Request().Context(),
-				`UPDATE stacks SET ntfy_token_enc = $1 WHERE id = $2`, enc, stackID)
-		}
+	if err := h.setEncryptedField(ctx, stackID, "ntfy_token_enc", req.NtfyToken); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")
 	}
 
 	h.setNullableStr(ctx, stackID, "notify_email", req.NotifyEmail)
@@ -166,6 +156,20 @@ func (h *Handler) TestGotifyNotification(c echo.Context) error {
 func (h *Handler) TestNtfyNotification(c echo.Context) error {
 	return h.testNotifier(c, func() error {
 		return h.notifier.TestNtfy(c.Request().Context(), c.Param("id"))
+	})
+}
+
+// TestDiscordNotification sends a test Discord message to verify the webhook is working.
+func (h *Handler) TestDiscordNotification(c echo.Context) error {
+	return h.testNotifier(c, func() error {
+		return h.notifier.TestDiscord(c.Request().Context(), c.Param("id"))
+	})
+}
+
+// TestTeamsNotification sends a test MS Teams message to verify the webhook is working.
+func (h *Handler) TestTeamsNotification(c echo.Context) error {
+	return h.testNotifier(c, func() error {
+		return h.notifier.TestTeams(c.Request().Context(), c.Param("id"))
 	})
 }
 

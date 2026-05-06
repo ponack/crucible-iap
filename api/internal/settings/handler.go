@@ -20,6 +20,8 @@ type OrgNotifier interface {
 	TestOrgSlack(ctx context.Context) error
 	TestOrgGotify(ctx context.Context) error
 	TestOrgNtfy(ctx context.Context) error
+	TestOrgDiscord(ctx context.Context) error
+	TestOrgTeams(ctx context.Context) error
 }
 
 var memoryLimitRe = regexp.MustCompile(`^(\d+)([mMgG])$`)
@@ -102,6 +104,9 @@ type Settings struct {
 	AIModel     string `json:"ai_model,omitempty"`
 	AIBaseURL   string `json:"ai_base_url,omitempty"`
 	AIAPIKeySet bool   `json:"ai_api_key_set"`
+	DefaultDiscordWebhook string `json:"default_discord_webhook"`
+	DefaultTeamsWebhook   string `json:"default_teams_webhook"`
+	ApprovalTimeoutHours  int    `json:"approval_timeout_hours"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
@@ -193,6 +198,9 @@ type settingsUpdateReq struct {
 	AIProvider *string `json:"ai_provider"`
 	AIModel    *string `json:"ai_model"`
 	AIBaseURL  *string `json:"ai_base_url"`
+	DefaultDiscordWebhook *string `json:"default_discord_webhook"`
+	DefaultTeamsWebhook   *string `json:"default_teams_webhook"`
+	ApprovalTimeoutHours  *int    `json:"approval_timeout_hours"`
 }
 
 func validateEnum(val *string, allowEmpty bool, choices ...string) error {
@@ -233,6 +241,9 @@ func validateSettingsUpdate(req *settingsUpdateReq) error {
 	}
 	if err := validateEnum(req.AIProvider, true, "anthropic", "openai"); err != nil {
 		return fmt.Errorf("ai_provider must be anthropic or openai")
+	}
+	if req.ApprovalTimeoutHours != nil && *req.ApprovalTimeoutHours < 0 {
+		return fmt.Errorf("approval_timeout_hours must be 0 (disabled) or positive")
 	}
 	return nil
 }
@@ -293,6 +304,9 @@ func (h *Handler) Update(c echo.Context) error {
 			ai_provider                      = COALESCE($42, ai_provider),
 			ai_model                         = COALESCE($43, ai_model),
 			ai_base_url                      = COALESCE($44, ai_base_url),
+			default_discord_webhook          = COALESCE($45, default_discord_webhook),
+			default_teams_webhook            = COALESCE($46, default_teams_webhook),
+			approval_timeout_hours           = COALESCE($47, approval_timeout_hours),
 			updated_at                       = now()
 		WHERE id = true
 	`, req.RunnerDefaultImage, req.RunnerMaxConcurrent, req.RunnerJobTimeoutMins,
@@ -310,7 +324,8 @@ func (h *Handler) Update(c echo.Context) error {
 		req.OIDCAudienceOverride,
 		req.InfracostAPIKey, req.InfracostPricingAPIEndpoint,
 		req.ScanTool, req.ScanSeverityThreshold,
-		req.AIAPIKey, req.AIProvider, req.AIModel, req.AIBaseURL)
+		req.AIAPIKey, req.AIProvider, req.AIModel, req.AIBaseURL,
+		req.DefaultDiscordWebhook, req.DefaultTeamsWebhook, req.ApprovalTimeoutHours)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -357,6 +372,9 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(ai_model, ''),
 		       COALESCE(ai_base_url, ''),
 		       (ai_api_key IS NOT NULL AND ai_api_key != ''),
+		       COALESCE(default_discord_webhook, ''),
+		       COALESCE(default_teams_webhook, ''),
+		       COALESCE(approval_timeout_hours, 0),
 		       updated_at
 		FROM system_settings WHERE id = true
 	`).Scan(&s.RunnerDefaultImage, &s.RunnerMaxConcurrent, &s.RunnerJobTimeoutMins,
@@ -375,6 +393,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		&s.InfracostPricingAPIEndpoint,
 		&s.ScanTool, &s.ScanSeverityThreshold,
 		&s.AIProvider, &s.AIModel, &s.AIBaseURL, &s.AIAPIKeySet,
+		&s.DefaultDiscordWebhook, &s.DefaultTeamsWebhook, &s.ApprovalTimeoutHours,
 		&s.UpdatedAt)
 	if err != nil {
 		// Table not yet migrated — return env-config defaults.
@@ -455,4 +474,12 @@ func (h *Handler) TestOrgGotify(c echo.Context) error {
 
 func (h *Handler) TestOrgNtfy(c echo.Context) error {
 	return h.testOrg(c, func() error { return h.notifier.TestOrgNtfy(c.Request().Context()) })
+}
+
+func (h *Handler) TestOrgDiscord(c echo.Context) error {
+	return h.testOrg(c, func() error { return h.notifier.TestOrgDiscord(c.Request().Context()) })
+}
+
+func (h *Handler) TestOrgTeams(c echo.Context) error {
+	return h.testOrg(c, func() error { return h.notifier.TestOrgTeams(c.Request().Context()) })
 }

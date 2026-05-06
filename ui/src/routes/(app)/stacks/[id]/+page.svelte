@@ -96,6 +96,8 @@
 	// Notifications
 	let notifVCSToken = $state('');
 	let notifSlackWebhook = $state('');
+	let notifDiscordWebhook = $state('');
+	let notifTeamsWebhook = $state('');
 	let notifGotifyURL = $state('');
 	let notifGotifyToken = $state('');
 	let notifNtfyURL = $state('');
@@ -106,6 +108,10 @@
 	let notifSaved = $state(false);
 	let testingSlack = $state(false);
 	let slackTestResult = $state<{ ok: boolean; msg: string } | null>(null);
+	let testingDiscord = $state(false);
+	let discordTestResult = $state<{ ok: boolean; msg: string } | null>(null);
+	let testingTeams = $state(false);
+	let teamsTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 	let testingGotify = $state(false);
 	let gotifyTestResult = $state<{ ok: boolean; msg: string } | null>(null);
 	let testingNtfy = $state(false);
@@ -539,15 +545,14 @@
 		savingNotif = true;
 		notifSaved = false;
 		try {
-			const data: { vcs_provider?: string; vcs_base_url?: string; vcs_token?: string; slack_webhook?: string; gotify_url?: string; gotify_token?: string; ntfy_url?: string; ntfy_token?: string; notify_email?: string; notify_events: string[] } = {
-				notify_events: notifEvents
-			};
+			const data: Record<string, unknown> = { notify_events: notifEvents };
 			if (notifVCSProvider) data.vcs_provider = notifVCSProvider;
 			data.vcs_base_url = notifVCSBaseURL; // allow clearing
 			if (notifVCSToken !== '') data.vcs_token = notifVCSToken;
 			if (notifSlackWebhook !== '') data.slack_webhook = notifSlackWebhook;
-			// Send Gotify URL always (allows clearing); send token only if provided
-			data.gotify_url = notifGotifyURL;
+			if (notifDiscordWebhook !== '') data.discord_webhook = notifDiscordWebhook;
+			if (notifTeamsWebhook !== '') data.teams_webhook = notifTeamsWebhook;
+			data.gotify_url = notifGotifyURL; // allow clearing
 			if (notifGotifyToken !== '') data.gotify_token = notifGotifyToken;
 			data.ntfy_url = notifNtfyURL; // allow clearing
 			if (notifNtfyToken !== '') data.ntfy_token = notifNtfyToken;
@@ -555,6 +560,8 @@
 			await stacks.notifications.update(stackID, data);
 			notifVCSToken = '';
 			notifSlackWebhook = '';
+			notifDiscordWebhook = '';
+			notifTeamsWebhook = '';
 			notifGotifyToken = '';
 			notifNtfyToken = '';
 			notifSaved = true;
@@ -576,6 +583,32 @@
 			slackTestResult = { ok: false, msg: (e as Error).message };
 		} finally {
 			testingSlack = false;
+		}
+	}
+
+	async function testDiscord() {
+		testingDiscord = true;
+		discordTestResult = null;
+		try {
+			await stacks.notifications.testDiscord(stackID);
+			discordTestResult = { ok: true, msg: 'Test message sent — check your Discord channel.' };
+		} catch (e) {
+			discordTestResult = { ok: false, msg: (e as Error).message };
+		} finally {
+			testingDiscord = false;
+		}
+	}
+
+	async function testTeams() {
+		testingTeams = true;
+		teamsTestResult = null;
+		try {
+			await stacks.notifications.testTeams(stackID);
+			teamsTestResult = { ok: true, msg: 'Test message sent — check your Teams channel.' };
+		} catch (e) {
+			teamsTestResult = { ok: false, msg: (e as Error).message };
+		} finally {
+			testingTeams = false;
 		}
 	}
 
@@ -1970,6 +2003,30 @@
 						autocomplete="new-password" />
 				</div>
 				<div class="space-y-1.5">
+					<label class="field-label" for="notif-discord">
+						Discord webhook URL
+						{#if stack.has_discord_webhook}
+							<span class="ml-1 text-green-500 text-xs">● set</span>
+						{/if}
+					</label>
+					<input id="notif-discord" class="field-input" type="password"
+						bind:value={notifDiscordWebhook}
+						placeholder={stack.has_discord_webhook ? 'Enter new value to replace' : 'https://discord.com/api/webhooks/…'}
+						autocomplete="new-password" />
+				</div>
+				<div class="space-y-1.5">
+					<label class="field-label" for="notif-teams">
+						Microsoft Teams webhook URL
+						{#if stack.has_teams_webhook}
+							<span class="ml-1 text-green-500 text-xs">● set</span>
+						{/if}
+					</label>
+					<input id="notif-teams" class="field-input" type="password"
+						bind:value={notifTeamsWebhook}
+						placeholder={stack.has_teams_webhook ? 'Enter new value to replace' : 'https://outlook.office.com/webhook/…'}
+						autocomplete="new-password" />
+				</div>
+				<div class="space-y-1.5">
 					<label class="field-label" for="notif-gotify-url">Gotify server URL</label>
 					<input id="notif-gotify-url" class="field-input"
 						bind:value={notifGotifyURL}
@@ -2049,6 +2106,18 @@
 						{testingSlack ? 'Sending…' : 'Test Slack'}
 					</button>
 				{/if}
+				{#if stack.has_discord_webhook}
+					<button type="button" onclick={testDiscord} disabled={testingDiscord}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						{testingDiscord ? 'Sending…' : 'Test Discord'}
+					</button>
+				{/if}
+				{#if stack.has_teams_webhook}
+					<button type="button" onclick={testTeams} disabled={testingTeams}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+						{testingTeams ? 'Sending…' : 'Test Teams'}
+					</button>
+				{/if}
 				{#if notifGotifyURL && stack.has_gotify_token}
 					<button type="button" onclick={testGotify} disabled={testingGotify}
 						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50">
@@ -2073,6 +2142,16 @@
 				{#if slackTestResult}
 					<span class="text-xs {slackTestResult.ok ? 'text-green-400' : 'text-red-400'}">
 						{slackTestResult.msg}
+					</span>
+				{/if}
+				{#if discordTestResult}
+					<span class="text-xs {discordTestResult.ok ? 'text-green-400' : 'text-red-400'}">
+						{discordTestResult.msg}
+					</span>
+				{/if}
+				{#if teamsTestResult}
+					<span class="text-xs {teamsTestResult.ok ? 'text-green-400' : 'text-red-400'}">
+						{teamsTestResult.msg}
 					</span>
 				{/if}
 				{#if gotifyTestResult}
