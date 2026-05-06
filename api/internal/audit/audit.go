@@ -112,10 +112,14 @@ func (h *Handler) List(c echo.Context) error {
 	return c.JSON(http.StatusOK, pagination.Wrap(events, p, total))
 }
 
-// Export streams all matching audit events as a CSV file download.
-// Supports the same ?action=, ?resource_type=, ?actor_id= filters as List.
+// Export streams all matching audit events as a CSV or JSON file download.
+// Supports ?format=csv (default) or ?format=json, plus the same filters as List.
 func (h *Handler) Export(c echo.Context) error {
 	orgID := c.Get("orgID")
+	format := c.QueryParam("format")
+	if format != "json" {
+		format = "csv"
+	}
 
 	conds := []string{"org_id = $1"}
 	args := []any{orgID}
@@ -145,6 +149,29 @@ func (h *Handler) Export(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 	defer rows.Close()
+
+	if format == "json" {
+		c.Response().Header().Set("Content-Disposition", `attachment; filename="audit-export.json"`)
+		c.Response().Header().Set("Content-Type", "application/json; charset=utf-8")
+		c.Response().WriteHeader(http.StatusOK)
+		enc := json.NewEncoder(c.Response())
+		_, _ = c.Response().Write([]byte("[\n"))
+		first := true
+		for rows.Next() {
+			var e Event
+			if err := rows.Scan(&e.ID, &e.OccurredAt, &e.ActorID, &e.ActorType,
+				&e.Action, &e.ResourceID, &e.ResourceType, &e.Context); err != nil {
+				break
+			}
+			if !first {
+				_, _ = c.Response().Write([]byte(",\n"))
+			}
+			first = false
+			_ = enc.Encode(e)
+		}
+		_, _ = c.Response().Write([]byte("]\n"))
+		return nil
+	}
 
 	c.Response().Header().Set("Content-Disposition", `attachment; filename="audit-export.csv"`)
 	c.Response().Header().Set("Content-Type", "text/csv; charset=utf-8")
