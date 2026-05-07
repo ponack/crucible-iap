@@ -469,6 +469,18 @@
 						{/each}
 					</tbody>
 				</table>
+
+				<!-- Next-step callout once at least one installation exists -->
+				<div class="rounded-lg bg-teal-950/40 border border-teal-800/40 px-4 py-3 mt-4">
+					<p class="text-sm font-medium text-teal-300 mb-1">Ready — now connect to stacks</p>
+					<p class="text-xs text-zinc-400">
+						Open any GitHub stack, scroll down to the
+						<strong class="text-zinc-200">GitHub App authentication</strong> section, and select
+						the installation whose account owns that stack's repository. The stack will use
+						short-lived App tokens for all VCS operations from then on.
+					</p>
+					<a href="/stacks" class="text-xs text-teal-400 hover:underline mt-2 inline-block">Go to stacks →</a>
+				</div>
 			{/if}
 		</div>
 	{/if}
