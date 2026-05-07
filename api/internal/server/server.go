@@ -262,6 +262,7 @@ func (s *Server) registerOrgRoutes(
 	api.PUT("/github-app", githubAppHandler.Register, admin)
 	api.DELETE("/github-app", githubAppHandler.Delete, admin)
 	api.POST("/github-app/install", githubAppHandler.InstallStart, admin)
+	api.POST("/github-app/sync", githubAppHandler.SyncInstallations, admin)
 	api.GET("/github-app/installations/:id/repos", githubAppHandler.ListInstallationRepos)
 	api.DELETE("/github-app/installations/:id", githubAppHandler.DeleteInstallation, admin)
 }

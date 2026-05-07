@@ -20,6 +20,7 @@
 	let webhookSecret = $state('');
 
 	let installing = $state(false);
+	let syncing = $state(false);
 
 	onMount(async () => {
 		try {
@@ -113,6 +114,23 @@
 		} catch (e) {
 			toast.error((e as Error).message);
 			installing = false;
+		}
+	}
+
+	async function syncInstallations() {
+		syncing = true;
+		try {
+			const { synced, added } = await githubApp.syncInstallations();
+			app = await githubApp.get();
+			if (added > 0) {
+				toast.success(`Synced ${synced} installation${synced === 1 ? '' : 's'} — ${added} new`);
+			} else {
+				toast.success(synced > 0 ? `${synced} installation${synced === 1 ? '' : 's'} already up to date` : 'No installations found on GitHub');
+			}
+		} catch (e) {
+			toast.error((e as Error).message);
+		} finally {
+			syncing = false;
 		}
 	}
 
@@ -431,7 +449,7 @@
 
 		<!-- Installations -->
 		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-			<div class="flex items-center justify-between mb-4">
+			<div class="flex items-start justify-between mb-4 gap-4">
 				<div>
 					<h3 class="text-base font-medium text-white">Installations</h3>
 					<p class="text-xs text-zinc-500 mt-0.5">
@@ -439,25 +457,41 @@
 						organization. A stack can only use an installation that has access to its repository.
 					</p>
 				</div>
-				<button
-					onclick={startInstall}
-					disabled={installing}
-					class="flex-shrink-0 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
-				>
-					{installing ? 'Redirecting…' : 'Install on GitHub'}
-				</button>
+				<div class="flex gap-2 flex-shrink-0">
+					<button
+						onclick={syncInstallations}
+						disabled={syncing}
+						class="text-sm px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-200 transition-colors"
+						title="Fetch installations directly from GitHub — use this if you installed the App before the Setup URL was configured"
+					>
+						{syncing ? 'Syncing…' : 'Sync from GitHub'}
+					</button>
+					<button
+						onclick={startInstall}
+						disabled={installing}
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+					>
+						{installing ? 'Redirecting…' : 'Install on GitHub'}
+					</button>
+				</div>
 			</div>
 			{#if app.installations.length === 0}
-				<div class="rounded-lg bg-zinc-800/40 border border-zinc-700/50 px-4 py-4 text-sm text-zinc-400">
-					<p class="font-medium text-zinc-300 mb-1">No installations yet</p>
-					<p>
+				<div class="rounded-lg bg-zinc-800/40 border border-zinc-700/50 px-4 py-4 text-sm space-y-2">
+					<p class="font-medium text-zinc-300">No installations recorded yet</p>
+					<p class="text-zinc-400">
 						Click <em>Install on GitHub</em> to install this App on a GitHub user account or
 						organization. GitHub will redirect back here when done.
 					</p>
-					<p class="mt-2 text-zinc-500">
-						After installing, select the installation from the
-						<em>GitHub App authentication</em> section on any stack's Settings tab to replace its
-						PAT with a short-lived App token.
+					<div class="rounded-md bg-amber-950/40 border border-amber-800/50 px-3 py-2 text-xs text-amber-300">
+						<strong>Important:</strong> the <em>Setup URL</em> above must be saved in your GitHub App
+						settings <em>before</em> clicking Install — that is how GitHub notifies Crucible of the
+						installation. If you already installed the App and nothing appeared here, paste the Setup
+						URL into your GitHub App settings and click <strong>Sync from GitHub</strong> to recover
+						the missed installation.
+					</div>
+					<p class="text-xs text-zinc-500">
+						After a successful install, select the installation from the
+						<em>GitHub App authentication</em> section on any stack's Settings tab.
 					</p>
 				</div>
 			{:else}

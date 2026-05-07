@@ -220,5 +220,7 @@ export const githubApp = {
 	listRepos: (installID: string) =>
 		request<GitHubInstallationRepo[]>(`/github-app/installations/${installID}/repos`),
 	deleteInstallation: (installID: string) =>
-		request<null>(`/github-app/installations/${installID}`, { method: 'DELETE' })
+		request<null>(`/github-app/installations/${installID}`, { method: 'DELETE' }),
+	syncInstallations: () =>
+		request<{ synced: number; added: number }>('/github-app/sync', { method: 'POST' })
 };
