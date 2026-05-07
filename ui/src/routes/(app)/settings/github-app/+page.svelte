@@ -202,6 +202,15 @@
 									blank for now — you will paste it from Crucible after registering in step 3.
 								</p>
 							</div>
+							<div>
+								<p class="text-xs font-semibold text-zinc-300 mb-1">Callback URL field</p>
+								<p class="text-xs text-zinc-400">
+									GitHub shows a <em>Callback URL</em> (User authorization callback URL) field.
+									Crucible does not use GitHub OAuth flows, so you can leave it blank or set it to
+									your Crucible base URL. It is <strong class="text-zinc-300">not</strong> the same
+									as the Setup URL — do not paste the Setup URL here.
+								</p>
+							</div>
 						</div>
 					</div>
 				</li>
@@ -381,6 +390,18 @@
 						reinstallations return to Crucible.
 					</p>
 				</div>
+
+				<!-- Callback URL clarification -->
+				<div class="rounded-lg bg-zinc-800/40 border border-zinc-700/40 px-3 py-2.5">
+					<p class="text-xs font-medium text-zinc-300 mb-0.5">What about the Callback URL field?</p>
+					<p class="text-xs text-zinc-500">
+						GitHub's App settings also has a <em>Callback URL</em> (labeled "User authorization
+						callback URL"). Crucible does not use GitHub's OAuth user-authorization flow, so this
+						field is not needed. If GitHub requires a value, set it to your Crucible base URL.
+						Do <strong class="text-zinc-300">not</strong> confuse it with the
+						<em>Setup URL</em> above — they are separate fields that serve different purposes.
+					</p>
+				</div>
 			</div>
 
 			<!-- Permissions + events reminder -->
@@ -469,6 +490,18 @@
 						{/each}
 					</tbody>
 				</table>
+
+				<!-- Next-step callout once at least one installation exists -->
+				<div class="rounded-lg bg-teal-950/40 border border-teal-800/40 px-4 py-3 mt-4">
+					<p class="text-sm font-medium text-teal-300 mb-1">Ready — now connect to stacks</p>
+					<p class="text-xs text-zinc-400">
+						Open any GitHub stack, scroll down to the
+						<strong class="text-zinc-200">GitHub App authentication</strong> section, and select
+						the installation whose account owns that stack's repository. The stack will use
+						short-lived App tokens for all VCS operations from then on.
+					</p>
+					<a href="/stacks" class="text-xs text-teal-400 hover:underline mt-2 inline-block">Go to stacks →</a>
+				</div>
 			{/if}
 		</div>
 	{/if}

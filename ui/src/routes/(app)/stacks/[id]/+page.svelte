@@ -2200,6 +2200,13 @@
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Integrations</h2>
 		<p class="text-xs text-zinc-500">Assign org-level integrations to this stack. Manage credentials in <a href="/settings/integrations" class="text-teal-400 hover:text-teal-300">Settings → Integrations</a>.</p>
+		{#if ghApp && ghApp.installations.length > 0 && !stack?.github_installation_uuid}
+			<div class="rounded-lg bg-zinc-800/50 border border-zinc-700/50 px-3 py-2 text-xs text-zinc-400">
+				A <strong class="text-zinc-200">GitHub App</strong> is registered for this org —
+				<a href="#github-app-auth" class="text-teal-400 hover:underline">switch to App authentication ↓</a>
+				to replace per-stack tokens with short-lived App tokens.
+			</div>
+		{/if}
 
 		<div class="border border-zinc-800 rounded-xl p-5 space-y-4">
 			<div class="grid grid-cols-2 gap-4">
@@ -2237,7 +2244,7 @@
 	</section>
 
 	<!-- GitHub App authentication -->
-	<section class="space-y-3">
+	<section id="github-app-auth" class="space-y-3">
 		<div class="flex items-center justify-between">
 			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">GitHub App authentication</h2>
 			{#if stack?.github_installation_uuid}
