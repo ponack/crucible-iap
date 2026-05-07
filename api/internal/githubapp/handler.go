@@ -4,7 +4,10 @@ package githubapp
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,13 +16,34 @@ import (
 	"github.com/ponack/crucible-iap/internal/vault"
 )
 
-type Handler struct {
-	pool  *pgxpool.Pool
-	vault *vault.Vault
+// HandlerConfig carries the application-level config the GitHub App handler
+// needs beyond the DB pool and vault: the canonical base URL (used to build
+// install + webhook URLs we hand to GitHub) and the master secret key (used
+// to sign install state and verify webhook secrets).
+type HandlerConfig struct {
+	BaseURL   string
+	SecretKey string
 }
 
-func NewHandler(pool *pgxpool.Pool, v *vault.Vault) *Handler {
-	return &Handler{pool: pool, vault: v}
+type Handler struct {
+	pool    *pgxpool.Pool
+	vault   *vault.Vault
+	cfg     HandlerConfig
+	service *Service
+}
+
+func NewHandler(pool *pgxpool.Pool, v *vault.Vault, cfg HandlerConfig) *Handler {
+	return &Handler{
+		pool:    pool,
+		vault:   v,
+		cfg:     cfg,
+		service: NewService(pool, v),
+	}
+}
+
+func jsonMust(v any) json.RawMessage {
+	b, _ := json.Marshal(v)
+	return b
 }
 
 // registerRequest is the body posted by the UI. Each org may have at most
@@ -57,6 +81,24 @@ func (r *registerRequest) validate() error {
 	return nil
 }
 
+// AppView extends App with computed URLs the operator needs when wiring up
+// the GitHub App on github.com (webhook URL, setup callback URL).
+type AppView struct {
+	App
+	WebhookURL string         `json:"webhook_url"`
+	SetupURL   string         `json:"setup_url"`
+	Installs   []Installation `json:"installations"`
+}
+
+// Installation is the API view of a recorded github_app_installations row.
+type Installation struct {
+	ID             string `json:"id"`
+	InstallationID int64  `json:"installation_id"`
+	AccountLogin   string `json:"account_login"`
+	AccountType    string `json:"account_type"`
+	CreatedAt      string `json:"created_at"`
+}
+
 // Get returns the registered app for the caller's org. Secrets never returned.
 func (h *Handler) Get(c echo.Context) error {
 	orgID := c.Get("orgID").(string)
@@ -73,7 +115,30 @@ func (h *Handler) Get(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load github app")
 	}
-	return c.JSON(http.StatusOK, a)
+
+	view := AppView{
+		App:        a,
+		WebhookURL: fmt.Sprintf("%s/api/v1/github-webhooks/%s", h.cfg.BaseURL, a.ID),
+		SetupURL:   fmt.Sprintf("%s/api/v1/github-app/install/callback", h.cfg.BaseURL),
+		Installs:   []Installation{},
+	}
+
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT id, installation_id, account_login, account_type, created_at
+		FROM github_app_installations
+		WHERE app_uuid = $1
+		ORDER BY created_at DESC
+	`, a.ID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var inst Installation
+			if err := rows.Scan(&inst.ID, &inst.InstallationID, &inst.AccountLogin, &inst.AccountType, &inst.CreatedAt); err == nil {
+				view.Installs = append(view.Installs, inst)
+			}
+		}
+	}
+	return c.JSON(http.StatusOK, view)
 }
 
 // Register creates or replaces the org's GitHub App registration.
@@ -144,6 +209,138 @@ func (h *Handler) Register(c echo.Context) error {
 		OrgID: orgID, IPAddress: c.RealIP(), Context: ctx,
 	})
 	return c.JSON(http.StatusOK, a)
+}
+
+// InstallStart returns the github.com URL the operator's browser must navigate
+// to in order to install the app. We return JSON instead of issuing a redirect
+// because the API requires bearer auth that browsers can't carry on direct
+// navigation; the UI fetches the URL and sets window.location.
+func (h *Handler) InstallStart(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+
+	var appUUID, slug string
+	err := h.pool.QueryRow(c.Request().Context(),
+		`SELECT id, slug FROM github_apps WHERE org_id = $1`, orgID,
+	).Scan(&appUUID, &slug)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusBadRequest, "no github app registered — register one first in Settings → GitHub App")
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load github app")
+	}
+
+	state, err := SignInstallState(h.cfg.SecretKey, appUUID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to sign state")
+	}
+	target := fmt.Sprintf("https://github.com/apps/%s/installations/new?state=%s",
+		url.PathEscape(slug), url.QueryEscape(state))
+	return c.JSON(http.StatusOK, map[string]string{"install_url": target})
+}
+
+// InstallCallback is the public endpoint GitHub redirects the user's browser to
+// after they install the app. We verify the state, look up the app, and record
+// the installation_id. Authentication is implicit via the signed state.
+func (h *Handler) InstallCallback(c echo.Context) error {
+	state := c.QueryParam("state")
+	installationIDStr := c.QueryParam("installation_id")
+	setupAction := c.QueryParam("setup_action")
+
+	if state == "" || installationIDStr == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "missing state or installation_id")
+	}
+	appUUID, err := VerifyInstallState(h.cfg.SecretKey, state)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid state: "+err.Error())
+	}
+	installationID, err := strconv.ParseInt(installationIDStr, 10, 64)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "installation_id must be numeric")
+	}
+
+	// Confirm the app still exists.
+	var orgID string
+	if err := h.pool.QueryRow(c.Request().Context(),
+		`SELECT org_id FROM github_apps WHERE id = $1`, appUUID,
+	).Scan(&orgID); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "github app not found")
+	}
+
+	// Token-mint requires the row to exist (loadAppByInstallation looks it up).
+	// Insert a placeholder first, then enrich account metadata if the fetch succeeds.
+	_, _ = h.pool.Exec(c.Request().Context(), `
+		INSERT INTO github_app_installations (app_uuid, installation_id, account_login, account_type)
+		VALUES ($1, $2, '', 'Unknown')
+		ON CONFLICT (installation_id) DO NOTHING
+	`, appUUID, installationID)
+	_ = h.service.RefreshInstallationMetadata(c.Request().Context(), installationID)
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		Action:       "github_app.installed",
+		ResourceType: "github_app_installation",
+		ResourceID:   appUUID,
+		OrgID:        orgID,
+		IPAddress:    c.RealIP(),
+		Context:      jsonMust(map[string]any{"installation_id": installationID, "setup_action": setupAction}),
+	})
+
+	// Bounce back into the UI so the operator sees the new installation listed.
+	return c.Redirect(http.StatusFound, h.cfg.BaseURL+"/settings/github-app?installed=1")
+}
+
+// ListInstallationRepos returns the repos accessible to a recorded installation.
+// Used by the stack create/edit form (PR 3) to render a repo picker.
+func (h *Handler) ListInstallationRepos(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	instUUID := c.Param("id")
+
+	var installationID int64
+	err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT i.installation_id
+		FROM github_app_installations i
+		JOIN github_apps a ON a.id = i.app_uuid
+		WHERE i.id = $1 AND a.org_id = $2
+	`, instUUID, orgID).Scan(&installationID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.ErrNotFound
+	}
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load installation")
+	}
+
+	repos, err := h.service.ListRepos(c.Request().Context(), installationID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadGateway, "failed to list repos: "+err.Error())
+	}
+	return c.JSON(http.StatusOK, repos)
+}
+
+// DeleteInstallation removes a recorded installation. Stack references reset to NULL.
+func (h *Handler) DeleteInstallation(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	userID := c.Get("userID").(string)
+	instUUID := c.Param("id")
+
+	res, err := h.pool.Exec(c.Request().Context(), `
+		DELETE FROM github_app_installations
+		WHERE id = $1
+		  AND app_uuid IN (SELECT id FROM github_apps WHERE org_id = $2)
+	`, instUUID, orgID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to delete installation")
+	}
+	if res.RowsAffected() == 0 {
+		return echo.ErrNotFound
+	}
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID:      userID,
+		Action:       "github_app.installation_deleted",
+		ResourceID:   instUUID,
+		ResourceType: "github_app_installation",
+		OrgID:        orgID,
+		IPAddress:    c.RealIP(),
+	})
+	return c.NoContent(http.StatusNoContent)
 }
 
 // Delete removes the registration. Cascades to installations; stack

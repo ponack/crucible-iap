@@ -142,7 +142,10 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	workerPoolHandler := workerpools.NewHandler(s.pool)
 	policyGitHandler := policygit.NewHandler(s.pool, q)
 	tagHandler := tags.NewHandler(s.pool)
-	githubAppHandler := githubapp.NewHandler(s.pool, v)
+	githubAppHandler := githubapp.NewHandler(s.pool, v, githubapp.HandlerConfig{
+		BaseURL:   s.cfg.BaseURL,
+		SecretKey: s.cfg.SecretKey,
+	})
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -151,7 +154,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	if oidc != nil {
 		oidc.RegisterRoutes(e)
 	}
-	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler)
+	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler, githubAppHandler)
 	api := s.registerAuthGroup(e)
 	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, githubAppHandler, member, admin)
 	s.registerPolicyRoutes(api, policyHandler, policyGitHandler, member, admin)
@@ -172,6 +175,7 @@ func (s *Server) registerPublicRoutes(
 	webhookHandler *webhooks.Handler,
 	policyGitHandler *policygit.Handler,
 	stateHandler *state.Handler,
+	githubAppHandler *githubapp.Handler,
 ) {
 	e.GET("/.well-known/terraform.json", s.handleTerraformDiscovery)
 	e.GET("/health", s.handleHealth)
@@ -198,6 +202,10 @@ func (s *Server) registerPublicRoutes(
 	// Webhook ingestion — authenticated internally via HMAC/token
 	e.POST("/api/v1/webhooks/:stackID", webhookHandler.Receive)
 	e.POST("/api/v1/policy-git-webhooks/:id", policyGitHandler.ReceiveWebhook)
+	e.POST("/api/v1/github-webhooks/:appUUID", githubAppHandler.ReceiveWebhook)
+
+	// GitHub App install callback — public; auth via signed state in query string.
+	e.GET("/api/v1/github-app/install/callback", githubAppHandler.InstallCallback)
 
 	// Terraform state backend (HTTP Basic auth per stack token)
 	tfState := e.Group("/api/v1/state/:stackID")
@@ -253,6 +261,9 @@ func (s *Server) registerOrgRoutes(
 	api.GET("/github-app", githubAppHandler.Get)
 	api.PUT("/github-app", githubAppHandler.Register, admin)
 	api.DELETE("/github-app", githubAppHandler.Delete, admin)
+	api.POST("/github-app/install", githubAppHandler.InstallStart, admin)
+	api.GET("/github-app/installations/:id/repos", githubAppHandler.ListInstallationRepos)
+	api.DELETE("/github-app/installations/:id", githubAppHandler.DeleteInstallation, admin)
 }
 
 func (s *Server) registerPolicyRoutes(
