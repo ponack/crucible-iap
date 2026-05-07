@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { githubApp, type GitHubApp } from '$lib/api/client';
+	import { page } from '$app/state';
+	import { githubApp, type GitHubAppView } from '$lib/api/client';
 	import { toast } from '$lib/stores/toasts.svelte';
 
-	let app = $state<GitHubApp | null>(null);
+	let app = $state<GitHubAppView | null>(null);
 	let loading = $state(true);
 
 	let showForm = $state(false);
@@ -18,6 +19,8 @@
 	let privateKey = $state('');
 	let webhookSecret = $state('');
 
+	let installing = $state(false);
+
 	onMount(async () => {
 		try {
 			app = await githubApp.get();
@@ -25,6 +28,13 @@
 			toast.error((e as Error).message);
 		} finally {
 			loading = false;
+		}
+		if (page.url.searchParams.get('installed') === '1') {
+			toast.success('GitHub App installed');
+			// Strip the query param so a refresh doesn't re-fire the toast
+			const url = new URL(page.url);
+			url.searchParams.delete('installed');
+			window.history.replaceState({}, '', url.toString());
 		}
 	});
 
@@ -65,7 +75,7 @@
 		}
 		saving = true;
 		try {
-			app = await githubApp.register({
+			await githubApp.register({
 				app_id: numAppID,
 				slug,
 				name,
@@ -74,6 +84,8 @@
 				private_key: privateKey,
 				webhook_secret: webhookSecret
 			});
+			// Refetch the view so we get webhook_url, setup_url, installations
+			app = await githubApp.get();
 			toast.success('GitHub App registered');
 			showForm = false;
 		} catch (e) {
@@ -92,6 +104,37 @@
 			toast.success('GitHub App removed');
 		} catch (e) {
 			toast.error((e as Error).message);
+		}
+	}
+
+	async function startInstall() {
+		installing = true;
+		try {
+			const { install_url } = await githubApp.startInstall();
+			window.location.href = install_url;
+		} catch (e) {
+			toast.error((e as Error).message);
+			installing = false;
+		}
+	}
+
+	async function deleteInstallation(installID: string, login: string) {
+		if (!confirm(`Remove the installation on ${login}? Stacks using it will detach.`)) return;
+		try {
+			await githubApp.deleteInstallation(installID);
+			app = await githubApp.get();
+			toast.success('Installation removed');
+		} catch (e) {
+			toast.error((e as Error).message);
+		}
+	}
+
+	async function copy(text: string, label: string) {
+		try {
+			await navigator.clipboard.writeText(text);
+			toast.success(`${label} copied`);
+		} catch {
+			toast.error('Copy failed — your browser may block clipboard access');
 		}
 	}
 </script>
@@ -121,8 +164,15 @@
 						class="text-teal-400 hover:underline">github.com/settings/apps/new</a
 					> (or your enterprise instance).
 				</li>
-				<li>Generate a private key and copy the App ID, Client ID, Client Secret, and Webhook Secret.</li>
+				<li>
+					Generate a private key and copy the App ID, Client ID, Client Secret, and Webhook
+					Secret.
+				</li>
 				<li>Paste them below and click Register.</li>
+				<li>
+					After registering, copy the webhook URL and setup callback URL Crucible shows you back
+					into your GitHub App settings.
+				</li>
 			</ol>
 			<button
 				onclick={startNew}
@@ -132,7 +182,7 @@
 			</button>
 		</div>
 	{:else if app && !showForm}
-		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-3">
+		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4 mb-6">
 			<div class="flex items-start justify-between">
 				<div>
 					<h2 class="text-base font-medium text-white">{app.name}</h2>
@@ -163,6 +213,102 @@
 				<dt class="text-zinc-500">Updated</dt>
 				<dd class="text-zinc-200">{new Date(app.updated_at).toLocaleString()}</dd>
 			</dl>
+		</div>
+
+		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4 mb-6">
+			<h3 class="text-base font-medium text-white">Wire these URLs into your GitHub App</h3>
+			<p class="text-sm text-zinc-400">
+				In your app's settings on github.com, set the following two URLs. The webhook URL and setup
+				URL are derived from CRUCIBLE_BASE_URL.
+			</p>
+
+			<div>
+				<label class="block text-xs text-zinc-500 mb-1" for="webhook-url">Webhook URL</label>
+				<div class="flex gap-2">
+					<input
+						id="webhook-url"
+						readonly
+						value={app.webhook_url}
+						class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 font-mono"
+					/>
+					<button
+						onclick={() => copy(app!.webhook_url, 'Webhook URL')}
+						class="text-sm px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+					>
+						Copy
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<label class="block text-xs text-zinc-500 mb-1" for="setup-url">Setup URL (post-install callback)</label>
+				<div class="flex gap-2">
+					<input
+						id="setup-url"
+						readonly
+						value={app.setup_url}
+						class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 font-mono"
+					/>
+					<button
+						onclick={() => copy(app!.setup_url, 'Setup URL')}
+						class="text-sm px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+					>
+						Copy
+					</button>
+				</div>
+				<p class="text-xs text-zinc-500 mt-1">
+					Enable “Redirect on update” in the GitHub App settings so reinstalls return here.
+				</p>
+			</div>
+		</div>
+
+		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+			<div class="flex items-center justify-between mb-4">
+				<h3 class="text-base font-medium text-white">Installations</h3>
+				<button
+					onclick={startInstall}
+					disabled={installing}
+					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+				>
+					{installing ? 'Redirecting…' : 'Install on GitHub'}
+				</button>
+			</div>
+			{#if app.installations.length === 0}
+				<p class="text-sm text-zinc-500">
+					No installations yet. Click <em>Install on GitHub</em> to add one. Stacks can pick an
+					installation in the next release.
+				</p>
+			{:else}
+				<table class="w-full text-sm">
+					<thead>
+						<tr class="text-left text-xs text-zinc-500 uppercase tracking-widest">
+							<th class="pb-2 font-medium">Account</th>
+							<th class="pb-2 font-medium">Type</th>
+							<th class="pb-2 font-medium">Installation ID</th>
+							<th class="pb-2 font-medium">Installed</th>
+							<th class="pb-2"></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each app.installations as inst (inst.id)}
+							<tr class="border-t border-zinc-800">
+								<td class="py-2 text-zinc-200">{inst.account_login || '—'}</td>
+								<td class="py-2 text-zinc-400">{inst.account_type}</td>
+								<td class="py-2 text-zinc-400 font-mono text-xs">{inst.installation_id}</td>
+								<td class="py-2 text-zinc-400">{new Date(inst.created_at).toLocaleDateString()}</td>
+								<td class="py-2 text-right">
+									<button
+										onclick={() => deleteInstallation(inst.id, inst.account_login || 'this account')}
+										class="text-xs text-red-400 hover:text-red-300"
+									>
+										Remove
+									</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
 		</div>
 	{/if}
 

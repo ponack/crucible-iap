@@ -176,6 +176,20 @@ export interface GitHubApp {
 	updated_at: string;
 }
 
+export interface GitHubAppInstallation {
+	id: string;
+	installation_id: number;
+	account_login: string;
+	account_type: string;
+	created_at: string;
+}
+
+export interface GitHubAppView extends GitHubApp {
+	webhook_url: string;
+	setup_url: string;
+	installations: GitHubAppInstallation[];
+}
+
 export interface GitHubAppRegisterRequest {
 	app_id: number;
 	slug: string;
@@ -186,9 +200,25 @@ export interface GitHubAppRegisterRequest {
 	webhook_secret: string;
 }
 
+export interface GitHubInstallationRepo {
+	id: number;
+	name: string;
+	full_name: string;
+	html_url: string;
+	clone_url: string;
+	private: boolean;
+	default_branch: string;
+}
+
 export const githubApp = {
-	get: () => request<GitHubApp | null>('/github-app'),
+	get: () => request<GitHubAppView | null>('/github-app'),
 	register: (body: GitHubAppRegisterRequest) =>
 		request<GitHubApp>('/github-app', { method: 'PUT', body: JSON.stringify(body) }),
-	delete: () => request<null>('/github-app', { method: 'DELETE' })
+	delete: () => request<null>('/github-app', { method: 'DELETE' }),
+	startInstall: () =>
+		request<{ install_url: string }>('/github-app/install', { method: 'POST' }),
+	listRepos: (installID: string) =>
+		request<GitHubInstallationRepo[]>(`/github-app/installations/${installID}/repos`),
+	deleteInstallation: (installID: string) =>
+		request<null>(`/github-app/installations/${installID}`, { method: 'DELETE' })
 };
