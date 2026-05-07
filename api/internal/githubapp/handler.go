@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -390,7 +392,9 @@ func (h *Handler) SyncInstallations(c echo.Context) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return echo.NewHTTPError(http.StatusBadGateway, "GitHub API returned "+resp.Status)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return echo.NewHTTPError(http.StatusBadGateway,
+			fmt.Sprintf("GitHub API returned %s: %s", resp.Status, strings.TrimSpace(string(body))))
 	}
 
 	var raw []struct {

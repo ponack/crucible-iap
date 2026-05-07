@@ -123,9 +123,11 @@
 			const { synced, added } = await githubApp.syncInstallations();
 			app = await githubApp.get();
 			if (added > 0) {
-				toast.success(`Synced ${synced} installation${synced === 1 ? '' : 's'} — ${added} new`);
+				toast.success(`Found ${added} new installation${added === 1 ? '' : 's'} on GitHub`);
+			} else if (synced > 0) {
+				toast.success(`${synced} installation${synced === 1 ? '' : 's'} already up to date`);
 			} else {
-				toast.success(synced > 0 ? `${synced} installation${synced === 1 ? '' : 's'} already up to date` : 'No installations found on GitHub');
+				toast.error('No installations found on GitHub — confirm the App is installed at github.com/settings/installations');
 			}
 		} catch (e) {
 			toast.error((e as Error).message);
