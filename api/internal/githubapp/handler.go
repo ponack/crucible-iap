@@ -353,6 +353,72 @@ func (h *Handler) DeleteInstallation(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// SyncInstallations calls the GitHub API (GET /app/installations) using the
+// app's JWT and upserts any installations that are not already recorded in the
+// DB. This recovers from the common case where the Setup URL was not wired
+// into the GitHub App settings before the user first clicked Install.
+func (h *Handler) SyncInstallations(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+
+	var appUUID string
+	appID, pem, err := h.service.loadAppByOrgID(c.Request().Context(), orgID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "no github app registered — register one first")
+	}
+	if err := h.pool.QueryRow(c.Request().Context(),
+		`SELECT id FROM github_apps WHERE org_id = $1`, orgID,
+	).Scan(&appUUID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load app")
+	}
+
+	token, err := MintJWT(pem, appID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to mint JWT")
+	}
+
+	req, err := http.NewRequestWithContext(c.Request().Context(), http.MethodGet,
+		githubAPIBase+"/app/installations", nil)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to build request")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := h.service.client.Do(req)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadGateway, "GitHub API unreachable: "+err.Error())
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return echo.NewHTTPError(http.StatusBadGateway, "GitHub API returned "+resp.Status)
+	}
+
+	var raw []struct {
+		ID      int64 `json:"id"`
+		Account struct {
+			Login string `json:"login"`
+			Type  string `json:"type"`
+		} `json:"account"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to decode GitHub response")
+	}
+
+	added := 0
+	for _, inst := range raw {
+		tag, err := h.pool.Exec(c.Request().Context(), `
+			INSERT INTO github_app_installations (app_uuid, installation_id, account_login, account_type)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (installation_id) DO NOTHING
+		`, appUUID, inst.ID, inst.Account.Login, inst.Account.Type)
+		if err == nil && tag.RowsAffected() > 0 {
+			added++
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{"synced": len(raw), "added": added})
+}
+
 // Delete removes the registration. Cascades to installations; stack
 // references reset to NULL via ON DELETE SET NULL.
 func (h *Handler) Delete(c echo.Context) error {

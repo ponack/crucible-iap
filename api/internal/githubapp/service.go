@@ -52,6 +52,25 @@ func (s *Service) loadAppByID(ctx context.Context, appUUID string) (int64, []byt
 	return appID, pem, nil
 }
 
+// loadAppByOrgID returns the app's numeric appID and decrypted private-key PEM
+// for the org's registered GitHub App.
+func (s *Service) loadAppByOrgID(ctx context.Context, orgID string) (int64, []byte, error) {
+	var appUUID string
+	var appID int64
+	var keyEnc []byte
+	err := s.pool.QueryRow(ctx, `
+		SELECT id, app_id, private_key_enc FROM github_apps WHERE org_id = $1
+	`, orgID).Scan(&appUUID, &appID, &keyEnc)
+	if err != nil {
+		return 0, nil, fmt.Errorf("load github app for org: %w", err)
+	}
+	pem, err := s.vault.DecryptFor(vaultContext(appUUID), keyEnc)
+	if err != nil {
+		return 0, nil, fmt.Errorf("decrypt private key: %w", err)
+	}
+	return appID, pem, nil
+}
+
 // loadAppByInstallation looks up the parent app for an installation row.
 func (s *Service) loadAppByInstallation(ctx context.Context, installationID int64) (string, int64, []byte, error) {
 	var appUUID string
