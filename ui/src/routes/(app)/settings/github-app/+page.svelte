@@ -31,7 +31,6 @@
 		}
 		if (page.url.searchParams.get('installed') === '1') {
 			toast.success('GitHub App installed');
-			// Strip the query param so a refresh doesn't re-fire the toast
 			const url = new URL(page.url);
 			url.searchParams.delete('installed');
 			window.history.replaceState({}, '', url.toString());
@@ -84,7 +83,6 @@
 				private_key: privateKey,
 				webhook_secret: webhookSecret
 			});
-			// Refetch the view so we get webhook_url, setup_url, installations
 			app = await githubApp.get();
 			toast.success('GitHub App registered');
 			showForm = false;
@@ -144,36 +142,147 @@
 		<h1 class="text-xl font-semibold text-white">GitHub App</h1>
 		<p class="text-sm text-zinc-400 mt-1">
 			Register one GitHub App per organization to replace per-stack personal access tokens and
-			webhook secrets. Short-lived installation tokens are minted automatically; one webhook URL
-			covers every connected repo.
+			webhook secrets. Crucible mints short-lived installation tokens automatically — no per-stack
+			secrets to rotate, and a single global webhook URL covers every connected repository.
 		</p>
 	</div>
 
 	{#if loading}
 		<p class="text-sm text-zinc-500">Loading…</p>
 	{:else if !app && !showForm}
-		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-			<p class="text-sm text-zinc-300 mb-4">No GitHub App registered.</p>
-			<ol class="list-decimal list-inside text-sm text-zinc-400 space-y-1 mb-4">
-				<li>
-					Create a GitHub App at
-					<a
-						href="https://github.com/settings/apps/new"
-						target="_blank"
-						rel="noopener"
-						class="text-teal-400 hover:underline">github.com/settings/apps/new</a
-					> (or your enterprise instance).
+		<!-- Setup guide -->
+		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-6">
+			<div>
+				<p class="text-sm font-medium text-zinc-200 mb-1">Setup overview</p>
+				<p class="text-sm text-zinc-400">
+					Complete these steps once. After setup, every stack can use App-based authentication
+					without any per-stack webhook or token configuration.
+				</p>
+			</div>
+
+			<ol class="space-y-5 text-sm">
+				<!-- Step 1 -->
+				<li class="flex gap-3">
+					<span class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-semibold">1</span>
+					<div class="space-y-2 min-w-0">
+						<p class="text-zinc-200 font-medium">Create the GitHub App on GitHub</p>
+						<p class="text-zinc-400">
+							Go to
+							<a
+								href="https://github.com/settings/apps/new"
+								target="_blank"
+								rel="noopener"
+								class="text-teal-400 hover:underline">github.com/settings/apps/new</a
+							>
+							(or <code class="text-zinc-300 bg-zinc-800 px-1 rounded text-xs">https://[host]/settings/apps/new</code>
+							on GitHub Enterprise).
+						</p>
+						<div class="rounded-lg bg-zinc-800/60 border border-zinc-700/50 px-4 py-3 space-y-3">
+							<div>
+								<p class="text-xs font-semibold text-zinc-300 mb-1">Repository permissions required</p>
+								<ul class="text-xs text-zinc-400 space-y-1">
+									<li>• Contents → <span class="text-zinc-200 font-medium">Read-only</span> — clone repositories during runs</li>
+									<li>• Metadata → <span class="text-zinc-200 font-medium">Read-only</span> — required for all GitHub Apps</li>
+									<li>• Pull requests → <span class="text-zinc-200 font-medium">Read & write</span> — post plan summary comments on PRs</li>
+									<li>• Commit statuses → <span class="text-zinc-200 font-medium">Read & write</span> — report plan/apply result as a commit status check</li>
+								</ul>
+							</div>
+							<div>
+								<p class="text-xs font-semibold text-zinc-300 mb-1">Webhook events to subscribe</p>
+								<p class="text-xs text-zinc-400">
+									<span class="text-zinc-200 font-medium">Push</span> ·
+									<span class="text-zinc-200 font-medium">Pull request</span> ·
+									<span class="text-zinc-200 font-medium">Create</span>
+								</p>
+							</div>
+							<div>
+								<p class="text-xs font-semibold text-zinc-300 mb-1">Webhook section</p>
+								<p class="text-xs text-zinc-400">
+									Check <span class="text-zinc-200 font-medium">Active</span>. Leave the Webhook URL
+									blank for now — you will paste it from Crucible after registering in step 3.
+								</p>
+							</div>
+						</div>
+					</div>
 				</li>
-				<li>
-					Generate a private key and copy the App ID, Client ID, Client Secret, and Webhook
-					Secret.
+
+				<!-- Step 2 -->
+				<li class="flex gap-3">
+					<span class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-semibold">2</span>
+					<div class="space-y-1.5 min-w-0">
+						<p class="text-zinc-200 font-medium">Copy credentials from GitHub</p>
+						<p class="text-zinc-400">
+							After creating the App, on its <em>General</em> settings page: note the
+							<span class="text-zinc-200">App ID</span> and
+							<span class="text-zinc-200">Client ID</span> shown near the top.
+						</p>
+						<ul class="text-xs text-zinc-400 space-y-1 mt-1 ml-0.5">
+							<li>
+								• Under <em>Client secrets</em> — click
+								<em>Generate a new client secret</em> and copy it immediately (shown once).
+							</li>
+							<li>
+								• Under <em>Private keys</em> — click
+								<em>Generate a private key</em> and save the downloaded <code class="text-zinc-300 bg-zinc-800 px-1 rounded text-xs">.pem</code> file.
+							</li>
+							<li>
+								• Choose a random string as your <em>Webhook secret</em> (e.g.
+								<code class="text-zinc-300 bg-zinc-800 px-1 rounded text-xs">openssl rand -hex 32</code>).
+								Save it — you will paste it into both GitHub and Crucible.
+							</li>
+						</ul>
+					</div>
 				</li>
-				<li>Paste them below and click Register.</li>
-				<li>
-					After registering, copy the webhook URL and setup callback URL Crucible shows you back
-					into your GitHub App settings.
+
+				<!-- Step 3 -->
+				<li class="flex gap-3">
+					<span class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-semibold">3</span>
+					<div class="space-y-1 min-w-0">
+						<p class="text-zinc-200 font-medium">Register in Crucible</p>
+						<p class="text-zinc-400">
+							Click <em>Register GitHub App</em> below and paste the credentials into the form.
+						</p>
+					</div>
+				</li>
+
+				<!-- Step 4 -->
+				<li class="flex gap-3">
+					<span class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-semibold">4</span>
+					<div class="space-y-1 min-w-0">
+						<p class="text-zinc-200 font-medium">Wire the URLs back into your GitHub App</p>
+						<p class="text-zinc-400">
+							Crucible will show you two URLs. Go back to your GitHub App's settings and paste them
+							into the correct fields (detailed on the next screen after registering).
+						</p>
+					</div>
+				</li>
+
+				<!-- Step 5 -->
+				<li class="flex gap-3">
+					<span class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-semibold">5</span>
+					<div class="space-y-1 min-w-0">
+						<p class="text-zinc-200 font-medium">Install on a GitHub account or organization</p>
+						<p class="text-zinc-400">
+							Click <em>Install on GitHub</em> to grant Crucible access to repositories under a
+							GitHub user or organization. You can install on multiple accounts.
+						</p>
+					</div>
+				</li>
+
+				<!-- Step 6 -->
+				<li class="flex gap-3">
+					<span class="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full bg-zinc-700 text-zinc-300 text-xs flex items-center justify-center font-semibold">6</span>
+					<div class="space-y-1 min-w-0">
+						<p class="text-zinc-200 font-medium">Connect stacks</p>
+						<p class="text-zinc-400">
+							On any GitHub stack, open its <em>Settings</em> tab and scroll to
+							<em>GitHub App authentication</em>. Select the installation that has access to that
+							stack's repository. The stack will use App tokens instead of a PAT from then on.
+						</p>
+					</div>
 				</li>
 			</ol>
+
 			<button
 				onclick={startNew}
 				class="bg-teal-600 hover:bg-teal-500 text-white text-sm px-4 py-2 rounded-lg transition-colors"
@@ -182,6 +291,7 @@
 			</button>
 		</div>
 	{:else if app && !showForm}
+		<!-- Registered app details -->
 		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4 mb-6">
 			<div class="flex items-start justify-between">
 				<div>
@@ -215,69 +325,120 @@
 			</dl>
 		</div>
 
-		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4 mb-6">
-			<h3 class="text-base font-medium text-white">Wire these URLs into your GitHub App</h3>
-			<p class="text-sm text-zinc-400">
-				In your app's settings on github.com, set the following two URLs. The webhook URL and setup
-				URL are derived from CRUCIBLE_BASE_URL.
-			</p>
-
+		<!-- URL wiring -->
+		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-5 mb-6">
 			<div>
-				<label class="block text-xs text-zinc-500 mb-1" for="webhook-url">Webhook URL</label>
-				<div class="flex gap-2">
-					<input
-						id="webhook-url"
-						readonly
-						value={app.webhook_url}
-						class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 font-mono"
-					/>
-					<button
-						onclick={() => copy(app!.webhook_url, 'Webhook URL')}
-						class="text-sm px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
-					>
-						Copy
-					</button>
+				<h3 class="text-base font-medium text-white">Wire these URLs into your GitHub App</h3>
+				<p class="text-sm text-zinc-400 mt-1">
+					In your GitHub App's <em>General</em> settings, paste each URL into the field indicated
+					below. Both are derived from <code class="text-zinc-300 bg-zinc-800 px-1 rounded text-xs">CRUCIBLE_BASE_URL</code>.
+				</p>
+			</div>
+
+			<div class="space-y-4">
+				<div>
+					<div class="flex items-center gap-2 mb-1">
+						<label class="text-xs text-zinc-500" for="webhook-url">Webhook URL</label>
+						<span class="text-xs text-zinc-600">→ paste into the <em>Webhook URL</em> field on GitHub</span>
+					</div>
+					<div class="flex gap-2">
+						<input
+							id="webhook-url"
+							readonly
+							value={app.webhook_url}
+							class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 font-mono"
+						/>
+						<button
+							onclick={() => copy(app!.webhook_url, 'Webhook URL')}
+							class="text-sm px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+						>
+							Copy
+						</button>
+					</div>
+				</div>
+
+				<div>
+					<div class="flex items-center gap-2 mb-1">
+						<label class="text-xs text-zinc-500" for="setup-url">Setup URL</label>
+						<span class="text-xs text-zinc-600">→ paste into the <em>Setup URL (post-install callback URL)</em> field on GitHub</span>
+					</div>
+					<div class="flex gap-2">
+						<input
+							id="setup-url"
+							readonly
+							value={app.setup_url}
+							class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 font-mono"
+						/>
+						<button
+							onclick={() => copy(app!.setup_url, 'Setup URL')}
+							class="text-sm px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+						>
+							Copy
+						</button>
+					</div>
+					<p class="text-xs text-zinc-500 mt-1.5">
+						Also tick <span class="text-zinc-300">Redirect on update</span> in GitHub App settings so
+						reinstallations return to Crucible.
+					</p>
 				</div>
 			</div>
 
-			<div>
-				<label class="block text-xs text-zinc-500 mb-1" for="setup-url">Setup URL (post-install callback)</label>
-				<div class="flex gap-2">
-					<input
-						id="setup-url"
-						readonly
-						value={app.setup_url}
-						class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-zinc-200 font-mono"
-					/>
-					<button
-						onclick={() => copy(app!.setup_url, 'Setup URL')}
-						class="text-sm px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
-					>
-						Copy
-					</button>
+			<!-- Permissions + events reminder -->
+			<div class="rounded-lg bg-zinc-800/60 border border-zinc-700/50 px-4 py-3 space-y-3">
+				<p class="text-xs font-semibold text-zinc-300">Verify your App has these settings</p>
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<p class="text-xs font-medium text-zinc-400 mb-1">Repository permissions</p>
+						<ul class="text-xs text-zinc-500 space-y-0.5">
+							<li>• Contents — Read-only</li>
+							<li>• Metadata — Read-only</li>
+							<li>• Pull requests — Read & write</li>
+							<li>• Commit statuses — Read & write</li>
+						</ul>
+					</div>
+					<div>
+						<p class="text-xs font-medium text-zinc-400 mb-1">Webhook events</p>
+						<ul class="text-xs text-zinc-500 space-y-0.5">
+							<li>• Push</li>
+							<li>• Pull request</li>
+							<li>• Create</li>
+						</ul>
+					</div>
 				</div>
-				<p class="text-xs text-zinc-500 mt-1">
-					Enable “Redirect on update” in the GitHub App settings so reinstalls return here.
-				</p>
 			</div>
 		</div>
 
+		<!-- Installations -->
 		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
 			<div class="flex items-center justify-between mb-4">
-				<h3 class="text-base font-medium text-white">Installations</h3>
+				<div>
+					<h3 class="text-base font-medium text-white">Installations</h3>
+					<p class="text-xs text-zinc-500 mt-0.5">
+						Each installation grants Crucible access to repositories under a GitHub user or
+						organization. A stack can only use an installation that has access to its repository.
+					</p>
+				</div>
 				<button
 					onclick={startInstall}
 					disabled={installing}
-					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+					class="flex-shrink-0 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-2 rounded-lg transition-colors"
 				>
 					{installing ? 'Redirecting…' : 'Install on GitHub'}
 				</button>
 			</div>
 			{#if app.installations.length === 0}
-				<p class="text-sm text-zinc-500">
-					No installations yet. Click <em>Install on GitHub</em> to add one. Stacks can pick an
-					installation in the next release.
-				</p>
+				<div class="rounded-lg bg-zinc-800/40 border border-zinc-700/50 px-4 py-4 text-sm text-zinc-400">
+					<p class="font-medium text-zinc-300 mb-1">No installations yet</p>
+					<p>
+						Click <em>Install on GitHub</em> to install this App on a GitHub user account or
+						organization. GitHub will redirect back here when done.
+					</p>
+					<p class="mt-2 text-zinc-500">
+						After installing, select the installation from the
+						<em>GitHub App authentication</em> section on any stack's Settings tab to replace its
+						PAT with a short-lived App token.
+					</p>
+				</div>
 			{:else}
 				<table class="w-full text-sm">
 					<thead>
@@ -313,10 +474,18 @@
 	{/if}
 
 	{#if showForm}
-		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-4">
-			<h2 class="text-base font-medium text-white">
-				{app ? 'Replace GitHub App credentials' : 'Register GitHub App'}
-			</h2>
+		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-5">
+			<div>
+				<h2 class="text-base font-medium text-white">
+					{app ? 'Replace GitHub App credentials' : 'Register GitHub App'}
+				</h2>
+				{#if !app}
+					<p class="text-xs text-zinc-500 mt-1">
+						All values are available on your GitHub App's <em>General</em> settings page at
+						<code class="text-zinc-300 bg-zinc-800 px-1 rounded">github.com/settings/apps/{'{your-slug}'}</code>.
+					</p>
+				{/if}
+			</div>
 
 			{#if formError}
 				<div class="rounded-lg bg-red-950 border border-red-900 px-4 py-2 text-sm text-red-300">
@@ -325,65 +494,85 @@
 			{/if}
 
 			<div class="grid grid-cols-2 gap-4">
-				<label class="block text-sm">
-					<span class="text-zinc-400">App ID</span>
+				<div class="space-y-1">
+					<label class="block text-sm text-zinc-400" for="f-app-id">App ID</label>
 					<input
+						id="f-app-id"
 						bind:value={appID}
 						placeholder="123456"
-						class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500"
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500"
 					/>
-				</label>
-				<label class="block text-sm">
-					<span class="text-zinc-400">Slug</span>
+					<p class="text-xs text-zinc-500">Numeric ID shown near the top of the App's General settings page.</p>
+				</div>
+
+				<div class="space-y-1">
+					<label class="block text-sm text-zinc-400" for="f-slug">Slug</label>
 					<input
+						id="f-slug"
 						bind:value={slug}
 						placeholder="my-crucible-app"
-						class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500"
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500"
 					/>
-				</label>
-				<label class="block text-sm col-span-2">
-					<span class="text-zinc-400">Name</span>
+					<p class="text-xs text-zinc-500">URL-safe name from the App's URL: <code class="text-zinc-400">github.com/apps/{'{slug}'}</code></p>
+				</div>
+
+				<div class="col-span-2 space-y-1">
+					<label class="block text-sm text-zinc-400" for="f-name">Name</label>
 					<input
+						id="f-name"
 						bind:value={name}
 						placeholder="My Crucible App"
-						class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500"
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500"
 					/>
-				</label>
-				<label class="block text-sm col-span-2">
-					<span class="text-zinc-400">Client ID</span>
+					<p class="text-xs text-zinc-500">Display name — the <em>GitHub App name</em> field from the General settings page.</p>
+				</div>
+
+				<div class="col-span-2 space-y-1">
+					<label class="block text-sm text-zinc-400" for="f-client-id">Client ID</label>
 					<input
+						id="f-client-id"
 						bind:value={clientID}
 						placeholder="Iv1.xxxxxxxxxxxxxxxx"
-						class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
 					/>
-				</label>
-				<label class="block text-sm col-span-2">
-					<span class="text-zinc-400">Client Secret</span>
+					<p class="text-xs text-zinc-500">Labeled <em>Client ID</em> on the General settings page — different from the numeric App ID.</p>
+				</div>
+
+				<div class="col-span-2 space-y-1">
+					<label class="block text-sm text-zinc-400" for="f-client-secret">Client Secret</label>
 					<input
+						id="f-client-secret"
 						type="password"
 						bind:value={clientSecret}
 						placeholder="(write-only — never shown after save)"
-						class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
 					/>
-				</label>
-				<label class="block text-sm col-span-2">
-					<span class="text-zinc-400">Webhook Secret</span>
+					<p class="text-xs text-zinc-500">Generate under <em>Client secrets</em> on the General settings page. Shown only once — copy it immediately.</p>
+				</div>
+
+				<div class="col-span-2 space-y-1">
+					<label class="block text-sm text-zinc-400" for="f-webhook-secret">Webhook Secret</label>
 					<input
+						id="f-webhook-secret"
 						type="password"
 						bind:value={webhookSecret}
 						placeholder="(write-only — never shown after save)"
-						class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
 					/>
-				</label>
-				<label class="block text-sm col-span-2">
-					<span class="text-zinc-400">Private Key (PEM)</span>
+					<p class="text-xs text-zinc-500">Any random string — must match the Webhook secret field in your GitHub App settings. Generate one with <code class="text-zinc-400">openssl rand -hex 32</code>.</p>
+				</div>
+
+				<div class="col-span-2 space-y-1">
+					<label class="block text-sm text-zinc-400" for="f-private-key">Private Key (PEM)</label>
 					<textarea
+						id="f-private-key"
 						bind:value={privateKey}
 						placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"
 						rows="8"
-						class="mt-1 w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
+						class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500 font-mono"
 					></textarea>
-				</label>
+					<p class="text-xs text-zinc-500">Paste the full contents of the <code class="text-zinc-400">.pem</code> file downloaded from <em>Private keys</em> on the General settings page — including the <code class="text-zinc-400">-----BEGIN / END-----</code> lines.</p>
+				</div>
 			</div>
 
 			<div class="flex gap-2 justify-end pt-2">

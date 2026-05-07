@@ -2238,13 +2238,33 @@
 
 	<!-- GitHub App authentication -->
 	<section class="space-y-3">
-		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">GitHub App authentication</h2>
-		<p class="text-xs text-zinc-500">Authenticate VCS calls (PR comments, commit status, repo clone) via the org's <a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">GitHub App</a> instead of a per-stack PAT. When set, short-lived installation tokens are minted automatically.</p>
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">GitHub App authentication</h2>
+			{#if stack?.github_installation_uuid}
+				<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-teal-900/60 text-teal-300 border border-teal-800">App token active</span>
+			{:else if stack?.has_vcs_token}
+				<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700">Using PAT</span>
+			{/if}
+		</div>
+		<p class="text-xs text-zinc-500">
+			Authenticate VCS calls (PR comments, commit status, repo clone) via the org's
+			<a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">GitHub App</a>
+			instead of a per-stack PAT. When an installation is selected, Crucible mints short-lived
+			tokens automatically — no per-stack webhook URL or token rotation needed.
+		</p>
 		<div class="border border-zinc-800 rounded-xl p-5 space-y-4">
 			{#if !ghApp}
-				<p class="text-xs text-zinc-500">No GitHub App registered for this org. Register one in <a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">Settings → GitHub App</a> to enable installation-based auth.</p>
+				<p class="text-xs text-zinc-400">
+					No GitHub App registered for this org.
+					<a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">Set one up in Settings → GitHub App</a>
+					to enable installation-based auth for all stacks.
+				</p>
 			{:else if ghApp.installations.length === 0}
-				<p class="text-xs text-zinc-500">No installations recorded yet. Install the app on a GitHub account in <a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">Settings → GitHub App</a>.</p>
+				<p class="text-xs text-zinc-400">
+					No installations recorded yet.
+					<a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">Install the App on a GitHub account</a>
+					in Settings → GitHub App, then return here to select it.
+				</p>
 			{:else}
 				<div class="space-y-1.5">
 					<label class="field-label" for="gh-installation">Installation</label>
@@ -2254,12 +2274,17 @@
 							<option value={inst.id}>{inst.account_login} ({inst.account_type}) — id {inst.installation_id}</option>
 						{/each}
 					</select>
-					<p class="text-xs text-zinc-600">Stack must use a repository accessible to the chosen installation.</p>
+					<p class="text-xs text-zinc-500">
+						Choose the installation whose account owns this stack's repository. If the repo is not
+						accessible to the selected installation, VCS calls will fail — verify repo access in
+						<a href="/settings/github-app" class="text-teal-400 hover:teal-300">Settings → GitHub App</a>.
+						Select <em>use PAT instead</em> to revert to per-stack token auth.
+					</p>
 				</div>
 				<div class="flex items-center gap-3">
 					<button type="button" onclick={saveGHAuth} disabled={savingGHAuth}
 						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
-						{savingGHAuth ? 'Saving…' : 'Save GitHub App auth'}
+						{savingGHAuth ? 'Saving…' : 'Save'}
 					</button>
 					{#if ghAuthSaved}
 						<span class="text-xs text-green-400">Saved.</span>
