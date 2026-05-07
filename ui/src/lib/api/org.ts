@@ -165,3 +165,30 @@ export const serviceAccountTokens = {
 	revoke: (id: string) =>
 		request<null>(`/org/service-account-tokens/${id}`, { method: 'DELETE' })
 };
+
+export interface GitHubApp {
+	id: string;
+	app_id: number;
+	slug: string;
+	name: string;
+	client_id: string;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface GitHubAppRegisterRequest {
+	app_id: number;
+	slug: string;
+	name: string;
+	client_id: string;
+	client_secret: string;
+	private_key: string;
+	webhook_secret: string;
+}
+
+export const githubApp = {
+	get: () => request<GitHubApp | null>('/github-app'),
+	register: (body: GitHubAppRegisterRequest) =>
+		request<GitHubApp>('/github-app', { method: 'PUT', body: JSON.stringify(body) }),
+	delete: () => request<null>('/github-app', { method: 'DELETE' })
+};

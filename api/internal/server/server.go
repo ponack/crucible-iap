@@ -35,6 +35,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/blueprints"
 	"github.com/ponack/crucible-iap/internal/export"
+	"github.com/ponack/crucible-iap/internal/githubapp"
 	"github.com/ponack/crucible-iap/internal/policygit"
 	"github.com/ponack/crucible-iap/internal/providers"
 	"github.com/ponack/crucible-iap/internal/templates"
@@ -141,6 +142,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	workerPoolHandler := workerpools.NewHandler(s.pool)
 	policyGitHandler := policygit.NewHandler(s.pool, q)
 	tagHandler := tags.NewHandler(s.pool)
+	githubAppHandler := githubapp.NewHandler(s.pool, v)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -151,7 +153,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	}
 	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler)
 	api := s.registerAuthGroup(e)
-	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, member, admin)
+	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, githubAppHandler, member, admin)
 	s.registerPolicyRoutes(api, policyHandler, policyGitHandler, member, admin)
 	s.registerStackRoutes(api, stackHandler, tagHandler, envVarHandler, stateHandler,
 		webhookHandler, outgoingHandler, varSetHandler, stackMembersHandler,
@@ -219,6 +221,7 @@ func (s *Server) registerOrgRoutes(
 	authHandler *auth.Handler,
 	satHandler *serviceaccounts.Handler,
 	integrationHandler *integrations.Handler,
+	githubAppHandler *githubapp.Handler,
 	member, admin echo.MiddlewareFunc,
 ) {
 	api.GET("/org/service-account-tokens", satHandler.List, admin)
@@ -246,6 +249,10 @@ func (s *Server) registerOrgRoutes(
 	api.POST("/integrations", integrationHandler.Create, member)
 	api.PUT("/integrations/:id", integrationHandler.Update, member)
 	api.DELETE("/integrations/:id", integrationHandler.Delete, admin)
+
+	api.GET("/github-app", githubAppHandler.Get)
+	api.PUT("/github-app", githubAppHandler.Register, admin)
+	api.DELETE("/github-app", githubAppHandler.Delete, admin)
 }
 
 func (s *Server) registerPolicyRoutes(

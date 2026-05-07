@@ -8,6 +8,7 @@
 		{ label: 'Notifications', href: '/settings/notifications' },
 		{ label: 'Organization', href: '/settings/organization' },
 		{ label: 'Integrations', href: '/settings/integrations' },
+		{ label: 'GitHub App', href: '/settings/github-app' },
 		{ label: 'API Tokens', href: '/settings/api-tokens' },
 		{ label: 'Tags', href: '/settings/tags' },
 		{ label: 'Export / Import', href: '/settings/export' }
