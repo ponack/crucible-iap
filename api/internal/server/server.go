@@ -145,7 +145,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	githubAppHandler := githubapp.NewHandler(s.pool, v, githubapp.HandlerConfig{
 		BaseURL:   s.cfg.BaseURL,
 		SecretKey: s.cfg.SecretKey,
-	})
+	}, webhookHandler)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)

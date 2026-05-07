@@ -83,6 +83,7 @@ export interface Stack {
 	preview_branch?: string;
 	worker_pool_id?: string;
 	worker_pool_name?: string;
+	github_installation_uuid?: string;
 	is_pinned: boolean;
 	tags: TagRef[];
 	created_at: string;
