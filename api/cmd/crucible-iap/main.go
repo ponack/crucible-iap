@@ -15,6 +15,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/db"
+	"github.com/ponack/crucible-iap/internal/githubapp"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
 	"github.com/ponack/crucible-iap/internal/policies"
@@ -97,6 +98,9 @@ func runServe() {
 		os.Exit(1)
 	}
 	n := notify.New(pool, v, cfg.BaseURL)
+	// Wire the GitHub App installation-token minter so PR comments and commit
+	// status calls on App-auth stacks use short-lived tokens instead of PATs.
+	n.SetTokenMinter(githubapp.NewService(pool, v))
 
 	oidc, err := oidcprovider.LoadOrCreate(context.Background(), pool, v, cfg.BaseURL)
 	if err != nil {

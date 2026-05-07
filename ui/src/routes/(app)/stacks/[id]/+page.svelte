@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -125,6 +125,12 @@
 	let selectedSecretIntegration = $state<string>('');
 	let savingIntegrations = $state(false);
 	let integrationsSaved = $state(false);
+
+	// GitHub App authentication for this stack
+	let ghApp = $state<GitHubAppView | null>(null);
+	let selectedGHInstallation = $state<string>('');
+	let savingGHAuth = $state(false);
+	let ghAuthSaved = $state(false);
 
 	// Notifications VCS provider
 	let notifVCSProvider = $state('');
@@ -285,6 +291,8 @@
 			orgUsers = orgUsersRes;
 			selectedVCSIntegration = stackRes.vcs_integration_id ?? '';
 			selectedSecretIntegration = stackRes.secret_integration_id ?? '';
+			selectedGHInstallation = stackRes.github_installation_uuid ?? '';
+			githubApp.get().then(a => (ghApp = a)).catch((e) => console.error('githubApp.get', e));
 			if (stackRes.state_backend_provider) {
 				stateBackendProvider = stackRes.state_backend_provider as StateBackendProvider;
 			}
@@ -703,6 +711,21 @@
 			toast.error((err as Error).message);
 		} finally {
 			savingIntegrations = false;
+		}
+	}
+
+	async function saveGHAuth() {
+		savingGHAuth = true;
+		ghAuthSaved = false;
+		try {
+			stack = await stacks.update(stackID, {
+				github_installation_uuid: selectedGHInstallation || ''
+			} as Partial<Stack>);
+			ghAuthSaved = true;
+		} catch (err) {
+			toast.error((err as Error).message);
+		} finally {
+			savingGHAuth = false;
 		}
 	}
 
@@ -2210,6 +2233,39 @@
 					<span class="text-xs text-green-400">Saved.</span>
 				{/if}
 			</div>
+		</div>
+	</section>
+
+	<!-- GitHub App authentication -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">GitHub App authentication</h2>
+		<p class="text-xs text-zinc-500">Authenticate VCS calls (PR comments, commit status, repo clone) via the org's <a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">GitHub App</a> instead of a per-stack PAT. When set, short-lived installation tokens are minted automatically.</p>
+		<div class="border border-zinc-800 rounded-xl p-5 space-y-4">
+			{#if !ghApp}
+				<p class="text-xs text-zinc-500">No GitHub App registered for this org. Register one in <a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">Settings → GitHub App</a> to enable installation-based auth.</p>
+			{:else if ghApp.installations.length === 0}
+				<p class="text-xs text-zinc-500">No installations recorded yet. Install the app on a GitHub account in <a href="/settings/github-app" class="text-teal-400 hover:text-teal-300">Settings → GitHub App</a>.</p>
+			{:else}
+				<div class="space-y-1.5">
+					<label class="field-label" for="gh-installation">Installation</label>
+					<select id="gh-installation" class="field-input" bind:value={selectedGHInstallation}>
+						<option value="">— use PAT instead —</option>
+						{#each ghApp.installations as inst (inst.id)}
+							<option value={inst.id}>{inst.account_login} ({inst.account_type}) — id {inst.installation_id}</option>
+						{/each}
+					</select>
+					<p class="text-xs text-zinc-600">Stack must use a repository accessible to the chosen installation.</p>
+				</div>
+				<div class="flex items-center gap-3">
+					<button type="button" onclick={saveGHAuth} disabled={savingGHAuth}
+						class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
+						{savingGHAuth ? 'Saving…' : 'Save GitHub App auth'}
+					</button>
+					{#if ghAuthSaved}
+						<span class="text-xs text-green-400">Saved.</span>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	</section>
 

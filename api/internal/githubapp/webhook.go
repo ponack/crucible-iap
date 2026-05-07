@@ -50,6 +50,7 @@ func (h *Handler) ReceiveWebhook(c echo.Context) error {
 	}
 
 	event := r.Header.Get("X-GitHub-Event")
+	deliveryID := r.Header.Get("X-GitHub-Delivery")
 	switch event {
 	case "ping":
 		return c.JSON(http.StatusOK, map[string]string{"status": "pong"})
@@ -60,12 +61,87 @@ func (h *Handler) ReceiveWebhook(c echo.Context) error {
 		// when the stack picker asks for them. Acknowledge.
 		return c.NoContent(http.StatusAccepted)
 	case "push", "pull_request":
-		// Dispatch lands in PR 3 with the stack-wiring change.
-		slog.Info("github-app: event received (dispatch is wired in PR 3)", "event", event, "app", appUUID)
-		return c.NoContent(http.StatusAccepted)
+		return h.dispatchPushOrPR(c, appUUID, event, deliveryID, body)
 	default:
 		return c.NoContent(http.StatusAccepted)
 	}
+}
+
+// repoIdentity is the subset of the event payload needed to find matching stacks.
+type repoIdentity struct {
+	Installation struct {
+		ID int64 `json:"id"`
+	} `json:"installation"`
+	Repository struct {
+		FullName string `json:"full_name"`
+		HTMLURL  string `json:"html_url"`
+		CloneURL string `json:"clone_url"`
+	} `json:"repository"`
+}
+
+// dispatchPushOrPR fans out a push or pull_request event to every stack on
+// this org's app whose installation matches and whose repo_url corresponds to
+// the event's repository. Each match dispatches via the existing webhooks
+// handler so run creation, audit, delivery logging, and preview spawn behave
+// identically to the per-stack webhook path.
+func (h *Handler) dispatchPushOrPR(c echo.Context, appUUID, event, deliveryID string, body []byte) error {
+	if h.dispatcher == nil {
+		// Misconfiguration — without a dispatcher we cannot trigger runs.
+		// Don't 500 to GitHub or it will retry; log and 202.
+		slog.Warn("github-app: webhook received but no dispatcher wired", "app", appUUID)
+		return c.NoContent(http.StatusAccepted)
+	}
+
+	var ident repoIdentity
+	if err := json.Unmarshal(body, &ident); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "decode event: "+err.Error())
+	}
+	if ident.Installation.ID == 0 || ident.Repository.FullName == "" {
+		return c.NoContent(http.StatusAccepted)
+	}
+
+	ctx := c.Request().Context()
+	rows, err := h.pool.Query(ctx, `
+		SELECT s.id
+		FROM stacks s
+		JOIN github_app_installations i ON i.id = s.github_installation_uuid
+		JOIN github_apps a              ON a.id = i.app_uuid
+		WHERE a.id = $1 AND i.installation_id = $2
+		  AND (
+		    s.repo_url = $3 OR
+		    s.repo_url = $4 OR
+		    s.repo_url ILIKE $5
+		  )
+	`, appUUID, ident.Installation.ID,
+		ident.Repository.HTMLURL, ident.Repository.CloneURL,
+		"%"+ident.Repository.FullName+"%")
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "find matching stacks")
+	}
+	defer rows.Close()
+
+	var stackIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			continue
+		}
+		stackIDs = append(stackIDs, id)
+	}
+	if len(stackIDs) == 0 {
+		slog.Info("github-app: no matching stacks", "event", event, "repo", ident.Repository.FullName, "installation", ident.Installation.ID)
+		return c.NoContent(http.StatusAccepted)
+	}
+
+	// Dispatch to each matching stack. Errors on individual stacks are logged
+	// but do not block other matches; we always return 202 so GitHub does not
+	// retry the whole batch on a single failure.
+	for _, stackID := range stackIDs {
+		if err := h.dispatcher.DispatchGitHubEvent(ctx, c, stackID, event, deliveryID, body); err != nil {
+			slog.Warn("github-app: dispatch to stack failed", "stack", stackID, "err", err)
+		}
+	}
+	return c.NoContent(http.StatusAccepted)
 }
 
 // installationEvent is the subset of the installation webhook payload we care

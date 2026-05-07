@@ -24,12 +24,20 @@ import (
 	"github.com/ponack/crucible-iap/internal/vault"
 )
 
+// InstallationTokenMinter mints short-lived installation tokens for stacks
+// authenticated via a GitHub App installation. Optional — when nil, the
+// notifier falls back to per-stack PAT decryption.
+type InstallationTokenMinter interface {
+	InstallationToken(ctx context.Context, installationID int64) (string, error)
+}
+
 // Notifier fires outbound notifications at run lifecycle events.
 type Notifier struct {
 	pool    *pgxpool.Pool
 	vault   *vault.Vault
 	baseURL string
 	client  *http.Client
+	minter  InstallationTokenMinter
 }
 
 func New(pool *pgxpool.Pool, v *vault.Vault, baseURL string) *Notifier {
@@ -39,6 +47,13 @@ func New(pool *pgxpool.Pool, v *vault.Vault, baseURL string) *Notifier {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		client:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// SetTokenMinter wires in a GitHub App installation-token minter. Called once
+// at server boot. Stacks with github_installation_uuid set will use installation
+// tokens; stacks with vcs_token_enc set will continue to use the PAT path.
+func (n *Notifier) SetTokenMinter(m InstallationTokenMinter) {
+	n.minter = m
 }
 
 // runData is everything the notifier needs, loaded in one query.
@@ -73,6 +88,10 @@ type runData struct {
 	orgSlackWebhook  string
 	orgDiscordWebhook string
 	orgTeamsWebhook  string
+	// GitHub App installation_id for stacks that opt into App auth. When set,
+	// PR comments and commit status calls mint installation tokens instead of
+	// decrypting vcsTokenEnc.
+	githubInstallationID *int64
 }
 
 func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
@@ -88,9 +107,11 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		       COALESCE(s.ntfy_url,''), s.ntfy_token_enc,
 		       COALESCE(s.notify_email,''),
 		       s.notify_events,
-		       s.discord_webhook_enc, s.teams_webhook_enc
+		       s.discord_webhook_enc, s.teams_webhook_enc,
+		       gi.installation_id
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
+		LEFT JOIN github_app_installations gi ON gi.id = s.github_installation_uuid
 		WHERE r.id = $1
 	`, runID).Scan(
 		&d.id, &d.stackID, &d.status, &d.runType, &d.trigger,
@@ -104,6 +125,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.notifyEmail,
 		&d.notifyEvents,
 		&d.discordWebhookEnc, &d.teamsWebhookEnc,
+		&d.githubInstallationID,
 	)
 	if err != nil {
 		return nil, err
@@ -198,6 +220,23 @@ func (n *Notifier) teamsWebhook(d *runData) string {
 	return d.orgTeamsWebhook
 }
 
+// effectiveVCSToken returns the right token for VCS API calls (PR comments,
+// commit status). Stacks bound to a GitHub App installation get a freshly
+// minted installation token; legacy stacks fall back to the decrypted PAT.
+// Returns empty string if neither is available — the caller is expected to
+// gracefully skip the API call in that case.
+func (n *Notifier) effectiveVCSToken(ctx context.Context, d *runData) string {
+	if d.githubInstallationID != nil && n.minter != nil {
+		tok, err := n.minter.InstallationToken(ctx, *d.githubInstallationID)
+		if err != nil {
+			slog.Warn("notify: mint installation token failed; falling back to PAT", "stack_id", d.stackID, "err", err)
+		} else if tok != "" {
+			return tok
+		}
+	}
+	return n.decryptStr(d.stackID, d.vcsTokenEnc)
+}
+
 func (n *Notifier) decryptStr(stackID string, enc []byte) string {
 	if len(enc) == 0 {
 		return ""
@@ -227,7 +266,7 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 		return
 	}
 
-	vcsToken := n.decryptStr(d.stackID, d.vcsTokenEnc)
+	vcsToken := n.effectiveVCSToken(ctx, d)
 	if vcsToken != "" && d.commitSHA != "" {
 		owner, repo, provider := parseRepo(d.repoURL, d.vcsProvider, d.vcsBaseURL)
 		if owner != "" {
@@ -277,7 +316,7 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 		return
 	}
 
-	vcsToken := n.decryptStr(d.stackID, d.vcsTokenEnc)
+	vcsToken := n.effectiveVCSToken(ctx, d)
 	if vcsToken != "" && d.commitSHA != "" && d.runType == "apply" {
 		owner, repo, provider := parseRepo(d.repoURL, d.vcsProvider, d.vcsBaseURL)
 		if owner != "" {
@@ -439,7 +478,7 @@ func (n *Notifier) PolicyDenied(ctx context.Context, runID string, messages []st
 		return
 	}
 
-	vcsToken := n.decryptStr(d.stackID, d.vcsTokenEnc)
+	vcsToken := n.effectiveVCSToken(ctx, d)
 	if vcsToken == "" || d.commitSHA == "" {
 		return
 	}

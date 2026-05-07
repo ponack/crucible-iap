@@ -2,6 +2,7 @@
 package githubapp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,19 +26,28 @@ type HandlerConfig struct {
 	SecretKey string
 }
 
-type Handler struct {
-	pool    *pgxpool.Pool
-	vault   *vault.Vault
-	cfg     HandlerConfig
-	service *Service
+// EventDispatcher is the subset of webhooks.Handler the GitHub App webhook
+// ingest needs. Declared as an interface so githubapp does not import webhooks
+// directly (and avoids an import cycle if webhooks ever needs githubapp).
+type EventDispatcher interface {
+	DispatchGitHubEvent(ctx context.Context, c echo.Context, stackID, eventType, deliveryID string, body []byte) error
 }
 
-func NewHandler(pool *pgxpool.Pool, v *vault.Vault, cfg HandlerConfig) *Handler {
+type Handler struct {
+	pool       *pgxpool.Pool
+	vault      *vault.Vault
+	cfg        HandlerConfig
+	service    *Service
+	dispatcher EventDispatcher
+}
+
+func NewHandler(pool *pgxpool.Pool, v *vault.Vault, cfg HandlerConfig, dispatcher EventDispatcher) *Handler {
 	return &Handler{
-		pool:    pool,
-		vault:   v,
-		cfg:     cfg,
-		service: NewService(pool, v),
+		pool:       pool,
+		vault:      v,
+		cfg:        cfg,
+		service:    NewService(pool, v),
+		dispatcher: dispatcher,
 	}
 }
 

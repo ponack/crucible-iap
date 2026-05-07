@@ -38,34 +38,18 @@ func (h *Handler) Receive(c echo.Context) error {
 	ctx := c.Request().Context()
 	r := c.Request()
 
-	// Detect forge and delivery metadata from headers before reading the body.
 	forge := detectForge(r)
 	eventType := extractEventType(r)
 	deliveryID := extractDeliveryID(r)
 
-	var (
-		orgID           string
-		repoBranch      string
-		webhookSecret   *string
-		isDisabled      bool
-		tool            string
-		repoURL         string
-		projectRoot     string
-		runnerImage     *string
-		moduleNamespace *string
-		moduleName      *string
-		moduleProvider  *string
-		workerPoolID    *string
-	)
-	err := h.pool.QueryRow(ctx, `
-		SELECT org_id, repo_branch, webhook_secret, is_disabled,
-		       tool, repo_url, project_root, runner_image,
-		       module_namespace, module_name, module_provider,
-		       worker_pool_id
-		FROM stacks WHERE id = $1
-	`, stackID).Scan(&orgID, &repoBranch, &webhookSecret, &isDisabled,
-		&tool, &repoURL, &projectRoot, &runnerImage,
-		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID)
+	// Look up just enough to verify HMAC; full stack metadata is loaded in dispatch.
+	var orgID string
+	var webhookSecret *string
+	var isDisabled bool
+	err := h.pool.QueryRow(ctx,
+		`SELECT org_id, webhook_secret, is_disabled FROM stacks WHERE id = $1`,
+		stackID,
+	).Scan(&orgID, &webhookSecret, &isDisabled)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -81,7 +65,6 @@ func (h *Handler) Receive(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, "webhook not configured for this stack")
 	}
 
-	// Read body before verifying signature — needed for HMAC.
 	body, err := io.ReadAll(io.LimitReader(r.Body, 5<<20))
 	if err != nil {
 		return echo.ErrBadRequest
@@ -96,6 +79,64 @@ func (h *Handler) Receive(c echo.Context) error {
 	if event == nil {
 		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "unknown_event", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ignored"})
+	}
+
+	return h.dispatchEvent(ctx, c, stackID, event, payload, eventType, forge, deliveryID)
+}
+
+// DispatchGitHubEvent processes an already-validated GitHub-format payload
+// against a single stack. Used by the global GitHub App webhook ingest after
+// it has verified HMAC against the app webhook secret and fanned out to
+// matching stacks via the installation_uuid + repo URL match.
+func (h *Handler) DispatchGitHubEvent(ctx context.Context, c echo.Context, stackID, eventType, deliveryID string, body []byte) error {
+	payload := trimPayload(body)
+	event, err := parseGitHub(eventType, body)
+	if err != nil {
+		return err
+	}
+	if event == nil {
+		return nil
+	}
+	return h.dispatchEvent(ctx, c, stackID, event, payload, eventType, "github", deliveryID)
+}
+
+// dispatchEvent runs the post-parse logic shared by Receive (per-stack URL with
+// per-stack HMAC) and DispatchGitHubEvent (global GitHub App webhook URL).
+func (h *Handler) dispatchEvent(
+	ctx context.Context, c echo.Context,
+	stackID string, event *webhookEvent,
+	payload json.RawMessage,
+	eventType, forge, deliveryID string,
+) error {
+	var (
+		orgID           string
+		repoBranch      string
+		isDisabled      bool
+		tool            string
+		repoURL         string
+		projectRoot     string
+		runnerImage     *string
+		moduleNamespace *string
+		moduleName      *string
+		moduleProvider  *string
+		workerPoolID    *string
+	)
+	err := h.pool.QueryRow(ctx, `
+		SELECT org_id, repo_branch, is_disabled,
+		       tool, repo_url, project_root, runner_image,
+		       module_namespace, module_name, module_provider,
+		       worker_pool_id
+		FROM stacks WHERE id = $1
+	`, stackID).Scan(&orgID, &repoBranch, &isDisabled,
+		&tool, &repoURL, &projectRoot, &runnerImage,
+		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID)
+	if err != nil {
+		return echo.ErrNotFound
+	}
+
+	if isDisabled {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "stack_disabled", nil)
+		return c.JSON(http.StatusOK, map[string]string{"status": "stack disabled"})
 	}
 
 	// Tag pushes: route to module auto-publish if the stack is configured for it.

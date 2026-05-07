@@ -129,6 +129,7 @@ type Stack struct {
 	PreviewBranch        *string    `json:"preview_branch,omitempty"`
 	WorkerPoolID         *string    `json:"worker_pool_id,omitempty"`
 	WorkerPoolName       *string    `json:"worker_pool_name,omitempty"`
+	GitHubInstallationUUID *string  `json:"github_installation_uuid,omitempty"`
 	IsPinned             bool       `json:"is_pinned"`
 	Tags                 []tags.TagRef `json:"tags"`
 	CreatedAt            time.Time  `json:"created_at"`
@@ -439,6 +440,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.pr_preview_enabled, s.pr_preview_template_id,
 		       s.is_preview, s.preview_source_stack_id, s.preview_pr_number, s.preview_pr_url, s.preview_branch,
 		       s.worker_pool_id, wp.name,
+		       s.github_installation_uuid,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -465,6 +467,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.PRPreviewEnabled, &s.PRPreviewTemplateID,
 		&s.IsPreview, &s.PreviewSourceStackID, &s.PreviewPRNumber, &s.PreviewPRURL, &s.PreviewBranch,
 		&s.WorkerPoolID, &s.WorkerPoolName,
+		&s.GitHubInstallationUUID,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -511,6 +514,7 @@ type updateStackReq struct {
 	PRPreviewEnabled    *bool   `json:"pr_preview_enabled"`
 	PRPreviewTemplateID *string `json:"pr_preview_template_id"` // empty string clears
 	WorkerPoolID        *string `json:"worker_pool_id"`         // empty string clears
+	GitHubInstallationUUID *string `json:"github_installation_uuid"` // empty string clears
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -570,6 +574,7 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	}
 	r.addPRPreviewSets(add)
 	r.addWorkerPoolSet(add)
+	r.addGitHubInstallationSet(add)
 	if r.ScheduledDestroyAt != nil {
 		if *r.ScheduledDestroyAt == "" {
 			add("scheduled_destroy_at", nil)
@@ -622,6 +627,17 @@ func (r *updateStackReq) addWorkerPoolSet(add func(string, any)) {
 	}
 }
 
+func (r *updateStackReq) addGitHubInstallationSet(add func(string, any)) {
+	if r.GitHubInstallationUUID == nil {
+		return
+	}
+	if *r.GitHubInstallationUUID == "" {
+		add("github_installation_uuid", nil)
+	} else {
+		add("github_installation_uuid", *r.GitHubInstallationUUID)
+	}
+}
+
 func (r *updateStackReq) addPRPreviewSets(add func(string, any)) {
 	if r.PRPreviewEnabled != nil {
 		add("pr_preview_enabled", *r.PRPreviewEnabled)
@@ -642,6 +658,20 @@ func (h *Handler) Update(c echo.Context) error {
 	var req updateStackReq
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	// Validate that any github_installation_uuid being set belongs to this org's app.
+	if req.GitHubInstallationUUID != nil && *req.GitHubInstallationUUID != "" {
+		var ok bool
+		if err := h.pool.QueryRow(c.Request().Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM github_app_installations i
+				JOIN github_apps a ON a.id = i.app_uuid
+				WHERE i.id = $1 AND a.org_id = $2
+			)
+		`, *req.GitHubInstallationUUID, orgID).Scan(&ok); err != nil || !ok {
+			return echo.NewHTTPError(http.StatusBadRequest, "github_installation_uuid does not belong to this org's app")
+		}
 	}
 
 	sets, args, err := req.buildSets()
