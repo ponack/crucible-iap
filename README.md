@@ -424,6 +424,17 @@ cd api && go test -race ./...
 - [ ] Stack health scoring — composite score per stack based on recent run success rate, drift frequency, cost trend, and policy failures; displayed as a colour-coded badge in the stacks list; sortable and filterable
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
+- [ ] Projects / Spaces — hierarchical org → project → stack layout; per-project RBAC, integration defaults, and notification routing; stacks belong to exactly one project; replaces the current flat-tag-only organisation for large deployments
+- [ ] Bitbucket and Azure DevOps VCS — first-class webhook ingestion, PR comments, and commit status checks for Bitbucket Server / Cloud and Azure DevOps Repos; same auth and integration model as the existing GitHub / GitLab / Gitea support
+- [ ] ChatOps approvals — approve, discard, and re-trigger runs directly from Slack and Microsoft Teams notifications; signed action buttons embedded in the existing per-stack webhook payloads; no extra app installation per channel
+- [ ] Terragrunt support — first-class wrapper around Terraform / OpenTofu with `run-all` orchestration, dependency resolution, and `remote_state` config inheritance; treated as its own `tool` value alongside opentofu / terraform / ansible / pulumi
+- [ ] Customer-managed encryption keys (BYOK) — bring-your-own-key for stack secrets via AWS KMS, HashiCorp Vault Transit, or Azure Key Vault; per-stack data-encryption keys are wrapped by the customer-controlled KMS instead of the bundled `secret_key`
+- [ ] Audit log SIEM streaming — push audit events live to Splunk HEC, Datadog Logs, or generic syslog / HTTP endpoints; replaces or supplements the CSV / JSON export for compliance-bound deployments
+- [ ] Compliance policy packs — installable OPA bundles for SOC 2, CIS AWS Foundations, HIPAA, and PCI-DSS; one-click attach to any stack; updates pulled from the [`ponack/crucible-policies`](https://github.com/ponack/crucible-policies) repo
+- [ ] Plan diff between runs — side-by-side comparison of resource changes between any two plans on the same stack; surfaces drift introduced by config edits between runs
+- [ ] Budget alerts — per-stack monthly budget threshold with Slack / email alerts when projected (Infracost) cost crosses 80% / 100%; cost trend chart on the stack detail page showing the last 30 runs
+- [ ] In-app run analytics — charts for run success rate, average plan time, drift frequency, and policy violation trends rendered from the Prometheus metrics already collected; eliminates the need to leave Crucible for Grafana for day-to-day observability
+- [ ] Continuous validation — periodic policy re-evaluation against current stack state independent of run lifecycle; surfaces drifted compliance posture (e.g., a stack that was compliant at apply time but has since failed a tighter policy); configurable interval per stack
 
 ## License
 
