@@ -42,6 +42,7 @@
 
 	// Infracost settings
 	let infracostForm = $state({ infracost_api_key: '', infracost_pricing_api_endpoint: '' });
+	let infracostKeySet = $state(false);
 	let savingInfracost = $state(false);
 	let infracostSaved = $state(false);
 	let infracostError = $state<string | null>(null);
@@ -86,6 +87,7 @@
 				oidc_audience_override: s.oidc_audience_override ?? ''
 			};
 			infracostForm.infracost_pricing_api_endpoint = s.infracost_pricing_api_endpoint ?? '';
+			infracostKeySet = s.infracost_api_key_set ?? false;
 			aiForm.ai_provider = (s.ai_provider ?? 'anthropic') as 'anthropic' | 'openai';
 			aiForm.ai_model = s.ai_model ?? '';
 			aiForm.ai_base_url = s.ai_base_url ?? '';
@@ -155,7 +157,8 @@
 			const payload: Record<string, string> = {};
 			if (infracostForm.infracost_api_key) payload.infracost_api_key = infracostForm.infracost_api_key;
 			if (infracostForm.infracost_pricing_api_endpoint !== undefined) payload.infracost_pricing_api_endpoint = infracostForm.infracost_pricing_api_endpoint;
-			await system.settings.update(payload);
+			const res = await system.settings.update(payload);
+			infracostKeySet = res.infracost_api_key_set ?? infracostKeySet;
 			infracostForm.infracost_api_key = '';
 			infracostSaved = true;
 			setTimeout(() => (infracostSaved = false), 3000);
@@ -485,9 +488,14 @@
 	<!-- IaC security scanning -->
 	{#if auth.isAdmin}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
-			<div class="px-6 py-4">
-				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">IaC security scanning</p>
-				<p class="text-xs text-zinc-600">Run Checkov or Trivy post-plan. Findings surfaced in the run detail view. Set a severity threshold to block apply on critical issues.</p>
+			<div class="px-6 py-4 flex items-start justify-between gap-4">
+				<div>
+					<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">IaC security scanning</p>
+					<p class="text-xs text-zinc-600">Run Checkov or Trivy post-plan. Findings surfaced in the run detail view. Set a severity threshold to block apply on critical issues.</p>
+				</div>
+				{#if scanForm.scan_tool !== 'none'}
+					<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-teal-900/50 text-teal-400 border border-teal-800">Configured</span>
+				{/if}
 			</div>
 			<form class="px-6 py-5 space-y-4" onsubmit={saveScan}>
 				<div class="grid grid-cols-2 gap-4">
@@ -529,9 +537,14 @@
 	<!-- Infracost -->
 	{#if auth.isAdmin}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
-			<div class="px-6 py-4">
-				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Infracost</p>
-				<p class="text-xs text-zinc-600">Cost estimation via <span class="font-mono">infracost breakdown</span> run post-plan. Set an API key to enable.</p>
+			<div class="px-6 py-4 flex items-start justify-between gap-4">
+				<div>
+					<p class="text-xs text-zinc-500 uppercase tracking-widest mb-1">Infracost</p>
+					<p class="text-xs text-zinc-600">Cost estimation via <span class="font-mono">infracost breakdown</span> run post-plan. Set an API key to enable.</p>
+				</div>
+				{#if infracostKeySet}
+					<span class="shrink-0 text-xs px-2 py-0.5 rounded-full bg-teal-900/50 text-teal-400 border border-teal-800">Configured</span>
+				{/if}
 			</div>
 			<form class="px-6 py-5 space-y-4" onsubmit={saveInfracost}>
 				<div class="space-y-1.5">

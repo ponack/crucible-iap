@@ -97,9 +97,10 @@ type Settings struct {
 	OIDCGenericClientID        string `json:"oidc_generic_client_id,omitempty"`
 	OIDCGenericScope           string `json:"oidc_generic_scope,omitempty"`
 	OIDCAudienceOverride            string    `json:"oidc_audience_override,omitempty"`
-	InfracostPricingAPIEndpoint     string    `json:"infracost_pricing_api_endpoint,omitempty"`
-	ScanTool                        string    `json:"scan_tool,omitempty"`
-	ScanSeverityThreshold           string    `json:"scan_severity_threshold,omitempty"`
+	InfracostAPIKeySet          bool   `json:"infracost_api_key_set"`
+	InfracostPricingAPIEndpoint string `json:"infracost_pricing_api_endpoint,omitempty"`
+	ScanTool                    string `json:"scan_tool,omitempty"`
+	ScanSeverityThreshold       string `json:"scan_severity_threshold,omitempty"`
 	AIProvider  string `json:"ai_provider"`
 	AIModel     string `json:"ai_model,omitempty"`
 	AIBaseURL   string `json:"ai_base_url,omitempty"`
@@ -365,6 +366,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		       COALESCE(oidc_generic_token_url, ''), COALESCE(oidc_generic_client_id, ''),
 		       COALESCE(oidc_generic_scope, ''),
 		       COALESCE(oidc_audience_override, ''),
+		       (infracost_api_key IS NOT NULL AND infracost_api_key != ''),
 		       COALESCE(infracost_pricing_api_endpoint, ''),
 		       COALESCE(scan_tool, 'none'),
 		       COALESCE(scan_severity_threshold, 'HIGH'),
@@ -390,7 +392,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*Setting
 		&s.OIDCAuthentikURL, &s.OIDCAuthentikClientID,
 		&s.OIDCGenericTokenURL, &s.OIDCGenericClientID, &s.OIDCGenericScope,
 		&s.OIDCAudienceOverride,
-		&s.InfracostPricingAPIEndpoint,
+		&s.InfracostAPIKeySet, &s.InfracostPricingAPIEndpoint,
 		&s.ScanTool, &s.ScanSeverityThreshold,
 		&s.AIProvider, &s.AIModel, &s.AIBaseURL, &s.AIAPIKeySet,
 		&s.DefaultDiscordWebhook, &s.DefaultTeamsWebhook, &s.ApprovalTimeoutHours,
