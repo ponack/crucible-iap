@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -108,7 +109,7 @@ type Installation struct {
 	InstallationID int64  `json:"installation_id"`
 	AccountLogin   string `json:"account_login"`
 	AccountType    string `json:"account_type"`
-	CreatedAt      string `json:"created_at"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Get returns the registered app for the caller's org. Secrets never returned.
