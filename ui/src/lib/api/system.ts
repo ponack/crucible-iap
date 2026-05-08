@@ -40,6 +40,7 @@ export interface SystemSettings {
 	oidc_generic_scope?: string;
 	oidc_audience_override?: string;
 	infracost_api_key?: string;
+	infracost_api_key_set?: boolean;
 	infracost_pricing_api_endpoint?: string;
 	scan_tool?: 'none' | 'checkov' | 'trivy';
 	scan_severity_threshold?: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
