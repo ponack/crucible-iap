@@ -35,7 +35,7 @@
 	}
 </script>
 
-<div class="p-6 space-y-6 max-w-7xl mx-auto">
+<div class="p-6 space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-lg font-semibold text-white">Monitoring</h1>
