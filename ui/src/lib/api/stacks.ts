@@ -84,6 +84,7 @@ export interface Stack {
 	worker_pool_id?: string;
 	worker_pool_name?: string;
 	github_installation_uuid?: string;
+	project_id?: string;
 	is_pinned: boolean;
 	tags: TagRef[];
 	created_at: string;
@@ -228,13 +229,14 @@ export const stacks = {
 	list: (
 		offset = 0,
 		limit = 50,
-		filters: { q?: string; tool?: string; status?: string; tags?: string[]; pinned?: boolean } = {}
+		filters: { q?: string; tool?: string; status?: string; tags?: string[]; pinned?: boolean; project?: string } = {}
 	) => {
 		const p = new URLSearchParams({ limit: String(limit), offset: String(offset) });
 		if (filters.q) p.set('q', filters.q);
 		if (filters.tool) p.set('tool', filters.tool);
 		if (filters.status) p.set('status', filters.status);
 		if (filters.pinned) p.set('pinned', 'true');
+		if (filters.project) p.set('project', filters.project);
 		filters.tags?.forEach((t) => p.append('tag', t));
 		return request<Paginated<Stack>>(`/stacks?${p}`);
 	},
