@@ -37,6 +37,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/export"
 	"github.com/ponack/crucible-iap/internal/githubapp"
 	"github.com/ponack/crucible-iap/internal/policygit"
+	"github.com/ponack/crucible-iap/internal/projects"
 	"github.com/ponack/crucible-iap/internal/providers"
 	"github.com/ponack/crucible-iap/internal/templates"
 	"github.com/ponack/crucible-iap/internal/oidcprovider"
@@ -146,6 +147,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 		BaseURL:   s.cfg.BaseURL,
 		SecretKey: s.cfg.SecretKey,
 	}, webhookHandler)
+	projectHandler := projects.NewHandler(s.pool)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -161,6 +163,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	s.registerStackRoutes(api, stackHandler, tagHandler, envVarHandler, stateHandler,
 		webhookHandler, outgoingHandler, varSetHandler, stackMembersHandler,
 		depsHandler, integrationHandler, member, admin)
+	s.registerProjectRoutes(api, projectHandler, member, admin)
 	s.registerRunRoutes(api, runHandler, member, admin)
 	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
 		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
@@ -381,6 +384,21 @@ func (s *Server) registerStackRoutes(
 	api.GET("/stacks/:id/remote-state-sources", stackHandler.ListRemoteStateSources)
 	api.POST("/stacks/:id/remote-state-sources", stackHandler.AddRemoteStateSource, member)
 	api.DELETE("/stacks/:id/remote-state-sources/:source_id", stackHandler.RemoveRemoteStateSource, member)
+}
+
+func (s *Server) registerProjectRoutes(
+	api *echo.Group,
+	projectHandler *projects.Handler,
+	member, admin echo.MiddlewareFunc,
+) {
+	api.GET("/projects", projectHandler.List)
+	api.POST("/projects", projectHandler.Create, member)
+	api.GET("/projects/:id", projectHandler.Get)
+	api.PUT("/projects/:id", projectHandler.Update, member)
+	api.DELETE("/projects/:id", projectHandler.Delete, admin)
+	api.GET("/projects/:id/members", projectHandler.ListMembers)
+	api.PUT("/projects/:id/members/:userID", projectHandler.UpsertMember, admin)
+	api.DELETE("/projects/:id/members/:userID", projectHandler.RemoveMember, admin)
 }
 
 func (s *Server) registerRunRoutes(

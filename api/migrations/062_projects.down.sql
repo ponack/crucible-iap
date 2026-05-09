@@ -1,0 +1,3 @@
+ALTER TABLE stacks DROP COLUMN IF EXISTS project_id;
+DROP TABLE IF EXISTS project_members;
+DROP TABLE IF EXISTS projects;
