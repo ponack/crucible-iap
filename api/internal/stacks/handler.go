@@ -130,6 +130,7 @@ type Stack struct {
 	WorkerPoolID         *string    `json:"worker_pool_id,omitempty"`
 	WorkerPoolName       *string    `json:"worker_pool_name,omitempty"`
 	GitHubInstallationUUID *string  `json:"github_installation_uuid,omitempty"`
+	ProjectID            *string    `json:"project_id,omitempty"`
 	IsPinned             bool       `json:"is_pinned"`
 	Tags                 []tags.TagRef `json:"tags"`
 	CreatedAt            time.Time  `json:"created_at"`
@@ -175,6 +176,10 @@ func (h *Handler) List(c echo.Context) error {
 	if c.QueryParam("pinned") == "true" {
 		conds = append(conds, "s.is_pinned = true")
 	}
+	if projectID := c.QueryParam("project"); projectID != "" {
+		args = append(args, projectID)
+		conds = append(conds, fmt.Sprintf("s.project_id = $%d", len(args)))
+	}
 	if tagNames := c.QueryParams()["tag"]; len(tagNames) > 0 {
 		args = append(args, tagNames)
 		conds = append(conds, fmt.Sprintf(`EXISTS (
@@ -200,7 +205,7 @@ func (h *Handler) List(c echo.Context) error {
 		       %s AS my_stack_role,
 		       %s AS is_restricted,
 		       s.module_namespace, s.module_name, s.module_provider,
-		       s.is_preview,
+		       s.is_preview, s.project_id,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -231,7 +236,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.UpstreamCount, &s.DownstreamCount,
 			&s.MyStackRole, &s.IsRestricted,
 			&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
-			&s.IsPreview,
+			&s.IsPreview, &s.ProjectID,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -354,16 +359,17 @@ func (h *Handler) Create(c echo.Context) error {
 	userID, _ := c.Get("userID").(string)
 
 	var req struct {
-		Slug               string `json:"slug"`
-		Name               string `json:"name"`
-		Description        string `json:"description"`
-		Tool               string `json:"tool"`
-		RepoURL            string `json:"repo_url"`
-		RepoBranch         string `json:"repo_branch"`
-		ProjectRoot        string `json:"project_root"`
-		AutoApply          bool   `json:"auto_apply"`
-		DriftDetection     bool   `json:"drift_detection"`
-		AutoRemediateDrift bool   `json:"auto_remediate_drift"`
+		Slug               string  `json:"slug"`
+		Name               string  `json:"name"`
+		Description        string  `json:"description"`
+		Tool               string  `json:"tool"`
+		RepoURL            string  `json:"repo_url"`
+		RepoBranch         string  `json:"repo_branch"`
+		ProjectRoot        string  `json:"project_root"`
+		AutoApply          bool    `json:"auto_apply"`
+		DriftDetection     bool    `json:"drift_detection"`
+		AutoRemediateDrift bool    `json:"auto_remediate_drift"`
+		ProjectID          *string `json:"project_id"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -393,16 +399,16 @@ func (h *Handler) Create(c echo.Context) error {
 	err = h.pool.QueryRow(c.Request().Context(), `
 		INSERT INTO stacks
 		  (org_id, slug, name, description, tool, repo_url, repo_branch,
-		   project_root, auto_apply, drift_detection, auto_remediate_drift, created_by, webhook_secret)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		   project_root, auto_apply, drift_detection, auto_remediate_drift, created_by, webhook_secret, project_id)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		RETURNING id, org_id, slug, name, COALESCE(description,''), tool,
 		          repo_url, repo_branch, project_root, auto_apply, drift_detection,
-		          auto_remediate_drift, webhook_secret, created_at, updated_at
+		          auto_remediate_drift, webhook_secret, project_id, created_at, updated_at
 	`, orgID, req.Slug, req.Name, req.Description, req.Tool, req.RepoURL,
-		req.RepoBranch, req.ProjectRoot, req.AutoApply, req.DriftDetection, req.AutoRemediateDrift, userID, secret).
+		req.RepoBranch, req.ProjectRoot, req.AutoApply, req.DriftDetection, req.AutoRemediateDrift, userID, secret, req.ProjectID).
 		Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description, &s.Tool,
 			&s.RepoURL, &s.RepoBranch, &s.ProjectRoot, &s.AutoApply, &s.DriftDetection,
-			&s.AutoRemediateDrift, &s.WebhookSecret, &s.CreatedAt, &s.UpdatedAt)
+			&s.AutoRemediateDrift, &s.WebhookSecret, &s.ProjectID, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
@@ -440,7 +446,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.pr_preview_enabled, s.pr_preview_template_id,
 		       s.is_preview, s.preview_source_stack_id, s.preview_pr_number, s.preview_pr_url, s.preview_branch,
 		       s.worker_pool_id, wp.name,
-		       s.github_installation_uuid,
+		       s.github_installation_uuid, s.project_id,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -467,7 +473,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.PRPreviewEnabled, &s.PRPreviewTemplateID,
 		&s.IsPreview, &s.PreviewSourceStackID, &s.PreviewPRNumber, &s.PreviewPRURL, &s.PreviewBranch,
 		&s.WorkerPoolID, &s.WorkerPoolName,
-		&s.GitHubInstallationUUID,
+		&s.GitHubInstallationUUID, &s.ProjectID,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
@@ -515,6 +521,7 @@ type updateStackReq struct {
 	PRPreviewTemplateID *string `json:"pr_preview_template_id"` // empty string clears
 	WorkerPoolID        *string `json:"worker_pool_id"`         // empty string clears
 	GitHubInstallationUUID *string `json:"github_installation_uuid"` // empty string clears
+	ProjectID           *string `json:"project_id"`             // empty string clears
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -575,6 +582,7 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	r.addPRPreviewSets(add)
 	r.addWorkerPoolSet(add)
 	r.addGitHubInstallationSet(add)
+	r.addProjectIDSet(add)
 	if r.ScheduledDestroyAt != nil {
 		if *r.ScheduledDestroyAt == "" {
 			add("scheduled_destroy_at", nil)
@@ -638,6 +646,17 @@ func (r *updateStackReq) addGitHubInstallationSet(add func(string, any)) {
 	}
 }
 
+func (r *updateStackReq) addProjectIDSet(add func(string, any)) {
+	if r.ProjectID == nil {
+		return
+	}
+	if *r.ProjectID == "" {
+		add("project_id", nil)
+	} else {
+		add("project_id", *r.ProjectID)
+	}
+}
+
 func (r *updateStackReq) addPRPreviewSets(add func(string, any)) {
 	if r.PRPreviewEnabled != nil {
 		add("pr_preview_enabled", *r.PRPreviewEnabled)
@@ -691,7 +710,7 @@ func (h *Handler) Update(c echo.Context) error {
 		          COALESCE(plan_schedule,''), COALESCE(apply_schedule,''), COALESCE(destroy_schedule,''),
 		          plan_next_run_at, apply_next_run_at, destroy_next_run_at,
 		          max_concurrent_runs,
-		          pr_preview_enabled, pr_preview_template_id
+		          pr_preview_enabled, pr_preview_template_id, project_id
 	`, strings.Join(sets, ", "))
 
 	var s Stack
@@ -704,7 +723,7 @@ func (h *Handler) Update(c echo.Context) error {
 			&s.PlanSchedule, &s.ApplySchedule, &s.DestroySchedule,
 			&s.PlanNextRunAt, &s.ApplyNextRunAt, &s.DestroyNextRunAt,
 			&s.MaxConcurrentRuns,
-			&s.PRPreviewEnabled, &s.PRPreviewTemplateID); err != nil {
+			&s.PRPreviewEnabled, &s.PRPreviewTemplateID, &s.ProjectID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	return c.JSON(http.StatusOK, s)
