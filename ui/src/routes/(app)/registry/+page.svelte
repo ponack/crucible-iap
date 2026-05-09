@@ -87,7 +87,7 @@
 	}
 </script>
 
-<div class="p-6 max-w-5xl mx-auto space-y-6">
+<div class="p-6 space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-xl font-semibold text-white">Module Registry</h1>
