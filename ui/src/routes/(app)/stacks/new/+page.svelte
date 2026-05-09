@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { stacks, stackTemplates, type StackTemplate } from '$lib/api/client';
+	import { stacks, stackTemplates, projects, type StackTemplate, type Project } from '$lib/api/client';
 
 	let submitting = $state(false);
 	let error = $state<string | null>(null);
 
 	let templates = $state<StackTemplate[]>([]);
 	let selectedTemplateID = $state('');
+	let projectList = $state<Project[]>([]);
 
 	onMount(async () => {
-		try {
-			templates = await stackTemplates.list();
-		} catch {
-			// non-fatal — template picker is optional
-		}
+		await Promise.all([
+			stackTemplates.list().then((t) => { templates = t; }).catch(() => {}),
+			projects.list().then((p) => { projectList = p; }).catch(() => {})
+		]);
 	});
 
 	function applyTemplate(id: string) {
@@ -44,7 +44,8 @@
 		auto_apply: false,
 		drift_detection: false,
 		drift_schedule: '0 */6 * * *',
-		auto_remediate_drift: false
+		auto_remediate_drift: false,
+		project_id: ''
 	});
 
 	async function submit(e: SubmitEvent) {
@@ -57,6 +58,7 @@
 			if (!payload.tool_version) delete payload.tool_version;
 			if (!payload.runner_image) delete payload.runner_image;
 			if (!payload.drift_detection) { delete payload.drift_schedule; delete payload.auto_remediate_drift; }
+			if (!payload.project_id) delete payload.project_id;
 			const stack = await stacks.create(payload);
 			goto(`/stacks/${stack.id}`);
 		} catch (e) {
@@ -123,6 +125,18 @@
 				<label class="field-label" for="description">Description <span class="text-zinc-600">(optional)</span></label>
 				<input id="description" class="field-input" bind:value={form.description} placeholder="What does this stack manage?" />
 			</div>
+
+			{#if projectList.length > 0}
+				<div class="space-y-1.5">
+					<label class="field-label" for="project_id">Project <span class="text-zinc-600">(optional)</span></label>
+					<select id="project_id" class="field-input" bind:value={form.project_id}>
+						<option value="">— unassigned —</option>
+						{#each projectList as p (p.id)}
+							<option value={p.id}>{p.name}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 		</fieldset>
 
 		<fieldset class="border border-zinc-800 rounded-xl p-5 space-y-4">

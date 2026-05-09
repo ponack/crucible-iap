@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { stacks, orgTags, type Stack, type Tag, type PageMeta } from '$lib/api/client';
+	import { stacks, orgTags, projects, type Stack, type Tag, type PageMeta, type Project } from '$lib/api/client';
 	import { onMount } from 'svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -16,6 +16,8 @@
 	let filterTool = $state('');
 	let filterStatus = $state('');
 	let filterTags = $state<string[]>([]); // tag names
+	let filterProject = $state('');
+	let allProjects = $state<Project[]>([]);
 
 	async function load() {
 		loading = true;
@@ -25,7 +27,8 @@
 				q: filterQ || undefined,
 				tool: filterTool || undefined,
 				status: filterStatus || undefined,
-				tags: filterTags.length ? filterTags : undefined
+				tags: filterTags.length ? filterTags : undefined,
+				project: filterProject || undefined
 			});
 			items = res.data;
 			pagination = res.pagination;
@@ -37,15 +40,16 @@
 	}
 
 	onMount(async () => {
-		const [, tagsRes] = await Promise.allSettled([load(), orgTags.list()]);
+		const [, tagsRes, projRes] = await Promise.allSettled([load(), orgTags.list(), projects.list()]);
 		if (tagsRes.status === 'fulfilled') allTags = tagsRes.value;
+		if (projRes.status === 'fulfilled') allProjects = projRes.value;
 	});
 
 	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
 	function next() { offset += pagination?.limit ?? 50; load(); }
 	function applyFilters() { offset = 0; load(); }
 	function clearFilters() {
-		filterQ = ''; filterTool = ''; filterStatus = ''; filterTags = [];
+		filterQ = ''; filterTool = ''; filterStatus = ''; filterTags = []; filterProject = '';
 		offset = 0; load();
 	}
 
@@ -57,7 +61,7 @@
 		load();
 	}
 
-	const hasFilters = $derived(
+	const hasFilters = $derived(filterProject !== '' ||
 		filterQ !== '' || filterTool !== '' || filterStatus !== '' || filterTags.length > 0
 	);
 
@@ -134,6 +138,16 @@
 				<option value="planning">Planning</option>
 			</select>
 		</div>
+		{#if allProjects.length > 0}
+			<div class="w-44">
+				<select bind:value={filterProject} onchange={applyFilters} class="field-input py-1.5">
+					<option value="">All projects</option>
+					{#each allProjects as p (p.id)}
+						<option value={p.id}>{p.name}</option>
+					{/each}
+				</select>
+			</div>
+		{/if}
 
 		<!-- Tag filter dropdown -->
 		{#if allTags.length > 0}

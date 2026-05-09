@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -58,7 +58,8 @@
 		max_concurrent_runs: 0,
 		pr_preview_enabled: false,
 		pr_preview_template_id: '',
-		worker_pool_id: ''
+		worker_pool_id: '',
+		project_id: ''
 	});
 
 	// Token creation
@@ -164,6 +165,7 @@
 	// PR preview
 	let allTemplates = $state<StackTemplate[]>([]);
 	let allWorkerPools = $state<WorkerPool[]>([]);
+	let allProjects = $state<Project[]>([]);
 
 	// Dependencies
 	let upstreamDeps = $state<StackDep[]>([]);
@@ -285,6 +287,7 @@
 			allVarSets = allVarSetsRes;
 		stackTemplates.list().then(t => (allTemplates = t)).catch((e) => console.error('stackTemplates.list', e));
 			workerPools.list().then(r => (allWorkerPools = r.data)).catch((e) => console.error('workerPools.list', e));
+		projects.list().then(r => (allProjects = r)).catch(() => {});
 			upstreamDeps = upstreamRes;
 			downstreamDeps = downstreamRes;
 			members = membersRes;
@@ -389,7 +392,8 @@
 			max_concurrent_runs: stack.max_concurrent_runs ?? 0,
 			pr_preview_enabled: stack.pr_preview_enabled ?? false,
 			pr_preview_template_id: stack.pr_preview_template_id ?? '',
-			worker_pool_id: stack.worker_pool_id ?? ''
+			worker_pool_id: stack.worker_pool_id ?? '',
+			project_id: stack.project_id ?? ''
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -1469,6 +1473,17 @@
 				</select>
 				<p class="text-xs text-zinc-600">Run this stack's jobs on an external agent pool instead of the built-in Docker runner.</p>
 			</div>
+			{#if allProjects.length > 0}
+				<div class="space-y-1.5">
+					<label class="field-label" for="edit-project">Project</label>
+					<select id="edit-project" class="field-input" bind:value={form.project_id}>
+						<option value="">— unassigned —</option>
+						{#each allProjects as p (p.id)}
+							<option value={p.id}>{p.name}</option>
+						{/each}
+					</select>
+				</div>
+			{/if}
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}
 					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
