@@ -83,24 +83,28 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-lg font-semibold text-white">Runs</h1>
 		<div class="flex items-center gap-2">
-			<select bind:value={filterStatus} onchange={applyFilters} class="field-input w-44 py-1.5">
-				<option value="">Any status</option>
-				<option value="queued">Queued</option>
-				<option value="planning">Planning</option>
-				<option value="pending_approval">Pending approval</option>
-			<option value="unconfirmed">Needs confirmation</option>
-				<option value="applying">Applying</option>
-				<option value="finished">Finished</option>
-				<option value="failed">Failed</option>
-				<option value="canceled">Canceled</option>
-				<option value="discarded">Discarded</option>
-			</select>
-			<select bind:value={filterType} onchange={applyFilters} class="field-input w-36 py-1.5">
-				<option value="">Any type</option>
-				<option value="tracked">Tracked</option>
-				<option value="proposed">Proposed</option>
-				<option value="destroy">Destroy</option>
-			</select>
+			<div class="w-44">
+				<select bind:value={filterStatus} onchange={applyFilters} class="field-input py-1.5">
+					<option value="">Any status</option>
+					<option value="queued">Queued</option>
+					<option value="planning">Planning</option>
+					<option value="pending_approval">Pending approval</option>
+					<option value="unconfirmed">Needs confirmation</option>
+					<option value="applying">Applying</option>
+					<option value="finished">Finished</option>
+					<option value="failed">Failed</option>
+					<option value="canceled">Canceled</option>
+					<option value="discarded">Discarded</option>
+				</select>
+			</div>
+			<div class="w-36">
+				<select bind:value={filterType} onchange={applyFilters} class="field-input py-1.5">
+					<option value="">Any type</option>
+					<option value="tracked">Tracked</option>
+					<option value="proposed">Proposed</option>
+					<option value="destroy">Destroy</option>
+				</select>
+			</div>
 			{#if allTags.length > 0}
 				<div class="relative">
 					<button
