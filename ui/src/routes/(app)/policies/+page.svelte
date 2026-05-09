@@ -95,7 +95,7 @@
 	};
 </script>
 
-<div class="max-w-3xl space-y-6 p-6">
+<div class="p-6 space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-lg font-semibold text-white">Policies</h1>
 		<div class="flex items-center gap-2">

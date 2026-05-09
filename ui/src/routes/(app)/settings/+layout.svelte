@@ -42,7 +42,7 @@
 	</aside>
 
 	<!-- Page content -->
-	<div class="flex-1 min-w-0 p-8">
+	<div class="flex-1 min-w-0 p-6">
 		{@render children()}
 	</div>
 </div>

@@ -73,7 +73,7 @@
 	}
 </script>
 
-<div class="max-w-4xl space-y-6 p-6">
+<div class="p-6 space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-lg font-semibold text-white">Blueprints</h1>

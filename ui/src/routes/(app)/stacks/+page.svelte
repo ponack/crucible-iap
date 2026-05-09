@@ -107,27 +107,33 @@
 
 	<!-- Filter bar -->
 	<div class="flex items-center gap-2 flex-wrap">
-		<input
-			type="search" placeholder="Search stacks…"
-			bind:value={filterQ}
-			onkeydown={(e) => e.key === 'Enter' && applyFilters()}
-			class="field-input w-52 py-1.5"
-		/>
-		<select bind:value={filterTool} onchange={applyFilters} class="field-input w-36 py-1.5">
-			<option value="">All tools</option>
-			<option value="opentofu">OpenTofu</option>
-			<option value="terraform">Terraform</option>
-			<option value="ansible">Ansible</option>
-			<option value="pulumi">Pulumi</option>
-		</select>
-		<select bind:value={filterStatus} onchange={applyFilters} class="field-input w-40 py-1.5">
-			<option value="">Any status</option>
-			<option value="finished">Finished</option>
-			<option value="failed">Failed</option>
-			<option value="unconfirmed">Needs approval</option>
-			<option value="applying">Applying</option>
-			<option value="planning">Planning</option>
-		</select>
+		<div class="w-52">
+			<input
+				type="search" placeholder="Search stacks…"
+				bind:value={filterQ}
+				onkeydown={(e) => e.key === 'Enter' && applyFilters()}
+				class="field-input py-1.5"
+			/>
+		</div>
+		<div class="w-36">
+			<select bind:value={filterTool} onchange={applyFilters} class="field-input py-1.5">
+				<option value="">All tools</option>
+				<option value="opentofu">OpenTofu</option>
+				<option value="terraform">Terraform</option>
+				<option value="ansible">Ansible</option>
+				<option value="pulumi">Pulumi</option>
+			</select>
+		</div>
+		<div class="w-40">
+			<select bind:value={filterStatus} onchange={applyFilters} class="field-input py-1.5">
+				<option value="">Any status</option>
+				<option value="finished">Finished</option>
+				<option value="failed">Failed</option>
+				<option value="unconfirmed">Needs approval</option>
+				<option value="applying">Applying</option>
+				<option value="planning">Planning</option>
+			</select>
+		</div>
 
 		<!-- Tag filter dropdown -->
 		{#if allTags.length > 0}
