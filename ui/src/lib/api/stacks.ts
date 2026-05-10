@@ -144,6 +144,35 @@ export interface StateResource {
 	instance_count: number;
 }
 
+export interface StateVersion {
+	id: string;
+	run_id?: string;
+	serial: number;
+	resource_count: number;
+	created_at: string;
+}
+
+export interface DiffEntry {
+	address: string;
+	type: string;
+	instance_count: number;
+}
+
+export interface ChangedEntry {
+	address: string;
+	type: string;
+	before: Record<string, unknown>;
+	after: Record<string, unknown>;
+}
+
+export interface StateDiff {
+	from_version_id: string | null;
+	to_version_id: string;
+	added: DiffEntry[];
+	removed: DiffEntry[];
+	changed: ChangedEntry[];
+}
+
 export type StateBackendProvider = 's3' | 'gcs' | 'azurerm';
 
 export interface StateBackendInfo {
@@ -394,6 +423,9 @@ export const stacks = {
 
 	state: {
 		resources: (stackID: string) => request<StateResource[]>(`/stacks/${stackID}/state/resources`),
+		versions: (stackID: string) => request<StateVersion[]>(`/stacks/${stackID}/state/versions`),
+		versionDiff: (stackID: string, versionID: string) =>
+			request<StateDiff>(`/stacks/${stackID}/state/versions/${versionID}/diff`),
 		forceUnlock: (stackID: string) => request<{ cleared_lock_id: string }>(`/stacks/${stackID}/lock`, { method: 'DELETE' })
 	}
 };

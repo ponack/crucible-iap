@@ -82,6 +82,30 @@ func (c *Client) DeleteState(ctx context.Context, stackID string) error {
 	return c.mc.RemoveObject(ctx, c.bucketState, stateKey(stackID), minio.RemoveObjectOptions{})
 }
 
+func (c *Client) PutStateVersion(ctx context.Context, stackID, versionID string, data []byte) error {
+	_, err := c.mc.PutObject(ctx, c.bucketState, stateVersionKey(stackID, versionID),
+		bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: "application/json"})
+	return err
+}
+
+func (c *Client) GetStateVersion(ctx context.Context, stackID, versionID string) ([]byte, error) {
+	obj, err := c.mc.GetObject(ctx, c.bucketState, stateVersionKey(stackID, versionID), minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer obj.Close()
+	data, err := io.ReadAll(obj)
+	if err != nil {
+		resp := minio.ToErrorResponse(err)
+		if resp.Code == "NoSuchKey" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return data, nil
+}
+
 // ── Plan artifacts ────────────────────────────────────────────────────────────
 
 func (c *Client) PutPlan(ctx context.Context, runID string, data []byte) error {
@@ -181,10 +205,11 @@ func (c *Client) PutProviderCache(ctx context.Context, key string, r io.Reader, 
 
 // ── Object key helpers ────────────────────────────────────────────────────────
 
-func stateKey(stackID string) string        { return stackID + "/terraform.tfstate" }
-func planKey(runID string) string           { return "plans/" + runID + ".tfplan" }
-func logKey(runID string) string            { return "logs/" + runID + ".log" }
-func providerCacheKey(relPath string) string { return "provider-cache/" + relPath }
+func stateKey(stackID string) string                        { return stackID + "/terraform.tfstate" }
+func stateVersionKey(stackID, versionID string) string      { return stackID + "/versions/" + versionID + ".json" }
+func planKey(runID string) string                           { return "plans/" + runID + ".tfplan" }
+func logKey(runID string) string                            { return "logs/" + runID + ".log" }
+func providerCacheKey(relPath string) string                { return "provider-cache/" + relPath }
 
 func ModuleKey(namespace, name, provider, version string) string {
 	return fmt.Sprintf("registry/%s/%s/%s/%s.tar.gz", namespace, name, provider, version)

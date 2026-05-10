@@ -378,6 +378,8 @@ func (s *Server) registerStackRoutes(
 	api.PUT("/stacks/:id/integrations", stackHandler.SetIntegrations, member)
 	api.DELETE("/stacks/:id/lock", stateHandler.ForceUnlock, admin)
 	api.GET("/stacks/:id/state/resources", stateHandler.ListResources)
+	api.GET("/stacks/:id/state/versions", stateHandler.ListVersions)
+	api.GET("/stacks/:id/state/versions/:versionID/diff", stateHandler.GetVersionDiff)
 	api.GET("/stacks/:id/state-backend", stackHandler.GetStateBackend, member)
 	api.PUT("/stacks/:id/state-backend", stackHandler.UpsertStateBackend, member)
 	api.DELETE("/stacks/:id/state-backend", stackHandler.DeleteStateBackend, member)
