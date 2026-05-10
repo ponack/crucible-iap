@@ -27,6 +27,42 @@ import (
 
 var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
+// healthScoreSQL is a subquery that returns a 0–100 score based on the last 10
+// non-drift terminal runs for the stack (s.id must be in scope).
+// -1 is returned when no qualifying runs exist.
+const healthScoreSQL = `(
+	SELECT CASE
+		WHEN total = 0 THEN -1
+		ELSE ROUND(100.0 * ok / total)::int
+	END
+	FROM (
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'finished') AS ok,
+			COUNT(*) FILTER (WHERE status IN ('finished','failed'))  AS total
+		FROM (
+			SELECT status FROM runs
+			WHERE stack_id = s.id
+			  AND is_drift = false
+			  AND status IN ('finished','failed')
+			ORDER BY queued_at DESC
+			LIMIT 10
+		) recent
+	) h
+)`
+
+func healthStatus(score int) string {
+	switch {
+	case score < 0:
+		return "unknown"
+	case score >= 80:
+		return "healthy"
+	case score >= 50:
+		return "degraded"
+	default:
+		return "unhealthy"
+	}
+}
+
 // parseCronNext parses a 5-field cron expression and returns the next occurrence after now.
 func parseCronNext(expr string) (time.Time, error) {
 	s, err := cronParser.Parse(expr)
@@ -131,6 +167,8 @@ type Stack struct {
 	WorkerPoolName       *string    `json:"worker_pool_name,omitempty"`
 	GitHubInstallationUUID *string  `json:"github_installation_uuid,omitempty"`
 	ProjectID            *string    `json:"project_id,omitempty"`
+	HealthScore          int        `json:"health_score"`   // 0–100; -1 = no data
+	HealthStatus         string     `json:"health_status"`  // healthy | degraded | unhealthy | unknown
 	IsPinned             bool       `json:"is_pinned"`
 	Tags                 []tags.TagRef `json:"tags"`
 	CreatedAt            time.Time  `json:"created_at"`
@@ -206,6 +244,7 @@ func (h *Handler) List(c echo.Context) error {
 		       %s AS is_restricted,
 		       s.module_namespace, s.module_name, s.module_provider,
 		       s.is_preview, s.project_id,
+		       `+healthScoreSQL+` AS health_score,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -237,9 +276,11 @@ func (h *Handler) List(c echo.Context) error {
 			&s.MyStackRole, &s.IsRestricted,
 			&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 			&s.IsPreview, &s.ProjectID,
+			&s.HealthScore,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
+		s.HealthStatus = healthStatus(s.HealthScore)
 		s.UpstreamStacks = []StackRef{}
 		s.DownstreamStacks = []StackRef{}
 		s.Tags = []tags.TagRef{}
@@ -447,6 +488,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.is_preview, s.preview_source_stack_id, s.preview_pr_number, s.preview_pr_url, s.preview_branch,
 		       s.worker_pool_id, wp.name,
 		       s.github_installation_uuid, s.project_id,
+		       `+healthScoreSQL+` AS health_score,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
 		FROM stacks s
@@ -474,10 +516,12 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.IsPreview, &s.PreviewSourceStackID, &s.PreviewPRNumber, &s.PreviewPRURL, &s.PreviewBranch,
 		&s.WorkerPoolID, &s.WorkerPoolName,
 		&s.GitHubInstallationUUID, &s.ProjectID,
+		&s.HealthScore,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
+	s.HealthStatus = healthStatus(s.HealthScore)
 	if webhookSecretPtr != nil {
 		s.WebhookSecret = *webhookSecretPtr
 	}
