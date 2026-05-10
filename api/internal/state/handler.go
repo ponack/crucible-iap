@@ -7,10 +7,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -219,13 +222,61 @@ func (h *Handler) Update(c echo.Context) error {
 		if err := b.PutState(ctx, stackID, body); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
+		go h.snapshotVersion(context.Background(), stackID, body)
 		return c.NoContent(http.StatusOK)
 	}
 
 	if err := h.storage.PutState(ctx, stackID, bytes.NewReader(body), int64(len(body))); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
+	go h.snapshotVersion(context.Background(), stackID, body)
 	return c.NoContent(http.StatusOK)
+}
+
+// snapshotVersion writes a versioned copy of the state to MinIO and records
+// it in state_versions. Called asynchronously so it never delays the HTTP response.
+func (h *Handler) snapshotVersion(ctx context.Context, stackID string, body []byte) {
+	var raw struct {
+		Serial    int64 `json:"serial"`
+		Resources []struct {
+			Mode string `json:"mode"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		slog.Warn("state snapshot: failed to parse state JSON", "stack_id", stackID, "err", err)
+		return
+	}
+	managed := 0
+	for _, r := range raw.Resources {
+		if r.Mode == "managed" {
+			managed++
+		}
+	}
+
+	versionID := uuid.New().String()
+	if err := h.storage.PutStateVersion(ctx, stackID, versionID, body); err != nil {
+		slog.Warn("state snapshot: failed to write to storage", "stack_id", stackID, "err", err)
+		return
+	}
+
+	var runID *string
+	var rid string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT id FROM runs
+		WHERE stack_id = $1 AND status = 'applying'
+		ORDER BY queued_at DESC LIMIT 1
+	`, stackID).Scan(&rid); err == nil {
+		runID = &rid
+	}
+
+	storageKey := stackID + "/versions/" + versionID + ".json"
+	if _, err := h.pool.Exec(ctx, `
+		INSERT INTO state_versions (id, stack_id, run_id, serial, storage_key, resource_count)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (stack_id, serial) DO NOTHING
+	`, versionID, stackID, runID, raw.Serial, storageKey, managed); err != nil {
+		slog.Warn("state snapshot: failed to insert record", "stack_id", stackID, "err", err)
+	}
 }
 
 // DELETE /api/v1/state/:stackID — purge state
@@ -333,6 +384,269 @@ func (h *Handler) ForceUnlock(c echo.Context) error {
 		ResourceType: "stack",
 	})
 	return c.JSON(http.StatusOK, map[string]string{"cleared_lock_id": lockID})
+}
+
+// StateVersion is one recorded state snapshot for a stack.
+type StateVersion struct {
+	ID            string     `json:"id"`
+	RunID         *string    `json:"run_id,omitempty"`
+	Serial        int64      `json:"serial"`
+	ResourceCount int        `json:"resource_count"`
+	CreatedAt     time.Time  `json:"created_at"`
+}
+
+// StateDiff is the structured diff between two consecutive state versions.
+type StateDiff struct {
+	FromVersionID *string          `json:"from_version_id"`
+	ToVersionID   string           `json:"to_version_id"`
+	Added         []DiffEntry      `json:"added"`
+	Removed       []DiffEntry      `json:"removed"`
+	Changed       []ChangedEntry   `json:"changed"`
+}
+
+// DiffEntry represents a resource that was purely added or removed.
+type DiffEntry struct {
+	Address       string `json:"address"`
+	Type          string `json:"type"`
+	InstanceCount int    `json:"instance_count"`
+}
+
+// ChangedEntry represents a resource present in both versions with differing attributes.
+type ChangedEntry struct {
+	Address string         `json:"address"`
+	Type    string         `json:"type"`
+	Before  map[string]any `json:"before"`
+	After   map[string]any `json:"after"`
+}
+
+// ListVersions returns state version history for a stack, newest first.
+// GET /api/v1/stacks/:id/state/versions
+func (h *Handler) ListVersions(c echo.Context) error {
+	stackID := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+
+	var exists bool
+	if err := h.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)
+	`, stackID, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	rows, err := h.pool.Query(ctx, `
+		SELECT id, run_id, serial, resource_count, created_at
+		FROM state_versions
+		WHERE stack_id = $1
+		ORDER BY created_at DESC
+		LIMIT 50
+	`, stackID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+
+	versions := []StateVersion{}
+	for rows.Next() {
+		var v StateVersion
+		if err := rows.Scan(&v.ID, &v.RunID, &v.Serial, &v.ResourceCount, &v.CreatedAt); err != nil {
+			continue
+		}
+		versions = append(versions, v)
+	}
+	return c.JSON(http.StatusOK, versions)
+}
+
+// GetVersionDiff computes the diff between a state version and its predecessor.
+// GET /api/v1/stacks/:id/state/versions/:versionID/diff
+func (h *Handler) GetVersionDiff(c echo.Context) error {
+	stackID := c.Param("id")
+	versionID := c.Param("versionID")
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+
+	var exists bool
+	if err := h.pool.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $2)
+	`, stackID, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	// Load the target version.
+	var targetSerial int64
+	var targetKey string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT serial, storage_key FROM state_versions WHERE id = $1 AND stack_id = $2
+	`, versionID, stackID).Scan(&targetSerial, &targetKey); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "state version not found")
+	}
+
+	// Load the predecessor (next-lower serial for this stack).
+	var prevID *string
+	var prevKey *string
+	var pid, pkey string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT id, storage_key FROM state_versions
+		WHERE stack_id = $1 AND serial < $2
+		ORDER BY serial DESC LIMIT 1
+	`, stackID, targetSerial).Scan(&pid, &pkey); err == nil {
+		prevID = &pid
+		prevKey = &pkey
+	}
+
+	toData, err := h.storage.GetStateVersion(ctx, stackID, versionID)
+	if err != nil || toData == nil {
+		return echo.NewHTTPError(http.StatusNotFound, "state snapshot not available")
+	}
+
+	diff := StateDiff{
+		FromVersionID: prevID,
+		ToVersionID:   versionID,
+		Added:         []DiffEntry{},
+		Removed:       []DiffEntry{},
+		Changed:       []ChangedEntry{},
+	}
+
+	if prevKey == nil {
+		// First version — everything is "added".
+		newRes := parseStateResources(toData)
+		for addr, r := range newRes {
+			diff.Added = append(diff.Added, DiffEntry{Address: addr, Type: r.rtype, InstanceCount: r.count})
+		}
+		return c.JSON(http.StatusOK, diff)
+	}
+
+	// Extract versionID from storage key: "{stackID}/versions/{versionID}.json"
+	prevVersionID := extractVersionID(*prevKey)
+	fromData, err := h.storage.GetStateVersion(ctx, stackID, prevVersionID)
+	if err != nil || fromData == nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "previous state snapshot not available")
+	}
+
+	oldRes := parseStateResources(fromData)
+	newRes := parseStateResources(toData)
+	diff.Added, diff.Removed, diff.Changed = buildDiff(oldRes, newRes)
+	return c.JSON(http.StatusOK, diff)
+}
+
+// ── State diff helpers ────────────────────────────────────────────────────────
+
+func buildDiff(old, new map[string]parsedResource) (added []DiffEntry, removed []DiffEntry, changed []ChangedEntry) {
+	added, removed, changed = []DiffEntry{}, []DiffEntry{}, []ChangedEntry{}
+	for addr, r := range new {
+		if _, ok := old[addr]; !ok {
+			added = append(added, DiffEntry{Address: addr, Type: r.rtype, InstanceCount: r.count})
+		}
+	}
+	for addr, r := range old {
+		if _, ok := new[addr]; !ok {
+			removed = append(removed, DiffEntry{Address: addr, Type: r.rtype, InstanceCount: r.count})
+		}
+	}
+	for addr, nr := range new {
+		or, ok := old[addr]
+		if !ok {
+			continue
+		}
+		before, after, chg := diffAttrs(or.attrs, nr.attrs)
+		if chg {
+			changed = append(changed, ChangedEntry{Address: addr, Type: nr.rtype, Before: before, After: after})
+		}
+	}
+	return
+}
+
+type parsedResource struct {
+	rtype string
+	count int
+	attrs map[string]any // merged attributes of all instances
+}
+
+func parseStateResources(data []byte) map[string]parsedResource {
+	var raw struct {
+		Resources []struct {
+			Module    string `json:"module"`
+			Mode      string `json:"mode"`
+			Type      string `json:"type"`
+			Name      string `json:"name"`
+			Instances []struct {
+				Attributes map[string]any `json:"attributes"`
+			} `json:"instances"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	out := make(map[string]parsedResource, len(raw.Resources))
+	for _, r := range raw.Resources {
+		if r.Mode != "managed" {
+			continue
+		}
+		addr := r.Type + "." + r.Name
+		if r.Module != "" {
+			addr = r.Module + "." + addr
+		}
+		merged := map[string]any{}
+		for _, inst := range r.Instances {
+			for k, v := range inst.Attributes {
+				merged[k] = v
+			}
+		}
+		out[addr] = parsedResource{rtype: r.Type, count: len(r.Instances), attrs: merged}
+	}
+	return out
+}
+
+// diffAttrs returns only the attribute keys that changed between old and new,
+// capping string values at 512 chars to keep diffs readable.
+func diffAttrs(old, new map[string]any) (before, after map[string]any, changed bool) {
+	before, after = map[string]any{}, map[string]any{}
+	allKeys := map[string]struct{}{}
+	for k := range old {
+		allKeys[k] = struct{}{}
+	}
+	for k := range new {
+		allKeys[k] = struct{}{}
+	}
+	for k := range allKeys {
+		ov, inOld := old[k]
+		nv, inNew := new[k]
+		ov = truncate(ov)
+		nv = truncate(nv)
+		equal := fmt.Sprintf("%v", ov) == fmt.Sprintf("%v", nv)
+		if equal && inOld == inNew {
+			continue
+		}
+		changed = true
+		if inOld {
+			before[k] = ov
+		}
+		if inNew {
+			after[k] = nv
+		}
+	}
+	return before, after, changed
+}
+
+func truncate(v any) any {
+	s, ok := v.(string)
+	if ok && len(s) > 512 {
+		return s[:512] + "…"
+	}
+	return v
+}
+
+func extractVersionID(storageKey string) string {
+	// key format: "{stackID}/versions/{versionID}.json"
+	parts := storageKey
+	if idx := len(parts) - len(".json"); idx > 0 && parts[idx:] == ".json" {
+		parts = parts[:idx]
+	}
+	for i := len(parts) - 1; i >= 0; i-- {
+		if parts[i] == '/' {
+			return parts[i+1:]
+		}
+	}
+	return parts
 }
 
 func (h *Handler) assertLockHolder(ctx context.Context, stackID, lockID string) error {

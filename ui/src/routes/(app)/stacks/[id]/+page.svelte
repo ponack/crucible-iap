@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StateVersion, type StateDiff, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -195,6 +195,11 @@
 	let stateResources = $state<StateResource[]>([]);
 	let resourceFilter = $state('');
 
+	// State version history
+	let stateVersions = $state<StateVersion[]>([]);
+	let expandedDiff = $state<string | null>(null);
+	let loadedDiffs = $state<Record<string, StateDiff>>({});
+
 	// Access / stack members
 	let members = $state<StackMember[]>([]);
 	let orgUsers = $state<OrgMember[]>([]);
@@ -350,8 +355,9 @@
 			loadingDeliveries = false;
 		}
 
-		// Load state resources independently — no state yet is normal.
+		// Load state resources and version history independently — no state yet is normal.
 		stacks.state.resources(stackID).then(r => (stateResources = r)).catch((e) => console.error('state.resources', e));
+		stacks.state.versions(stackID).then(r => (stateVersions = r)).catch((e) => console.error('state.versions', e));
 
 		// Load outgoing webhooks independently.
 		stacks.outgoingWebhooks.list(stackID).then(r => (outgoingWebhooks = r)).catch((e) => console.error('outgoingWebhooks.list', e));
@@ -446,10 +452,26 @@
 		try {
 			await stacks.state.forceUnlock(stackID);
 			stateResources = await stacks.state.resources(stackID);
+			stateVersions = await stacks.state.versions(stackID);
 		} catch (e) {
 			toast.error((e as Error).message);
 		} finally {
 			forcingUnlock = false;
+		}
+	}
+
+	async function toggleDiff(versionID: string) {
+		if (expandedDiff === versionID) {
+			expandedDiff = null;
+			return;
+		}
+		expandedDiff = versionID;
+		if (!loadedDiffs[versionID]) {
+			try {
+				loadedDiffs[versionID] = await stacks.state.versionDiff(stackID, versionID);
+			} catch {
+				// Non-fatal; diff just won't show.
+			}
 		}
 	}
 
@@ -1588,6 +1610,108 @@
 								<td colspan="4" class="px-4 py-4 text-center text-zinc-600 text-sm">No resources match filter.</td>
 							</tr>
 						{/if}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
+
+	<!-- State version history -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">State History</h2>
+		{#if stateVersions.length === 0}
+			<p class="text-zinc-600 text-sm">No state versions recorded yet — versions are captured on each successful apply.</p>
+		{:else}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Serial</th>
+							<th class="text-left px-4 py-2">Resources</th>
+							<th class="text-left px-4 py-2">Run</th>
+							<th class="text-left px-4 py-2">Date</th>
+							<th class="px-4 py-2"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each stateVersions as v (v.id)}
+							<tr class="hover:bg-zinc-800/40 transition-colors">
+								<td class="px-4 py-2.5 font-mono text-xs text-zinc-300">#{v.serial}</td>
+								<td class="px-4 py-2.5 text-zinc-400 text-xs">{v.resource_count}</td>
+								<td class="px-4 py-2.5">
+									{#if v.run_id}
+										<a href="/runs/{v.run_id}" class="text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-colors">
+											{v.run_id.slice(0, 8)}…
+										</a>
+									{:else}
+										<span class="text-zinc-700 text-xs">—</span>
+									{/if}
+								</td>
+								<td class="px-4 py-2.5 text-zinc-500 text-xs">{new Date(v.created_at).toLocaleString()}</td>
+								<td class="px-4 py-2.5 text-right">
+									<button
+										onclick={() => toggleDiff(v.id)}
+										class="text-xs px-2.5 py-1 rounded-lg border transition-colors"
+										class:border-zinc-700={expandedDiff !== v.id}
+										class:text-zinc-400={expandedDiff !== v.id}
+										class:hover:border-zinc-500={expandedDiff !== v.id}
+										style={expandedDiff === v.id ? 'background:var(--accent-muted);color:var(--accent);border-color:var(--accent-border)' : ''}>
+										{expandedDiff === v.id ? 'Hide diff' : 'Diff'}
+									</button>
+								</td>
+							</tr>
+							{#if expandedDiff === v.id}
+								{@const diff = loadedDiffs[v.id]}
+								<tr>
+									<td colspan="5" class="px-4 py-3 bg-zinc-900/60">
+										{#if !diff}
+											<p class="text-zinc-500 text-xs">Loading…</p>
+										{:else if diff.added.length === 0 && diff.removed.length === 0 && diff.changed.length === 0}
+											<p class="text-zinc-500 text-xs">No resource changes in this version.</p>
+										{:else}
+											<div class="space-y-3 text-xs">
+												{#if diff.added.length > 0}
+													<div>
+														<p class="text-green-400 font-medium mb-1">+ Added ({diff.added.length})</p>
+														{#each diff.added as r (r.address)}
+															<div class="font-mono text-green-300/80 ml-2">+ {r.address}</div>
+														{/each}
+													</div>
+												{/if}
+												{#if diff.removed.length > 0}
+													<div>
+														<p class="text-red-400 font-medium mb-1">− Removed ({diff.removed.length})</p>
+														{#each diff.removed as r (r.address)}
+															<div class="font-mono text-red-300/80 ml-2">− {r.address}</div>
+														{/each}
+													</div>
+												{/if}
+												{#if diff.changed.length > 0}
+													<div>
+														<p class="text-yellow-400 font-medium mb-1">~ Changed ({diff.changed.length})</p>
+														{#each diff.changed as r (r.address)}
+															<div class="ml-2 mb-2">
+																<div class="font-mono text-yellow-300/80 mb-1">~ {r.address}</div>
+																{#each Object.keys({ ...r.before, ...r.after }) as k (k)}
+																	<div class="ml-4 font-mono">
+																		{#if k in r.before}
+																			<div class="text-red-300/70">- {k} = {JSON.stringify(r.before[k])}</div>
+																		{/if}
+																		{#if k in r.after}
+																			<div class="text-green-300/70">+ {k} = {JSON.stringify(r.after[k])}</div>
+																		{/if}
+																	</div>
+																{/each}
+															</div>
+														{/each}
+													</div>
+												{/if}
+											</div>
+										{/if}
+									</td>
+								</tr>
+							{/if}
+						{/each}
 					</tbody>
 				</table>
 			</div>
