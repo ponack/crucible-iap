@@ -156,7 +156,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	if oidc != nil {
 		oidc.RegisterRoutes(e)
 	}
-	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler, githubAppHandler)
+	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler, githubAppHandler, runHandler)
 	api := s.registerAuthGroup(e)
 	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, githubAppHandler, member, admin)
 	s.registerPolicyRoutes(api, policyHandler, policyGitHandler, member, admin)
@@ -179,6 +179,7 @@ func (s *Server) registerPublicRoutes(
 	policyGitHandler *policygit.Handler,
 	stateHandler *state.Handler,
 	githubAppHandler *githubapp.Handler,
+	runHandler *runs.Handler,
 ) {
 	e.GET("/.well-known/terraform.json", s.handleTerraformDiscovery)
 	e.GET("/health", s.handleHealth)
@@ -209,6 +210,9 @@ func (s *Server) registerPublicRoutes(
 
 	// GitHub App install callback — public; auth via signed state in query string.
 	e.GET("/api/v1/github-app/install/callback", githubAppHandler.InstallCallback)
+
+	// ChatOps action links — public; auth via HMAC-signed token in query string.
+	e.GET("/api/v1/runs/:id/chatops/:action", runHandler.ChatOpsAction)
 
 	// Terraform state backend (HTTP Basic auth per stack token)
 	tfState := e.Group("/api/v1/state/:stackID")
