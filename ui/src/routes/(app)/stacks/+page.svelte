@@ -79,6 +79,13 @@
 		}
 	}
 
+	const healthBadge: Record<string, { dot: string; label: string; title: string }> = {
+		healthy:   { dot: 'bg-green-400',  label: 'text-green-400',  title: 'Healthy' },
+		degraded:  { dot: 'bg-yellow-400', label: 'text-yellow-400', title: 'Degraded' },
+		unhealthy: { dot: 'bg-red-400',    label: 'text-red-400',    title: 'Unhealthy' },
+		unknown:   { dot: 'bg-zinc-600',   label: 'text-zinc-600',   title: 'No data' }
+	};
+
 	const toolBadge: Record<string, string> = {
 		opentofu: 'bg-violet-900 text-violet-300',
 		terraform: 'bg-purple-900 text-purple-300',
@@ -247,12 +254,14 @@
 						<th class="text-left px-4 py-3">Tool</th>
 						<th class="text-left px-4 py-3">Branch</th>
 						<th class="text-left px-4 py-3">Last run</th>
+						<th class="text-left px-4 py-3">Health</th>
 						<th class="text-left px-4 py-3">Auto-apply</th>
 						<th class="px-4 py-3 w-8"></th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-zinc-800">
 					{#each items as stack (stack.id)}
+						{@const hb = healthBadge[stack.health_status] ?? healthBadge.unknown}
 						<tr class="hover:bg-zinc-900/50 transition-colors">
 							<td class="px-4 py-3">
 								<div class="flex items-center gap-2 flex-wrap">
@@ -317,6 +326,12 @@
 								{:else}
 									<span class="text-zinc-600">—</span>
 								{/if}
+							</td>
+							<td class="px-4 py-3">
+								<span class="flex items-center gap-1.5" title="{hb.title}{stack.health_score >= 0 ? ` (${stack.health_score}%)` : ''}">
+									<span class="h-2 w-2 rounded-full flex-shrink-0 {hb.dot}"></span>
+									<span class="text-xs {hb.label}">{hb.title}</span>
+								</span>
 							</td>
 							<td class="px-4 py-3 text-zinc-400">
 								{stack.auto_apply ? '✓' : '—'}

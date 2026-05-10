@@ -85,6 +85,8 @@ export interface Stack {
 	worker_pool_name?: string;
 	github_installation_uuid?: string;
 	project_id?: string;
+	health_score: number;
+	health_status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
 	is_pinned: boolean;
 	tags: TagRef[];
 	created_at: string;
