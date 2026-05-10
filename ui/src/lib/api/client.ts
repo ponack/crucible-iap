@@ -7,3 +7,4 @@ export * from './org';
 export * from './policies';
 export * from './system';
 export * from './projects';
+export * from './analytics';

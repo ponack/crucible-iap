@@ -48,6 +48,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/vault"
 	"github.com/ponack/crucible-iap/internal/webhooks"
 	"github.com/ponack/crucible-iap/internal/workerpools"
+	"github.com/ponack/crucible-iap/internal/analytics"
 )
 
 type Server struct {
@@ -148,6 +149,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 		SecretKey: s.cfg.SecretKey,
 	}, webhookHandler)
 	projectHandler := projects.NewHandler(s.pool)
+	analyticsHandler := analytics.NewHandler(s.pool)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -165,6 +167,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 		depsHandler, integrationHandler, member, admin)
 	s.registerProjectRoutes(api, projectHandler, member, admin)
 	s.registerRunRoutes(api, runHandler, member, admin)
+	api.GET("/analytics/runs", analyticsHandler.Get)
 	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
 		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
 	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, admin, member)

@@ -85,6 +85,10 @@ export interface Stack {
 	worker_pool_name?: string;
 	github_installation_uuid?: string;
 	project_id?: string;
+	plan_alert_add?: number;
+	plan_alert_change?: number;
+	plan_alert_destroy?: number;
+	plan_block_on_alert: boolean;
 	health_score: number;
 	health_status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
 	is_pinned: boolean;

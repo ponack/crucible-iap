@@ -59,7 +59,11 @@
 		pr_preview_enabled: false,
 		pr_preview_template_id: '',
 		worker_pool_id: '',
-		project_id: ''
+		project_id: '',
+		plan_alert_add: undefined as number | undefined,
+		plan_alert_change: undefined as number | undefined,
+		plan_alert_destroy: undefined as number | undefined,
+		plan_block_on_alert: false
 	});
 
 	// Token creation
@@ -407,7 +411,11 @@
 			pr_preview_enabled: stack.pr_preview_enabled ?? false,
 			pr_preview_template_id: stack.pr_preview_template_id ?? '',
 			worker_pool_id: stack.worker_pool_id ?? '',
-			project_id: stack.project_id ?? ''
+			project_id: stack.project_id ?? '',
+			plan_alert_add: stack.plan_alert_add,
+			plan_alert_change: stack.plan_alert_change,
+			plan_alert_destroy: stack.plan_alert_destroy,
+			plan_block_on_alert: stack.plan_block_on_alert ?? false
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -1529,6 +1537,39 @@
 					</select>
 				</div>
 			{/if}
+			<!-- Budget alerts -->
+			<div class="space-y-3 rounded-lg border border-zinc-800 p-4">
+				<p class="field-label uppercase tracking-wide">Budget alerts</p>
+				<p class="text-xs text-zinc-500">Notify (and optionally block auto-apply) when a plan exceeds these resource-change limits. Leave blank to disable.</p>
+				<div class="grid grid-cols-3 gap-4">
+					<div class="space-y-1.5">
+						<label class="field-label" for="edit-alert-add">Max adds</label>
+						<input id="edit-alert-add" type="number" min="0" class="field-input w-full"
+							placeholder="e.g. 20"
+							value={form.plan_alert_add ?? ''}
+							oninput={(e) => form.plan_alert_add = (e.currentTarget as HTMLInputElement).value === '' ? undefined : Number((e.currentTarget as HTMLInputElement).value)} />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="edit-alert-change">Max changes</label>
+						<input id="edit-alert-change" type="number" min="0" class="field-input w-full"
+							placeholder="e.g. 10"
+							value={form.plan_alert_change ?? ''}
+							oninput={(e) => form.plan_alert_change = (e.currentTarget as HTMLInputElement).value === '' ? undefined : Number((e.currentTarget as HTMLInputElement).value)} />
+					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="edit-alert-destroy">Max destroys</label>
+						<input id="edit-alert-destroy" type="number" min="0" class="field-input w-full"
+							placeholder="e.g. 5"
+							value={form.plan_alert_destroy ?? ''}
+							oninput={(e) => form.plan_alert_destroy = (e.currentTarget as HTMLInputElement).value === '' ? undefined : Number((e.currentTarget as HTMLInputElement).value)} />
+					</div>
+				</div>
+				<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
+					<input type="checkbox" bind:checked={form.plan_block_on_alert} class="rounded border-zinc-700 bg-zinc-900 text-teal-500" />
+					Block auto-apply when a budget threshold is exceeded
+				</label>
+			</div>
+
 			<div class="flex gap-3 pt-1">
 				<button type="submit" disabled={saving}
 					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
