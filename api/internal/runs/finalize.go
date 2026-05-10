@@ -144,7 +144,7 @@ func (f *Finalizer) enqueueApply(ctx context.Context, args queue.RunJobArgs) err
 
 	_, _ = f.queue.EnqueueRun(ctx, queue.RunJobArgs{
 		RunID: args.RunID, StackID: args.StackID,
-		Tool: args.Tool, RunnerImage: args.RunnerImage,
+		Tool: args.Tool, ToolVersion: args.ToolVersion, RunnerImage: args.RunnerImage,
 		RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
 		RunType: "apply", APIURL: args.APIURL,
 		VarOverrides: args.VarOverrides,
@@ -258,7 +258,7 @@ func (f *Finalizer) maybeRemediateDrift(ctx context.Context, args queue.RunJobAr
 	}
 	if _, err := f.queue.EnqueueRun(ctx, queue.RunJobArgs{
 		RunID: runID, StackID: args.StackID,
-		Tool: args.Tool, RunnerImage: args.RunnerImage,
+		Tool: args.Tool, ToolVersion: args.ToolVersion, RunnerImage: args.RunnerImage,
 		RepoURL: args.RepoURL, RepoBranch: args.RepoBranch, ProjectRoot: args.ProjectRoot,
 		RunType: "tracked", AutoApply: true, APIURL: args.APIURL,
 	}); err != nil {
@@ -268,13 +268,13 @@ func (f *Finalizer) maybeRemediateDrift(ctx context.Context, args queue.RunJobAr
 
 func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, args queue.RunJobArgs) {
 	type target struct {
-		stackID, tool, runnerImage, repoURL, repoBranch, projectRoot string
-		autoApply                                                    bool
-		poolID                                                       *string
+		stackID, tool, toolVersion, runnerImage, repoURL, repoBranch, projectRoot string
+		autoApply                                                                 bool
+		poolID                                                                    *string
 	}
 
 	rows, err := f.pool.Query(ctx, `
-		SELECT s.id, s.tool, COALESCE(s.runner_image,''), s.repo_url, s.repo_branch,
+		SELECT s.id, s.tool, COALESCE(s.tool_version,''), COALESCE(s.runner_image,''), s.repo_url, s.repo_branch,
 		       s.project_root, s.auto_apply, s.worker_pool_id
 		FROM stack_dependencies d
 		JOIN stacks s ON s.id = d.downstream_id
@@ -288,7 +288,7 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 	var targets []target
 	for rows.Next() {
 		var t target
-		if err := rows.Scan(&t.stackID, &t.tool, &t.runnerImage, &t.repoURL, &t.repoBranch, &t.projectRoot, &t.autoApply, &t.poolID); err != nil {
+		if err := rows.Scan(&t.stackID, &t.tool, &t.toolVersion, &t.runnerImage, &t.repoURL, &t.repoBranch, &t.projectRoot, &t.autoApply, &t.poolID); err != nil {
 			continue
 		}
 		targets = append(targets, t)
@@ -310,7 +310,7 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 		}
 		if _, err := f.queue.EnqueueRun(ctx, queue.RunJobArgs{
 			RunID: runID, StackID: t.stackID,
-			Tool: t.tool, RunnerImage: t.runnerImage,
+			Tool: t.tool, ToolVersion: t.toolVersion, RunnerImage: t.runnerImage,
 			RepoURL: t.repoURL, RepoBranch: t.repoBranch, ProjectRoot: t.projectRoot,
 			RunType: "tracked", AutoApply: t.autoApply, APIURL: args.APIURL,
 		}); err != nil {

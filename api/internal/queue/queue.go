@@ -21,7 +21,8 @@ import (
 type RunJobArgs struct {
 	RunID       string `json:"run_id"`
 	StackID     string `json:"stack_id"`
-	Tool        string `json:"tool"` // opentofu | terraform | ansible | pulumi
+	Tool        string `json:"tool"`        // opentofu | terraform | ansible | pulumi
+	ToolVersion string `json:"tool_version"` // empty = use version baked into runner image
 	RunnerImage string `json:"runner_image"`
 	RepoURL     string `json:"repo_url"`
 	RepoBranch  string `json:"repo_branch"`

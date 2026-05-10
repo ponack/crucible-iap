@@ -35,6 +35,7 @@ func StartScheduleRunner(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 type schedStack struct {
 	id              string
 	tool            string
+	toolVersion     string
 	runnerImage     string
 	repoURL         string
 	repoBranch      string
@@ -49,7 +50,7 @@ type schedStack struct {
 
 func runScheduledJobs(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, q *queue.Client) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root,
+		SELECT id, tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root,
 		       COALESCE(plan_schedule,''), COALESCE(apply_schedule,''), COALESCE(destroy_schedule,''),
 		       (plan_next_run_at IS NOT NULL AND plan_next_run_at <= now()) AS plan_due,
 		       (apply_next_run_at IS NOT NULL AND apply_next_run_at <= now()) AS apply_due,
@@ -71,7 +72,7 @@ func runScheduledJobs(ctx context.Context, pool *pgxpool.Pool, cfg *config.Confi
 	var due []schedStack
 	for rows.Next() {
 		var s schedStack
-		if err := rows.Scan(&s.id, &s.tool, &s.runnerImage, &s.repoURL, &s.repoBranch, &s.projectRoot,
+		if err := rows.Scan(&s.id, &s.tool, &s.toolVersion, &s.runnerImage, &s.repoURL, &s.repoBranch, &s.projectRoot,
 			&s.planSchedule, &s.applySchedule, &s.destroySchedule,
 			&s.planDue, &s.applyDue, &s.destroyDue); err != nil {
 			continue
@@ -127,6 +128,7 @@ func enqueueScheduledRun(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 		RunID:       runID,
 		StackID:     s.id,
 		Tool:        s.tool,
+		ToolVersion: s.toolVersion,
 		RunnerImage: s.runnerImage,
 		RepoURL:     s.repoURL,
 		RepoBranch:  s.repoBranch,
