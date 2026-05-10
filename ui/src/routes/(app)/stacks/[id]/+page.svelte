@@ -206,6 +206,7 @@
 	let planDiffResult = $state<PlanDiff | null>(null);
 	let planDiffLoading = $state(false);
 	let planDiffError = $state('');
+	let planRuns = $derived(recentRuns.filter(r => r.plan_add != null || r.plan_change != null));
 
 	// Access / stack members
 	let members = $state<StackMember[]>([]);
@@ -1740,7 +1741,6 @@
 	</section>
 
 	<!-- Plan comparison -->
-	{@const planRuns = recentRuns.filter(r => r.plan_add != null || r.plan_change != null)}
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Plan Comparison</h2>
 		{#if planRuns.length < 2}
