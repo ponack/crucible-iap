@@ -123,6 +123,22 @@ func (c *Client) DeletePlan(ctx context.Context, runID string) error {
 	return c.mc.RemoveObject(ctx, c.bucketArtifacts, planKey(runID), minio.RemoveObjectOptions{})
 }
 
+func (c *Client) PutPlanJSON(ctx context.Context, runID string, data []byte) error {
+	_, err := c.mc.PutObject(ctx, c.bucketArtifacts, planJSONKey(runID),
+		bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: "application/json"})
+	return err
+}
+
+func (c *Client) GetPlanJSON(ctx context.Context, runID string) ([]byte, error) {
+	obj, err := c.mc.GetObject(ctx, c.bucketArtifacts, planJSONKey(runID), minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer obj.Close()
+	return io.ReadAll(obj)
+}
+
 // ── Run logs ──────────────────────────────────────────────────────────────────
 
 // AppendLog writes the full log output for a completed run.
@@ -208,6 +224,7 @@ func (c *Client) PutProviderCache(ctx context.Context, key string, r io.Reader, 
 func stateKey(stackID string) string                        { return stackID + "/terraform.tfstate" }
 func stateVersionKey(stackID, versionID string) string      { return stackID + "/versions/" + versionID + ".json" }
 func planKey(runID string) string                           { return "plans/" + runID + ".tfplan" }
+func planJSONKey(runID string) string                       { return "plans/" + runID + ".json" }
 func logKey(runID string) string                            { return "logs/" + runID + ".log" }
 func providerCacheKey(relPath string) string                { return "provider-cache/" + relPath }
 

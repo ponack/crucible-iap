@@ -258,3 +258,25 @@ func (h *Handler) UploadPlan(c echo.Context) error {
 
 	return c.NoContent(http.StatusNoContent)
 }
+
+// UploadPlanJSON receives the JSON representation of the plan (tofu show -json)
+// and stores it in MinIO for later diffing between runs.
+func (h *Handler) UploadPlanJSON(c echo.Context) error {
+	id := c.Param("id")
+
+	tokenRunID, _ := c.Get("runID").(string)
+	if tokenRunID != id {
+		return echo.NewHTTPError(http.StatusForbidden, "token not valid for this run")
+	}
+
+	body, err := io.ReadAll(io.LimitReader(c.Request().Body, 64*1024*1024)) // 64 MB cap
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "failed to read plan JSON body")
+	}
+
+	if err := h.storage.PutPlanJSON(c.Request().Context(), id, body); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to store plan JSON")
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StateVersion, type StateDiff, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StateVersion, type StateDiff, type PlanDiff, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -199,6 +199,13 @@
 	let stateVersions = $state<StateVersion[]>([]);
 	let expandedDiff = $state<string | null>(null);
 	let loadedDiffs = $state<Record<string, StateDiff>>({});
+
+	// Plan diff
+	let planDiffFrom = $state('');
+	let planDiffTo = $state('');
+	let planDiffResult = $state<PlanDiff | null>(null);
+	let planDiffLoading = $state(false);
+	let planDiffError = $state('');
 
 	// Access / stack members
 	let members = $state<StackMember[]>([]);
@@ -472,6 +479,20 @@
 			} catch {
 				// Non-fatal; diff just won't show.
 			}
+		}
+	}
+
+	async function loadPlanDiff() {
+		if (!planDiffFrom || !planDiffTo) return;
+		planDiffLoading = true;
+		planDiffError = '';
+		planDiffResult = null;
+		try {
+			planDiffResult = await stacks.planDiff(stackID, planDiffFrom, planDiffTo);
+		} catch (e: unknown) {
+			planDiffError = e instanceof Error ? e.message : 'Failed to load plan diff';
+		} finally {
+			planDiffLoading = false;
 		}
 	}
 
@@ -1714,6 +1735,99 @@
 						{/each}
 					</tbody>
 				</table>
+			</div>
+		{/if}
+	</section>
+
+	<!-- Plan comparison -->
+	{@const planRuns = recentRuns.filter(r => r.plan_add != null || r.plan_change != null)}
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Plan Comparison</h2>
+		{#if planRuns.length < 2}
+			<p class="text-zinc-600 text-sm">At least two plan runs with recorded changes are needed to compare. Run a plan to start building history.</p>
+		{:else}
+			<div class="border border-zinc-800 rounded-xl p-4 space-y-4">
+				<div class="flex items-end gap-3">
+					<div class="flex-1 space-y-1">
+						<label class="text-xs text-zinc-500 uppercase tracking-wide" for="plan-diff-from">From run</label>
+						<select id="plan-diff-from" class="field-input text-sm" bind:value={planDiffFrom}>
+							<option value="">Select a run…</option>
+							{#each planRuns as r (r.id)}
+								<option value={r.id}>{r.id.slice(0, 8)}… — {r.type} ({new Date(r.queued_at).toLocaleDateString()})</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex-1 space-y-1">
+						<label class="text-xs text-zinc-500 uppercase tracking-wide" for="plan-diff-to">To run</label>
+						<select id="plan-diff-to" class="field-input text-sm" bind:value={planDiffTo}>
+							<option value="">Select a run…</option>
+							{#each planRuns as r (r.id)}
+								<option value={r.id}>{r.id.slice(0, 8)}… — {r.type} ({new Date(r.queued_at).toLocaleDateString()})</option>
+							{/each}
+						</select>
+					</div>
+					<button
+						onclick={loadPlanDiff}
+						disabled={!planDiffFrom || !planDiffTo || planDiffFrom === planDiffTo || planDiffLoading}
+						class="px-4 py-2 text-sm rounded-lg border border-zinc-700 hover:border-zinc-500 text-zinc-300 transition-colors disabled:opacity-40">
+						{planDiffLoading ? 'Loading…' : 'Compare'}
+					</button>
+				</div>
+
+				{#if planDiffError}
+					<p class="text-xs text-red-400">{planDiffError}</p>
+				{/if}
+
+				{#if planDiffResult}
+					{@const pd = planDiffResult}
+					{#if pd.new.length === 0 && pd.removed.length === 0 && pd.changed.length === 0}
+						<p class="text-zinc-500 text-xs">No differences between the two plans.</p>
+					{:else}
+						<div class="space-y-3 text-xs">
+							{#if pd.new.length > 0}
+								<div>
+									<p class="text-green-400 font-medium mb-1">+ New in plan ({pd.new.length})</p>
+									{#each pd.new as r (r.address)}
+										<div class="font-mono text-green-300/80 ml-2">+ {r.address} <span class="text-zinc-500">[{r.actions.join(',')}]</span></div>
+									{/each}
+								</div>
+							{/if}
+							{#if pd.removed.length > 0}
+								<div>
+									<p class="text-red-400 font-medium mb-1">− Removed from plan ({pd.removed.length})</p>
+									{#each pd.removed as r (r.address)}
+										<div class="font-mono text-red-300/80 ml-2">− {r.address} <span class="text-zinc-500">[{r.actions.join(',')}]</span></div>
+									{/each}
+								</div>
+							{/if}
+							{#if pd.changed.length > 0}
+								<div>
+									<p class="text-yellow-400 font-medium mb-1">~ Changed ({pd.changed.length})</p>
+									{#each pd.changed as r (r.address)}
+										<div class="ml-2 mb-2">
+											<div class="font-mono text-yellow-300/80 mb-1">~ {r.address}</div>
+											{#if r.from_actions.join(',') !== r.to_actions.join(',')}
+												<div class="ml-4 font-mono text-zinc-400">action: <span class="text-red-300/70">{r.from_actions.join(',')}</span> → <span class="text-green-300/70">{r.to_actions.join(',')}</span></div>
+											{/if}
+											{#if r.attrs_before && r.attrs_after}
+												{#each Object.keys({ ...r.attrs_before, ...r.attrs_after }) as k (k)}
+													<div class="ml-4 font-mono">
+														{#if k in (r.attrs_before ?? {})}
+															<div class="text-red-300/70">- {k} = {JSON.stringify(r.attrs_before?.[k])}</div>
+														{/if}
+														{#if k in (r.attrs_after ?? {})}
+															<div class="text-green-300/70">+ {k} = {JSON.stringify(r.attrs_after?.[k])}</div>
+														{/if}
+													</div>
+												{/each}
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					{/if}
+				{/if}
 			</div>
 		{/if}
 	</section>

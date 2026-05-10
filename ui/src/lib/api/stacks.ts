@@ -173,6 +173,29 @@ export interface StateDiff {
 	changed: ChangedEntry[];
 }
 
+export interface PlanDiffEntry {
+	address: string;
+	type: string;
+	actions: string[];
+}
+
+export interface PlanDiffChanged {
+	address: string;
+	type: string;
+	from_actions: string[];
+	to_actions: string[];
+	attrs_before?: Record<string, unknown>;
+	attrs_after?: Record<string, unknown>;
+}
+
+export interface PlanDiff {
+	from_run_id: string;
+	to_run_id: string;
+	new: PlanDiffEntry[];
+	removed: PlanDiffEntry[];
+	changed: PlanDiffChanged[];
+}
+
 export type StateBackendProvider = 's3' | 'gcs' | 'azurerm';
 
 export interface StateBackendInfo {
@@ -427,7 +450,10 @@ export const stacks = {
 		versionDiff: (stackID: string, versionID: string) =>
 			request<StateDiff>(`/stacks/${stackID}/state/versions/${versionID}/diff`),
 		forceUnlock: (stackID: string) => request<{ cleared_lock_id: string }>(`/stacks/${stackID}/lock`, { method: 'DELETE' })
-	}
+	},
+
+	planDiff: (stackID: string, fromRunID: string, toRunID: string) =>
+		request<PlanDiff>(`/stacks/${stackID}/plan-diff?from=${fromRunID}&to=${toRunID}`)
 };
 
 export const stackMembers = {
