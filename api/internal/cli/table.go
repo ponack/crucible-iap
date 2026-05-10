@@ -45,13 +45,6 @@ func kvLine(w io.Writer, key, value string) {
 	fmt.Fprintf(w, "%-22s %s\n", key+":", value)
 }
 
-func ptr[T any](v *T, fallback string) string {
-	if v == nil {
-		return fallback
-	}
-	return fmt.Sprintf("%v", *v)
-}
-
 func strOr(s, fallback string) string {
 	if s == "" {
 		return fallback
