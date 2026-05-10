@@ -47,6 +47,20 @@ upload_plan() {
     fi
 }
 
+upload_plan_json() {
+    local bin="$1"
+    local plan_file="$2"
+    if [[ -f "${plan_file}" ]]; then
+        log "uploading plan JSON for diff"
+        "${bin}" show -json "${plan_file}" \
+            | curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan-json" \
+                -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+                -H "Content-Type: application/json" \
+                --data-binary @- \
+            || log "warn: plan JSON upload failed"
+    fi
+}
+
 # ── Provider cache (OpenTofu / Terraform) ────────────────────────────────────
 # Providers are stored in MinIO keyed by their path relative to TF_PLUGIN_CACHE_DIR.
 # Each run restores cached providers before init (so init skips registry downloads)
@@ -174,6 +188,7 @@ run_tf_generic() {
             run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
             ${bin} plan -no-color -destroy -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
+            upload_plan_json "${bin}" /workspace/plan.tfplan
             run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             log "plan complete — awaiting confirmation before destroy"
             ;;
@@ -199,6 +214,7 @@ run_tf_generic() {
             run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
             ${bin} plan -no-color -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
+            upload_plan_json "${bin}" /workspace/plan.tfplan
             run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             ;;
 
@@ -209,6 +225,7 @@ run_tf_generic() {
             run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
             ${bin} plan -no-color -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
+            upload_plan_json "${bin}" /workspace/plan.tfplan
             run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             log "plan complete — awaiting confirmation"
             ;;
