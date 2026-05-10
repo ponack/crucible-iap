@@ -633,25 +633,7 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 			add("max_concurrent_runs", *r.MaxConcurrentRuns)
 		}
 	}
-	for _, f := range []struct {
-		col string
-		v   *int
-	}{
-		{"plan_alert_add", r.PlanAlertAdd},
-		{"plan_alert_change", r.PlanAlertChange},
-		{"plan_alert_destroy", r.PlanAlertDestroy},
-	} {
-		if f.v != nil {
-			if *f.v <= 0 {
-				add(f.col, nil) // 0 = clear threshold
-			} else {
-				add(f.col, *f.v)
-			}
-		}
-	}
-	if r.PlanBlockOnAlert != nil {
-		add("plan_block_on_alert", *r.PlanBlockOnAlert)
-	}
+	r.addPlanAlertSets(add)
 	r.addPRPreviewSets(add)
 	r.addWorkerPoolSet(add)
 	r.addGitHubInstallationSet(add)
@@ -727,6 +709,28 @@ func (r *updateStackReq) addProjectIDSet(add func(string, any)) {
 		add("project_id", nil)
 	} else {
 		add("project_id", *r.ProjectID)
+	}
+}
+
+func (r *updateStackReq) addPlanAlertSets(add func(string, any)) {
+	for _, f := range []struct {
+		col string
+		v   *int
+	}{
+		{"plan_alert_add", r.PlanAlertAdd},
+		{"plan_alert_change", r.PlanAlertChange},
+		{"plan_alert_destroy", r.PlanAlertDestroy},
+	} {
+		if f.v != nil {
+			if *f.v <= 0 {
+				add(f.col, nil)
+			} else {
+				add(f.col, *f.v)
+			}
+		}
+	}
+	if r.PlanBlockOnAlert != nil {
+		add("plan_block_on_alert", *r.PlanBlockOnAlert)
 	}
 }
 

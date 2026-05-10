@@ -33,45 +33,8 @@ func NewFinalizer(pool *pgxpool.Pool, q *queue.Client, n *notify.Notifier, e *po
 // branching. It also fires downstream triggers, drift remediation, and PR
 // preview cleanup where appropriate.
 func (f *Finalizer) Complete(ctx context.Context, log *slog.Logger, orgID string, args queue.RunJobArgs) error {
-	isPlanPhase := args.RunType == "tracked" || args.RunType == "destroy"
-
-	if isPlanPhase {
-		denied, requiresApproval, err := f.evaluatePlanPolicies(ctx, log, args)
-		if err != nil {
-			log.Warn("policy evaluation failed, proceeding without policy gate", "err", err)
-		}
-		if denied {
-			return f.Fail(ctx, orgID, args.RunID, fmt.Errorf("blocked by policy"))
-		}
-
-		exceeded := f.checkBudgetThresholds(ctx, args.RunID)
-		if len(exceeded) > 0 {
-			go f.notifier.BudgetAlert(context.Background(), args.RunID, exceeded)
-		}
-
-		blockedByBudget := len(exceeded) > 0 && f.stackBlocksOnAlert(ctx, args.StackID)
-		if args.AutoApply && args.RunType == "tracked" && !requiresApproval && !blockedByBudget {
-			now := time.Now()
-			if _, err := f.pool.Exec(ctx,
-				`UPDATE runs SET status = 'confirmed', approved_by = NULL, approved_at = $1 WHERE id = $2`,
-				now, args.RunID,
-			); err != nil {
-				return f.Fail(ctx, orgID, args.RunID, err)
-			}
-			return f.enqueueApply(ctx, args)
-		}
-
-		finalStatus := "unconfirmed"
-		if requiresApproval {
-			finalStatus = "pending_approval"
-		}
-		now := time.Now()
-		if err := f.SetStatus(ctx, orgID, args.RunID, finalStatus, &now); err != nil {
-			return err
-		}
-		go f.notifier.PlanComplete(context.Background(), args.RunID)
-		log.Info("run job complete", "status", finalStatus)
-		return nil
+	if args.RunType == "tracked" || args.RunType == "destroy" {
+		return f.completePlanPhase(ctx, log, orgID, args)
 	}
 
 	finalStatus := "finished"
@@ -88,11 +51,47 @@ func (f *Finalizer) Complete(ctx context.Context, log *slog.Logger, orgID string
 	case "apply":
 		go f.notifier.RunFinished(bg, args.RunID, true)
 		go f.triggerDownstreamStacks(bg, orgID, args)
-	case "destroy":
-		go f.notifier.RunFinished(bg, args.RunID, true)
-		go f.maybeDeletePreviewStack(bg, args.StackID)
 	}
 
+	log.Info("run job complete", "status", finalStatus)
+	return nil
+}
+
+func (f *Finalizer) completePlanPhase(ctx context.Context, log *slog.Logger, orgID string, args queue.RunJobArgs) error {
+	denied, requiresApproval, err := f.evaluatePlanPolicies(ctx, log, args)
+	if err != nil {
+		log.Warn("policy evaluation failed, proceeding without policy gate", "err", err)
+	}
+	if denied {
+		return f.Fail(ctx, orgID, args.RunID, fmt.Errorf("blocked by policy"))
+	}
+
+	blockedByBudget := false
+	if exceeded := f.checkBudgetThresholds(ctx, args.RunID); len(exceeded) > 0 {
+		go f.notifier.BudgetAlert(context.Background(), args.RunID, exceeded)
+		blockedByBudget = f.stackBlocksOnAlert(ctx, args.StackID)
+	}
+
+	if args.AutoApply && args.RunType == "tracked" && !requiresApproval && !blockedByBudget {
+		now := time.Now()
+		if _, err := f.pool.Exec(ctx,
+			`UPDATE runs SET status = 'confirmed', approved_by = NULL, approved_at = $1 WHERE id = $2`,
+			now, args.RunID,
+		); err != nil {
+			return f.Fail(ctx, orgID, args.RunID, err)
+		}
+		return f.enqueueApply(ctx, args)
+	}
+
+	finalStatus := "unconfirmed"
+	if requiresApproval {
+		finalStatus = "pending_approval"
+	}
+	now := time.Now()
+	if err := f.SetStatus(ctx, orgID, args.RunID, finalStatus, &now); err != nil {
+		return err
+	}
+	go f.notifier.PlanComplete(context.Background(), args.RunID)
 	log.Info("run job complete", "status", finalStatus)
 	return nil
 }
