@@ -167,6 +167,10 @@ type Stack struct {
 	WorkerPoolName       *string    `json:"worker_pool_name,omitempty"`
 	GitHubInstallationUUID *string  `json:"github_installation_uuid,omitempty"`
 	ProjectID            *string    `json:"project_id,omitempty"`
+	PlanAlertAdd        *int       `json:"plan_alert_add,omitempty"`
+	PlanAlertChange     *int       `json:"plan_alert_change,omitempty"`
+	PlanAlertDestroy    *int       `json:"plan_alert_destroy,omitempty"`
+	PlanBlockOnAlert    bool       `json:"plan_block_on_alert"`
 	HealthScore          int        `json:"health_score"`   // 0–100; -1 = no data
 	HealthStatus         string     `json:"health_status"`  // healthy | degraded | unhealthy | unknown
 	IsPinned             bool       `json:"is_pinned"`
@@ -488,6 +492,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.is_preview, s.preview_source_stack_id, s.preview_pr_number, s.preview_pr_url, s.preview_branch,
 		       s.worker_pool_id, wp.name,
 		       s.github_installation_uuid, s.project_id,
+		       s.plan_alert_add, s.plan_alert_change, s.plan_alert_destroy, s.plan_block_on_alert,
 		       `+healthScoreSQL+` AS health_score,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted
@@ -516,6 +521,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.IsPreview, &s.PreviewSourceStackID, &s.PreviewPRNumber, &s.PreviewPRURL, &s.PreviewBranch,
 		&s.WorkerPoolID, &s.WorkerPoolName,
 		&s.GitHubInstallationUUID, &s.ProjectID,
+		&s.PlanAlertAdd, &s.PlanAlertChange, &s.PlanAlertDestroy, &s.PlanBlockOnAlert,
 		&s.HealthScore,
 		&s.MyStackRole, &s.IsRestricted)
 	if err != nil {
@@ -566,6 +572,10 @@ type updateStackReq struct {
 	WorkerPoolID        *string `json:"worker_pool_id"`         // empty string clears
 	GitHubInstallationUUID *string `json:"github_installation_uuid"` // empty string clears
 	ProjectID           *string `json:"project_id"`             // empty string clears
+	PlanAlertAdd        *int    `json:"plan_alert_add"`         // null clears
+	PlanAlertChange     *int    `json:"plan_alert_change"`
+	PlanAlertDestroy    *int    `json:"plan_alert_destroy"`
+	PlanBlockOnAlert    *bool   `json:"plan_block_on_alert"`
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -622,6 +632,25 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 		} else {
 			add("max_concurrent_runs", *r.MaxConcurrentRuns)
 		}
+	}
+	for _, f := range []struct {
+		col string
+		v   *int
+	}{
+		{"plan_alert_add", r.PlanAlertAdd},
+		{"plan_alert_change", r.PlanAlertChange},
+		{"plan_alert_destroy", r.PlanAlertDestroy},
+	} {
+		if f.v != nil {
+			if *f.v <= 0 {
+				add(f.col, nil) // 0 = clear threshold
+			} else {
+				add(f.col, *f.v)
+			}
+		}
+	}
+	if r.PlanBlockOnAlert != nil {
+		add("plan_block_on_alert", *r.PlanBlockOnAlert)
 	}
 	r.addPRPreviewSets(add)
 	r.addWorkerPoolSet(add)

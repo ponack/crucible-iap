@@ -44,7 +44,13 @@ func (f *Finalizer) Complete(ctx context.Context, log *slog.Logger, orgID string
 			return f.Fail(ctx, orgID, args.RunID, fmt.Errorf("blocked by policy"))
 		}
 
-		if args.AutoApply && args.RunType == "tracked" && !requiresApproval {
+		exceeded := f.checkBudgetThresholds(ctx, args.RunID)
+		if len(exceeded) > 0 {
+			go f.notifier.BudgetAlert(context.Background(), args.RunID, exceeded)
+		}
+
+		blockedByBudget := len(exceeded) > 0 && f.stackBlocksOnAlert(ctx, args.StackID)
+		if args.AutoApply && args.RunType == "tracked" && !requiresApproval && !blockedByBudget {
 			now := time.Now()
 			if _, err := f.pool.Exec(ctx,
 				`UPDATE runs SET status = 'confirmed', approved_by = NULL, approved_at = $1 WHERE id = $2`,
@@ -317,6 +323,44 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 			slog.Error("trigger downstream: failed to enqueue", "stack_id", t.stackID, "err", err)
 		}
 	}
+}
+
+// checkBudgetThresholds compares the plan's resource counts against the stack's
+// configured alert thresholds and returns a slice of human-readable breach
+// descriptions. An empty slice means no thresholds were breached.
+func (f *Finalizer) checkBudgetThresholds(ctx context.Context, runID string) []string {
+	var planAdd, planChange, planDestroy int
+	var alertAdd, alertChange, alertDestroy *int
+	err := f.pool.QueryRow(ctx, `
+		SELECT COALESCE(r.plan_add, 0), COALESCE(r.plan_change, 0), COALESCE(r.plan_destroy, 0),
+		       s.plan_alert_add, s.plan_alert_change, s.plan_alert_destroy
+		FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1
+	`, runID).Scan(&planAdd, &planChange, &planDestroy, &alertAdd, &alertChange, &alertDestroy)
+	if err != nil {
+		return nil
+	}
+
+	var exceeded []string
+	if alertAdd != nil && planAdd > *alertAdd {
+		exceeded = append(exceeded, fmt.Sprintf("adds: %d (limit %d)", planAdd, *alertAdd))
+	}
+	if alertChange != nil && planChange > *alertChange {
+		exceeded = append(exceeded, fmt.Sprintf("changes: %d (limit %d)", planChange, *alertChange))
+	}
+	if alertDestroy != nil && planDestroy > *alertDestroy {
+		exceeded = append(exceeded, fmt.Sprintf("destroys: %d (limit %d)", planDestroy, *alertDestroy))
+	}
+	return exceeded
+}
+
+// stackBlocksOnAlert returns true if the stack is configured to block auto-apply
+// when a budget threshold is breached.
+func (f *Finalizer) stackBlocksOnAlert(ctx context.Context, stackID string) bool {
+	var blocks bool
+	_ = f.pool.QueryRow(ctx, `SELECT plan_block_on_alert FROM stacks WHERE id = $1`, stackID).Scan(&blocks)
+	return blocks
 }
 
 func (f *Finalizer) maybeDeletePreviewStack(ctx context.Context, stackID string) {

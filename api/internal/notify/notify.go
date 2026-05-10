@@ -508,6 +508,47 @@ func (n *Notifier) PolicyDenied(ctx context.Context, runID string, messages []st
 	}
 }
 
+// BudgetAlert fires notifications on all configured channels when a plan
+// exceeds one or more resource-count thresholds. exceeded is a slice of
+// human-readable strings, e.g. ["adds: 42 (limit 10)", "destroys: 5 (limit 3)"].
+func (n *Notifier) BudgetAlert(ctx context.Context, runID string, exceeded []string) {
+	d, err := n.load(ctx, runID)
+	if err != nil {
+		slog.Warn("notify: budget alert: failed to load run data", "run_id", runID, "err", err)
+		return
+	}
+
+	title := d.stackName + " — plan budget alert"
+	runLink := n.runURL(runID)
+
+	detail := ""
+	for _, e := range exceeded {
+		detail += "• " + e + "\n"
+	}
+
+	if slackURL := n.slackWebhook(d); slackURL != "" {
+		n.slackPost(ctx, slackURL, fmt.Sprintf("⚠️ *%s* — thresholds exceeded:\n%s<%s|View run>", title, detail, runLink))
+	}
+	if discordURL := n.discordWebhook(d); discordURL != "" {
+		n.discordPost(ctx, discordURL, fmt.Sprintf("⚠️ **%s** — thresholds exceeded:\n%s%s", title, detail, runLink))
+	}
+	if teamsURL := n.teamsWebhook(d); teamsURL != "" {
+		n.teamsPost(ctx, teamsURL, fmt.Sprintf("⚠️ %s — thresholds exceeded:\n%s%s", title, detail, runLink))
+	}
+	if d.gotifyURL != "" {
+		if tok := n.gotifyToken(d); tok != "" {
+			n.gotifyPost(ctx, d.gotifyURL, tok, title, fmt.Sprintf("Thresholds exceeded:\n%s\n%s", detail, runLink))
+		}
+	}
+	if d.ntfyURL != "" {
+		n.ntfyPost(ctx, d.ntfyURL, n.ntfyToken(d), title, fmt.Sprintf("Thresholds exceeded:\n%s\n%s", detail, runLink), "high")
+	}
+	if d.notifyEmail != "" {
+		n.sendEmailNotification(ctx, d.notifyEmail, title,
+			fmt.Sprintf("<p>Thresholds exceeded:</p><pre>%s</pre><p><a href='%s'>View run</a></p>", detail, runLink))
+	}
+}
+
 // ── VCS helpers ───────────────────────────────────────────────────────────────
 
 func (n *Notifier) setCommitStatus(ctx context.Context, provider, baseURL, owner, repo, sha, state, desc, token, runID string) {
