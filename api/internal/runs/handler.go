@@ -272,6 +272,7 @@ func (h *Handler) Create(c echo.Context) error {
 	// Fetch stack details needed to build the job spec; reject if locked.
 	var stack struct {
 		Tool         string
+		ToolVersion  string
 		RunnerImage  string
 		RepoURL      string
 		RepoBranch   string
@@ -281,9 +282,9 @@ func (h *Handler) Create(c echo.Context) error {
 		WorkerPoolID *string
 	}
 	if err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, is_locked, lock_reason, worker_pool_id
+		SELECT tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root, is_locked, lock_reason, worker_pool_id
 		FROM stacks WHERE id = $1
-	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot, &stack.IsLocked, &stack.LockReason, &stack.WorkerPoolID); err != nil {
+	`, stackID).Scan(&stack.Tool, &stack.ToolVersion, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot, &stack.IsLocked, &stack.LockReason, &stack.WorkerPoolID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 	if err := lockedError(stack.IsLocked, stack.LockReason); err != nil {
@@ -309,6 +310,7 @@ func (h *Handler) Create(c echo.Context) error {
 			RunID:        r.ID,
 			StackID:      stackID,
 			Tool:         stack.Tool,
+			ToolVersion:  stack.ToolVersion,
 			RunnerImage:  stack.RunnerImage,
 			RepoURL:      stack.RepoURL,
 			RepoBranch:   stack.RepoBranch,
@@ -429,17 +431,17 @@ func (h *Handler) Confirm(c echo.Context) error {
 	}
 
 	var workerPoolID *string
-	var tool, runnerImage, repoURL, repoBranch, projectRoot string
+	var tool, toolVersion, runnerImage, repoURL, repoBranch, projectRoot string
 	_ = h.pool.QueryRow(c.Request().Context(), `
-		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, worker_pool_id
+		SELECT tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root, worker_pool_id
 		FROM stacks WHERE id = $1
-	`, r.StackID).Scan(&tool, &runnerImage, &repoURL, &repoBranch, &projectRoot, &workerPoolID)
+	`, r.StackID).Scan(&tool, &toolVersion, &runnerImage, &repoURL, &repoBranch, &projectRoot, &workerPoolID)
 
 	if workerPoolID == nil {
 		apiURL := h.runnerAPIURL(c)
 		_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
 			RunID: r.ID, StackID: r.StackID,
-			Tool: tool, RunnerImage: runnerImage,
+			Tool: tool, ToolVersion: toolVersion, RunnerImage: runnerImage,
 			RepoURL: repoURL, RepoBranch: repoBranch, ProjectRoot: projectRoot,
 			RunType: "apply", APIURL: apiURL,
 			VarOverrides: r.VarOverrides,
@@ -486,16 +488,16 @@ func (h *Handler) Approve(c echo.Context) error {
 			UPDATE runs SET status = 'confirmed' WHERE id = $1
 		`, id); err == nil {
 			var workerPoolID *string
-			var tool, runnerImage, repoURL, repoBranch, projectRoot string
+			var tool, toolVersion, runnerImage, repoURL, repoBranch, projectRoot string
 			_ = h.pool.QueryRow(c.Request().Context(), `
-				SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, worker_pool_id
+				SELECT tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root, worker_pool_id
 				FROM stacks WHERE id = $1
-			`, r.StackID).Scan(&tool, &runnerImage, &repoURL, &repoBranch, &projectRoot, &workerPoolID)
+			`, r.StackID).Scan(&tool, &toolVersion, &runnerImage, &repoURL, &repoBranch, &projectRoot, &workerPoolID)
 
 			if workerPoolID == nil {
 				_, _ = h.queue.EnqueueRun(c.Request().Context(), queue.RunJobArgs{
 					RunID: r.ID, StackID: r.StackID,
-					Tool: tool, RunnerImage: runnerImage,
+					Tool: tool, ToolVersion: toolVersion, RunnerImage: runnerImage,
 					RepoURL: repoURL, RepoBranch: repoBranch, ProjectRoot: projectRoot,
 					RunType: "apply", APIURL: h.runnerAPIURL(c),
 					VarOverrides: r.VarOverrides,
@@ -938,15 +940,16 @@ func (h *Handler) TriggerDrift(c echo.Context) error {
 
 	var stack struct {
 		Tool        string
+		ToolVersion string
 		RunnerImage string
 		RepoURL     string
 		RepoBranch  string
 		ProjectRoot string
 	}
 	err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
+		SELECT tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root
 		FROM stacks WHERE id = $1
-	`, stackID).Scan(&stack.Tool, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
+	`, stackID).Scan(&stack.Tool, &stack.ToolVersion, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -965,6 +968,7 @@ func (h *Handler) TriggerDrift(c echo.Context) error {
 		RunID:       r.ID,
 		StackID:     stackID,
 		Tool:        stack.Tool,
+		ToolVersion: stack.ToolVersion,
 		RunnerImage: stack.RunnerImage,
 		RepoURL:     stack.RepoURL,
 		RepoBranch:  stack.RepoBranch,
@@ -1019,6 +1023,7 @@ func (h *Handler) Retrigger(c echo.Context) error {
 
 	var stack struct {
 		tool         string
+		toolVersion  string
 		runnerImage  string
 		repoURL      string
 		repoBranch   string
@@ -1028,10 +1033,10 @@ func (h *Handler) Retrigger(c echo.Context) error {
 		workerPoolID *string
 	}
 	if err := h.pool.QueryRow(c.Request().Context(), `
-		SELECT tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root,
+		SELECT tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root,
 		       is_locked, lock_reason, worker_pool_id
 		FROM stacks WHERE id = $1
-	`, src.stackID).Scan(&stack.tool, &stack.runnerImage, &stack.repoURL, &stack.repoBranch,
+	`, src.stackID).Scan(&stack.tool, &stack.toolVersion, &stack.runnerImage, &stack.repoURL, &stack.repoBranch,
 		&stack.projectRoot, &stack.isLocked, &stack.lockReason, &stack.workerPoolID); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -1058,6 +1063,7 @@ func (h *Handler) Retrigger(c echo.Context) error {
 			RunID:        r.ID,
 			StackID:      src.stackID,
 			Tool:         stack.tool,
+			ToolVersion:  stack.toolVersion,
 			RunnerImage:  stack.runnerImage,
 			RepoURL:      stack.repoURL,
 			RepoBranch:   stack.repoBranch,

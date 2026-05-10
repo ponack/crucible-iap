@@ -26,6 +26,7 @@ type JobSpec struct {
 	RunID          string
 	StackID        string
 	Tool           string // opentofu | terraform | ansible | pulumi
+	ToolVersion    string // empty = use version baked into runner image
 	RunnerImage    string
 	JobToken       string // short-lived JWT scoped to this run
 	APIURL         string // Crucible API base URL for callbacks
@@ -132,7 +133,11 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		vcsAuth = "token (via org integration)"
 	}
 	logline(logWriter, "run_id=%s stack_id=%s", spec.RunID, spec.StackID)
-	logline(logWriter, "image=%s tool=%s run_type=%s", image, spec.Tool, spec.RunType)
+	toolLabel := spec.Tool
+	if spec.ToolVersion != "" {
+		toolLabel += "@" + spec.ToolVersion
+	}
+	logline(logWriter, "image=%s tool=%s run_type=%s", image, toolLabel, spec.RunType)
 	logline(logWriter, "repo=%s branch=%s project_root=%s", spec.RepoURL, spec.RepoBranch, spec.ProjectRoot)
 	logline(logWriter, "vcs_auth=%s extra_env_vars=%d", vcsAuth, len(spec.ExtraEnv))
 	logline(logWriter, "api_url=%s", spec.APIURL)
@@ -177,6 +182,9 @@ func (r *Runner) Execute(ctx context.Context, spec JobSpec, logWriter io.Writer)
 		"CRUCIBLE_PROJECT_ROOT=" + spec.ProjectRoot,
 		"CRUCIBLE_RUN_TYPE=" + spec.RunType,
 		"CRUCIBLE_VCS_TOKEN=" + spec.VCSToken, // empty string if no integration set
+	}
+	if spec.ToolVersion != "" {
+		env = append(env, "CRUCIBLE_TOOL_VERSION="+spec.ToolVersion)
 	}
 	// Inject MinIO credentials for Pulumi runners so they can configure the
 	// DIY S3 backend automatically. Not injected for other tools.

@@ -33,6 +33,7 @@ func StartTTLScheduler(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 type ttlStack struct {
 	id          string
 	tool        string
+	toolVersion string
 	runnerImage string
 	repoURL     string
 	repoBranch  string
@@ -41,7 +42,7 @@ type ttlStack struct {
 
 func runTTLDestroys(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, q *queue.Client) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root
+		SELECT id, tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root
 		FROM stacks
 		WHERE scheduled_destroy_at IS NOT NULL
 		  AND scheduled_destroy_at <= now()
@@ -56,7 +57,7 @@ func runTTLDestroys(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 	var due []ttlStack
 	for rows.Next() {
 		var s ttlStack
-		if err := rows.Scan(&s.id, &s.tool, &s.runnerImage, &s.repoURL, &s.repoBranch, &s.projectRoot); err != nil {
+		if err := rows.Scan(&s.id, &s.tool, &s.toolVersion, &s.runnerImage, &s.repoURL, &s.repoBranch, &s.projectRoot); err != nil {
 			continue
 		}
 		due = append(due, s)
@@ -96,6 +97,7 @@ func enqueueTTLDestroy(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 		RunID:       runID,
 		StackID:     s.id,
 		Tool:        s.tool,
+		ToolVersion: s.toolVersion,
 		RunnerImage: s.runnerImage,
 		RepoURL:     s.repoURL,
 		RepoBranch:  s.repoBranch,

@@ -193,6 +193,7 @@ func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) 
 		RunID:          args.RunID,
 		StackID:        args.StackID,
 		Tool:           args.Tool,
+		ToolVersion:    args.ToolVersion,
 		RunnerImage:    args.RunnerImage,
 		JobToken:       jobToken,
 		APIURL:         args.APIURL,

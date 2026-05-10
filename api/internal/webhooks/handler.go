@@ -113,6 +113,7 @@ func (h *Handler) dispatchEvent(
 		repoBranch      string
 		isDisabled      bool
 		tool            string
+		toolVersion     string
 		repoURL         string
 		projectRoot     string
 		runnerImage     *string
@@ -123,12 +124,12 @@ func (h *Handler) dispatchEvent(
 	)
 	err := h.pool.QueryRow(ctx, `
 		SELECT org_id, repo_branch, is_disabled,
-		       tool, repo_url, project_root, runner_image,
+		       tool, COALESCE(tool_version,''), repo_url, project_root, runner_image,
 		       module_namespace, module_name, module_provider,
 		       worker_pool_id
 		FROM stacks WHERE id = $1
 	`, stackID).Scan(&orgID, &repoBranch, &isDisabled,
-		&tool, &repoURL, &projectRoot, &runnerImage,
+		&tool, &toolVersion, &repoURL, &projectRoot, &runnerImage,
 		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID)
 	if err != nil {
 		return echo.ErrNotFound
@@ -179,6 +180,7 @@ func (h *Handler) dispatchEvent(
 		RunID:       runID,
 		StackID:     stackID,
 		Tool:        tool,
+		ToolVersion: toolVersion,
 		RunnerImage: img,
 		RepoURL:     repoURL,
 		RepoBranch:  repoBranch,
@@ -303,6 +305,7 @@ func (h *Handler) Redeliver(c echo.Context) error {
 
 	var (
 		tool        string
+		toolVersion string
 		runnerImage *string
 		repoURL     string
 		repoBranch  string
@@ -310,9 +313,9 @@ func (h *Handler) Redeliver(c echo.Context) error {
 		isDisabled  bool
 	)
 	err := h.pool.QueryRow(ctx, `
-		SELECT tool, runner_image, repo_url, repo_branch, project_root, is_disabled
+		SELECT tool, COALESCE(tool_version,''), runner_image, repo_url, repo_branch, project_root, is_disabled
 		FROM stacks WHERE id = $1 AND org_id = $2
-	`, stackID, orgID).Scan(&tool, &runnerImage, &repoURL, &repoBranch, &projectRoot, &isDisabled)
+	`, stackID, orgID).Scan(&tool, &toolVersion, &runnerImage, &repoURL, &repoBranch, &projectRoot, &isDisabled)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -372,6 +375,7 @@ func (h *Handler) Redeliver(c echo.Context) error {
 		RunID:       runID,
 		StackID:     stackID,
 		Tool:        tool,
+		ToolVersion: toolVersion,
 		RunnerImage: img,
 		RepoURL:     repoURL,
 		RepoBranch:  repoBranch,
@@ -424,12 +428,12 @@ func (h *Handler) handlePRClose(ctx context.Context, c echo.Context, orgID, stac
 	}
 
 	// Load preview stack config for the runner.
-	var tool, repoURL, repoBranch, projectRoot string
+	var tool, toolVersion, repoURL, repoBranch, projectRoot string
 	var runnerImage *string
 	if err := h.pool.QueryRow(ctx, `
-		SELECT tool, repo_url, repo_branch, project_root, runner_image
+		SELECT tool, COALESCE(tool_version,''), repo_url, repo_branch, project_root, runner_image
 		FROM stacks WHERE id = $1
-	`, previewStackID).Scan(&tool, &repoURL, &repoBranch, &projectRoot, &runnerImage); err != nil {
+	`, previewStackID).Scan(&tool, &toolVersion, &repoURL, &repoBranch, &projectRoot, &runnerImage); err != nil {
 		return fmt.Errorf("load preview stack: %w", err)
 	}
 
@@ -454,6 +458,7 @@ func (h *Handler) handlePRClose(ctx context.Context, c echo.Context, orgID, stac
 		RunID:       runID,
 		StackID:     previewStackID,
 		Tool:        tool,
+		ToolVersion: toolVersion,
 		RunnerImage: img,
 		RepoURL:     repoURL,
 		RepoBranch:  repoBranch,
@@ -538,11 +543,11 @@ func (h *Handler) maybeSpawnPreview(ctx context.Context, orgID, sourceStackID st
 	}
 
 	// Queue a tracked run on the preview stack.
-	var tool, repoURL, projectRoot string
+	var tool, toolVersion, repoURL, projectRoot string
 	var runnerImage *string
 	if err := h.pool.QueryRow(ctx, `
-		SELECT tool, repo_url, project_root, runner_image FROM stacks WHERE id = $1
-	`, previewStackID).Scan(&tool, &repoURL, &projectRoot, &runnerImage); err != nil {
+		SELECT tool, COALESCE(tool_version,''), repo_url, project_root, runner_image FROM stacks WHERE id = $1
+	`, previewStackID).Scan(&tool, &toolVersion, &repoURL, &projectRoot, &runnerImage); err != nil {
 		return fmt.Errorf("reload preview stack: %w", err)
 	}
 
@@ -571,6 +576,7 @@ func (h *Handler) maybeSpawnPreview(ctx context.Context, orgID, sourceStackID st
 		RunID:        runID,
 		StackID:      previewStackID,
 		Tool:         tool,
+		ToolVersion:  toolVersion,
 		RunnerImage:  img,
 		RepoURL:      repoURL,
 		RepoBranch:   event.branch,

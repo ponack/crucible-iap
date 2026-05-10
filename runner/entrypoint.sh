@@ -215,8 +215,62 @@ run_tf_generic() {
     esac
 }
 
-run_opentofu()  { run_tf_generic "tofu"; }
-run_terraform() { run_tf_generic "terraform"; }
+# Download a pinned OpenTofu version and return the binary path via stdout.
+# Prints the system "tofu" path when CRUCIBLE_TOOL_VERSION is unset or empty.
+resolve_opentofu_bin() {
+    local ver="${CRUCIBLE_TOOL_VERSION:-}"
+    if [[ -z "${ver}" ]]; then
+        echo "tofu"
+        return
+    fi
+    local arch
+    arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+    local dest="/tmp/versioned/tofu-${ver}"
+    if [[ ! -x "${dest}" ]]; then
+        log "downloading opentofu v${ver} (${arch})"
+        mkdir -p /tmp/versioned
+        curl -fsSL \
+            "https://github.com/opentofu/opentofu/releases/download/v${ver}/tofu_${ver}_linux_${arch}.zip" \
+            -o /tmp/tofu-download.zip \
+            || fail "failed to download opentofu v${ver}"
+        unzip -q /tmp/tofu-download.zip tofu -d /tmp/versioned-extract/ \
+            || fail "failed to extract opentofu v${ver}"
+        mv /tmp/versioned-extract/tofu "${dest}"
+        chmod +x "${dest}"
+        rm -f /tmp/tofu-download.zip
+    fi
+    echo "${dest}"
+}
+
+# Download a pinned Terraform version and return the binary path via stdout.
+# Prints the system "terraform" path when CRUCIBLE_TOOL_VERSION is unset or empty.
+resolve_terraform_bin() {
+    local ver="${CRUCIBLE_TOOL_VERSION:-}"
+    if [[ -z "${ver}" ]]; then
+        echo "terraform"
+        return
+    fi
+    local arch
+    arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+    local dest="/tmp/versioned/terraform-${ver}"
+    if [[ ! -x "${dest}" ]]; then
+        log "downloading terraform v${ver} (${arch})"
+        mkdir -p /tmp/versioned
+        curl -fsSL \
+            "https://releases.hashicorp.com/terraform/${ver}/terraform_${ver}_linux_${arch}.zip" \
+            -o /tmp/terraform-download.zip \
+            || fail "failed to download terraform v${ver}"
+        unzip -q /tmp/terraform-download.zip terraform -d /tmp/versioned-extract/ \
+            || fail "failed to extract terraform v${ver}"
+        mv /tmp/versioned-extract/terraform "${dest}"
+        chmod +x "${dest}"
+        rm -f /tmp/terraform-download.zip
+    fi
+    echo "${dest}"
+}
+
+run_opentofu()  { run_tf_generic "$(resolve_opentofu_bin)"; }
+run_terraform() { run_tf_generic "$(resolve_terraform_bin)"; }
 
 # ── Ansible ───────────────────────────────────────────────────────────────────
 

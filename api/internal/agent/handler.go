@@ -235,15 +235,15 @@ func (h *Handler) Finish(c echo.Context) error {
 	var stackID, orgID, runType string
 	var autoApply bool
 	var varOverrides []string
-	var runnerImage, repoURL, repoBranch, projectRoot, tool string
+	var runnerImage, repoURL, repoBranch, projectRoot, tool, toolVersion string
 	if err := h.pool.QueryRow(ctx, `
 		SELECT r.stack_id, s.org_id, r.type, s.auto_apply, r.var_overrides,
-		       s.tool, COALESCE(s.runner_image,''), s.repo_url, s.repo_branch, s.project_root
+		       s.tool, COALESCE(s.tool_version,''), COALESCE(s.runner_image,''), s.repo_url, s.repo_branch, s.project_root
 		FROM runs r JOIN stacks s ON s.id = r.stack_id
 		WHERE r.id = $1 AND r.worker_pool_id = $2
 		  AND r.status = 'preparing'
 	`, runID, poolID).Scan(&stackID, &orgID, &runType, &autoApply, &varOverrides,
-		&tool, &runnerImage, &repoURL, &repoBranch, &projectRoot); err != nil {
+		&tool, &toolVersion, &runnerImage, &repoURL, &repoBranch, &projectRoot); err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found or not in preparing state")
 	}
 
@@ -263,7 +263,7 @@ func (h *Handler) Finish(c echo.Context) error {
 	apiURL := h.agentAPIURL(c)
 	args := queue.RunJobArgs{
 		RunID: runID, StackID: stackID,
-		Tool: tool, RunnerImage: runnerImage,
+		Tool: tool, ToolVersion: toolVersion, RunnerImage: runnerImage,
 		RepoURL: repoURL, RepoBranch: repoBranch, ProjectRoot: projectRoot,
 		RunType: effectiveRunType, AutoApply: autoApply, APIURL: apiURL,
 		VarOverrides: varOverrides,

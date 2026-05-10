@@ -34,6 +34,7 @@ func StartDriftScheduler(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 type driftStack struct {
 	id          string
 	tool        string
+	toolVersion string
 	runnerImage string
 	repoURL     string
 	repoBranch  string
@@ -43,7 +44,7 @@ type driftStack struct {
 
 func runDriftChecks(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, q *queue.Client) {
 	rows, err := pool.Query(ctx, `
-		SELECT id, tool, COALESCE(runner_image,''), repo_url, repo_branch, project_root, drift_schedule
+		SELECT id, tool, COALESCE(tool_version,''), COALESCE(runner_image,''), repo_url, repo_branch, project_root, drift_schedule
 		FROM stacks
 		WHERE drift_detection = true
 		  AND drift_schedule IS NOT NULL
@@ -64,7 +65,7 @@ func runDriftChecks(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 	var due []driftStack
 	for rows.Next() {
 		var s driftStack
-		if err := rows.Scan(&s.id, &s.tool, &s.runnerImage, &s.repoURL, &s.repoBranch, &s.projectRoot, &s.schedule); err != nil {
+		if err := rows.Scan(&s.id, &s.tool, &s.toolVersion, &s.runnerImage, &s.repoURL, &s.repoBranch, &s.projectRoot, &s.schedule); err != nil {
 			continue
 		}
 		// Validate schedule is a parseable integer.
@@ -109,6 +110,7 @@ func enqueueDriftRun(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		RunID:       runID,
 		StackID:     s.id,
 		Tool:        s.tool,
+		ToolVersion: s.toolVersion,
 		RunnerImage: s.runnerImage,
 		RepoURL:     s.repoURL,
 		RepoBranch:  s.repoBranch,
