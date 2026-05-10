@@ -22,7 +22,7 @@ export interface Stack {
 	slug: string;
 	name: string;
 	description?: string;
-	tool: 'opentofu' | 'terraform' | 'ansible' | 'pulumi';
+	tool: 'opentofu' | 'terraform' | 'ansible' | 'pulumi' | 'terragrunt';
 	tool_version?: string;
 	repo_url: string;
 	repo_branch: string;

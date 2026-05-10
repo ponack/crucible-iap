@@ -133,6 +133,7 @@
 				<option value="terraform">Terraform</option>
 				<option value="ansible">Ansible</option>
 				<option value="pulumi">Pulumi</option>
+				<option value="terragrunt">Terragrunt</option>
 			</select>
 		</div>
 		<div class="w-40">

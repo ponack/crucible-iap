@@ -1213,6 +1213,7 @@
 					{stack.tool === 'opentofu' ? 'bg-violet-900 text-violet-300' :
 					 stack.tool === 'terraform' ? 'bg-purple-900 text-purple-300' :
 					 stack.tool === 'ansible' ? 'bg-red-900 text-red-300' :
+					 stack.tool === 'terragrunt' ? 'bg-green-900 text-green-300' :
 					 'bg-sky-900 text-sky-300'}">
 					{stack.tool}
 				</span>
