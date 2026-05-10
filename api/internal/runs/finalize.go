@@ -51,6 +51,7 @@ func (f *Finalizer) Complete(ctx context.Context, log *slog.Logger, orgID string
 	case "apply":
 		go f.notifier.RunFinished(bg, args.RunID, true)
 		go f.triggerDownstreamStacks(bg, orgID, args)
+		go f.maybeDeletePreviewStack(bg, args.StackID)
 	}
 
 	log.Info("run job complete", "status", finalStatus)
