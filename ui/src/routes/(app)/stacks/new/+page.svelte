@@ -35,7 +35,7 @@
 	let form = $state({
 		name: '',
 		description: '',
-		tool: 'opentofu' as 'opentofu' | 'terraform' | 'ansible' | 'pulumi',
+		tool: 'opentofu' as 'opentofu' | 'terraform' | 'ansible' | 'pulumi' | 'terragrunt',
 		tool_version: '',
 		repo_url: '',
 		repo_branch: 'main',
@@ -111,6 +111,7 @@
 						<option value="terraform">Terraform</option>
 						<option value="ansible">Ansible</option>
 						<option value="pulumi">Pulumi</option>
+						<option value="terragrunt">Terragrunt</option>
 					</select>
 				</div>
 			</div>

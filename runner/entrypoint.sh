@@ -289,6 +289,78 @@ resolve_terraform_bin() {
 run_opentofu()  { run_tf_generic "$(resolve_opentofu_bin)"; }
 run_terraform() { run_tf_generic "$(resolve_terraform_bin)"; }
 
+# ── Terragrunt ────────────────────────────────────────────────────────────────
+
+resolve_terragrunt_bin() {
+    local ver="${CRUCIBLE_TOOL_VERSION:-0.72.1}"
+    local arch
+    arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+    local dest="/tmp/versioned/terragrunt-${ver}"
+    if [[ ! -x "${dest}" ]]; then
+        log "downloading terragrunt v${ver} (${arch})"
+        mkdir -p /tmp/versioned
+        curl -fsSL \
+            "https://github.com/gruntwork-io/terragrunt/releases/download/v${ver}/terragrunt_linux_${arch}" \
+            -o "${dest}" \
+            || fail "failed to download terragrunt v${ver}"
+        chmod +x "${dest}"
+    fi
+    echo "${dest}"
+}
+
+run_terragrunt() {
+    local tg
+    tg="$(resolve_terragrunt_bin)"
+    log "tool=terragrunt run_type=${CRUCIBLE_RUN_TYPE}"
+    log "version: $(${tg} --version 2>&1 | head -1)"
+
+    # Terragrunt manages its own state backend via remote_state blocks.
+    # Point the underlying OpenTofu / Terraform HTTP backend at Crucible so that
+    # stacks using the built-in state backend work without extra config.
+    export TF_HTTP_ADDRESS="${CRUCIBLE_API_URL}/api/v1/state/${CRUCIBLE_STACK_ID}"
+    export TF_HTTP_LOCK_ADDRESS="${TF_HTTP_ADDRESS}"
+    export TF_HTTP_UNLOCK_ADDRESS="${TF_HTTP_ADDRESS}"
+    export TF_HTTP_USERNAME="${CRUCIBLE_STACK_ID}"
+    export TF_HTTP_PASSWORD="${CRUCIBLE_JOB_TOKEN}"
+    export TF_IN_AUTOMATION=1
+    export TF_INPUT=0
+
+    case "${CRUCIBLE_RUN_TYPE}" in
+        destroy)
+            log "running terragrunt run-all destroy"
+            report_status "applying"
+            run_hook "pre_apply" "${CRUCIBLE_HOOK_PRE_APPLY:-}"
+            ${tg} run-all destroy --terragrunt-non-interactive --auto-approve
+            run_hook "post_apply" "${CRUCIBLE_HOOK_POST_APPLY:-}"
+            ;;
+
+        apply)
+            log "running terragrunt run-all apply"
+            report_status "applying"
+            run_hook "pre_apply" "${CRUCIBLE_HOOK_PRE_APPLY:-}"
+            ${tg} run-all apply --terragrunt-non-interactive --auto-approve
+            run_hook "post_apply" "${CRUCIBLE_HOOK_POST_APPLY:-}"
+            ;;
+
+        proposed)
+            log "running terragrunt run-all plan (proposed)"
+            report_status "planning"
+            run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
+            ${tg} run-all plan --terragrunt-non-interactive
+            run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
+            ;;
+
+        tracked|*)
+            log "running terragrunt run-all plan"
+            report_status "planning"
+            run_hook "pre_plan" "${CRUCIBLE_HOOK_PRE_PLAN:-}"
+            ${tg} run-all plan --terragrunt-non-interactive
+            run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
+            log "plan complete — awaiting confirmation"
+            ;;
+    esac
+}
+
 # ── Ansible ───────────────────────────────────────────────────────────────────
 
 # Parse the PLAY RECAP block to extract aggregate change/failure counts.
@@ -547,11 +619,12 @@ cd "${WORKDIR}"
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "${CRUCIBLE_TOOL}" in
-    opentofu)   run_opentofu  ;;
-    terraform)  run_terraform ;;
-    ansible)    run_ansible   ;;
-    pulumi)     run_pulumi    ;;
-    *)          fail "unsupported tool: ${CRUCIBLE_TOOL}" ;;
+    opentofu)    run_opentofu   ;;
+    terraform)   run_terraform  ;;
+    ansible)     run_ansible    ;;
+    pulumi)      run_pulumi     ;;
+    terragrunt)  run_terragrunt ;;
+    *)           fail "unsupported tool: ${CRUCIBLE_TOOL}" ;;
 esac
 
 log "done"
