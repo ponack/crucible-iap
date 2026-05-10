@@ -97,7 +97,7 @@ func runServe() {
 		slog.Error("failed to initialise vault", "err", err)
 		os.Exit(1)
 	}
-	n := notify.New(pool, v, cfg.BaseURL)
+	n := notify.New(pool, v, cfg.BaseURL, cfg.SecretKey)
 	// Wire the GitHub App installation-token minter so PR comments and commit
 	// status calls on App-auth stacks use short-lived tokens instead of PATs.
 	n.SetTokenMinter(githubapp.NewService(pool, v))
@@ -165,7 +165,7 @@ func runWorker() {
 		slog.Error("failed to initialise vault", "err", err)
 		os.Exit(1)
 	}
-	n := notify.New(pool, v, cfg.BaseURL)
+	n := notify.New(pool, v, cfg.BaseURL, cfg.SecretKey)
 
 	oidc, err := oidcprovider.LoadOrCreate(context.Background(), pool, v, cfg.BaseURL)
 	if err != nil {

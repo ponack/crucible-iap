@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ponack/crucible-iap/internal/chatops"
 	"github.com/ponack/crucible-iap/internal/outgoing"
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/vault"
@@ -33,19 +34,21 @@ type InstallationTokenMinter interface {
 
 // Notifier fires outbound notifications at run lifecycle events.
 type Notifier struct {
-	pool    *pgxpool.Pool
-	vault   *vault.Vault
-	baseURL string
-	client  *http.Client
-	minter  InstallationTokenMinter
+	pool      *pgxpool.Pool
+	vault     *vault.Vault
+	baseURL   string
+	secretKey string
+	client    *http.Client
+	minter    InstallationTokenMinter
 }
 
-func New(pool *pgxpool.Pool, v *vault.Vault, baseURL string) *Notifier {
+func New(pool *pgxpool.Pool, v *vault.Vault, baseURL, secretKey string) *Notifier {
 	return &Notifier{
-		pool:    pool,
-		vault:   v,
-		baseURL: strings.TrimRight(baseURL, "/"),
-		client:  &http.Client{Timeout: 10 * time.Second},
+		pool:      pool,
+		vault:     v,
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		secretKey: secretKey,
+		client:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -252,6 +255,12 @@ func (n *Notifier) decryptStr(stackID string, enc []byte) string {
 // runURL returns the Crucible UI link for a run.
 func (n *Notifier) runURL(runID string) string {
 	return n.baseURL + "/runs/" + runID
+}
+
+// actionURL returns a signed ChatOps action URL for the given run and action.
+func (n *Notifier) actionURL(runID, action string) string {
+	token := chatops.GenerateToken(runID, action, []byte(n.secretKey))
+	return n.baseURL + "/api/v1/runs/" + runID + "/chatops/" + action + "?token=" + url.QueryEscape(token)
 }
 
 // ── Public lifecycle hooks ────────────────────────────────────────────────────
@@ -777,8 +786,16 @@ func (n *Notifier) planCommentBody(d *runData) string {
 
 func (n *Notifier) planSlackMessage(d *runData) string {
 	add, change, destroy := derefInt(d.planAdd), derefInt(d.planChange), derefInt(d.planDestroy)
-	return fmt.Sprintf("*%s* — plan ready (+%d ~%d -%d) <%s|View run>",
+	msg := fmt.Sprintf("*%s* — plan ready (+%d ~%d -%d) <%s|View run>",
 		d.stackName, add, change, destroy, n.runURL(d.id))
+	if d.status == "unconfirmed" {
+		msg += fmt.Sprintf("  <%s|✅ Confirm & apply>  <%s|🗑 Discard>",
+			n.actionURL(d.id, "confirm"), n.actionURL(d.id, "discard"))
+	} else if d.status == "pending_approval" {
+		msg += fmt.Sprintf("  <%s|✅ Approve>  <%s|🗑 Discard>",
+			n.actionURL(d.id, "approve"), n.actionURL(d.id, "discard"))
+	}
+	return msg
 }
 
 func (n *Notifier) runSlackMessage(d *runData, success bool) string {
@@ -792,8 +809,10 @@ func (n *Notifier) runSlackMessage(d *runData, success bool) string {
 func (n *Notifier) planGotifyMessage(d *runData) string {
 	add, change, destroy := derefInt(d.planAdd), derefInt(d.planChange), derefInt(d.planDestroy)
 	msg := fmt.Sprintf("to add: %d, to change: %d, to destroy: %d\n%s", add, change, destroy, n.runURL(d.id))
-	if d.runType == "tracked" {
-		msg += "\nApproval required before apply."
+	if d.status == "unconfirmed" {
+		msg += fmt.Sprintf("\nConfirm & apply: %s\nDiscard: %s", n.actionURL(d.id, "confirm"), n.actionURL(d.id, "discard"))
+	} else if d.status == "pending_approval" {
+		msg += fmt.Sprintf("\nApprove: %s\nDiscard: %s", n.actionURL(d.id, "approve"), n.actionURL(d.id, "discard"))
 	}
 	return msg
 }
@@ -839,8 +858,10 @@ func (n *Notifier) ntfyPost(ctx context.Context, topicURL, token, title, message
 func (n *Notifier) planNtfyMessage(d *runData) string {
 	add, change, destroy := derefInt(d.planAdd), derefInt(d.planChange), derefInt(d.planDestroy)
 	msg := fmt.Sprintf("to add: %d, to change: %d, to destroy: %d\n%s", add, change, destroy, n.runURL(d.id))
-	if d.runType == "tracked" {
-		msg += "\nApproval required before apply."
+	if d.status == "unconfirmed" {
+		msg += fmt.Sprintf("\nConfirm & apply: %s\nDiscard: %s", n.actionURL(d.id, "confirm"), n.actionURL(d.id, "discard"))
+	} else if d.status == "pending_approval" {
+		msg += fmt.Sprintf("\nApprove: %s\nDiscard: %s", n.actionURL(d.id, "approve"), n.actionURL(d.id, "discard"))
 	}
 	return msg
 }
@@ -978,8 +999,10 @@ func (n *Notifier) planEmailBody(d *runData) string {
 	add, change, destroy := derefInt(d.planAdd), derefInt(d.planChange), derefInt(d.planDestroy)
 	body := fmt.Sprintf("Stack: %s\nPlan: +%d ~%d -%d\n\nView run: %s",
 		d.stackName, add, change, destroy, n.runURL(d.id))
-	if d.runType == "tracked" {
-		body += "\n\nApproval required before apply."
+	if d.status == "unconfirmed" {
+		body += fmt.Sprintf("\n\nConfirm & apply: %s\nDiscard: %s", n.actionURL(d.id, "confirm"), n.actionURL(d.id, "discard"))
+	} else if d.status == "pending_approval" {
+		body += fmt.Sprintf("\n\nApprove: %s\nDiscard: %s", n.actionURL(d.id, "approve"), n.actionURL(d.id, "discard"))
 	}
 	return body
 }

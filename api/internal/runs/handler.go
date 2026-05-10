@@ -14,6 +14,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/ponack/crucible-iap/internal/access"
 	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/chatops"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
@@ -1112,4 +1113,91 @@ func (h *Handler) Annotate(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "run not found")
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// ChatOpsAction handles signed approval action URLs embedded in Slack/Teams/Discord
+// notifications. No JWT required — authentication is via HMAC-signed token.
+// Supported actions: confirm, approve, discard.
+// On success redirects the browser to the run detail page.
+// GET /api/v1/runs/:id/chatops/:action?token=<token>
+func (h *Handler) ChatOpsAction(c echo.Context) error {
+	id := c.Param("id")
+	action := c.Param("action")
+	token := c.QueryParam("token")
+
+	validActions := map[string]bool{"confirm": true, "approve": true, "discard": true}
+	if !validActions[action] {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid action")
+	}
+
+	if !chatops.ValidateToken(token, id, action, []byte(h.cfg.SecretKey)) {
+		return echo.NewHTTPError(http.StatusForbidden, "invalid or expired token")
+	}
+
+	ctx := c.Request().Context()
+	var affected int64
+
+	switch action {
+	case "confirm":
+		tag, err := h.pool.Exec(ctx, `
+			UPDATE runs SET status = 'confirmed', approved_at = now()
+			WHERE id = $1 AND status = 'unconfirmed'
+		`, id)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to confirm run")
+		}
+		affected = tag.RowsAffected()
+		if affected > 0 {
+			var stackID string
+			var tool, toolVersion, runnerImage, repoURL, repoBranch, projectRoot string
+			var workerPoolID *string
+			_ = h.pool.QueryRow(ctx, `
+				SELECT s.id, s.tool, COALESCE(s.tool_version,''), COALESCE(s.runner_image,''),
+				       s.repo_url, s.repo_branch, s.project_root, s.worker_pool_id
+				FROM runs r JOIN stacks s ON s.id = r.stack_id WHERE r.id = $1
+			`, id).Scan(&stackID, &tool, &toolVersion, &runnerImage, &repoURL, &repoBranch, &projectRoot, &workerPoolID)
+			if workerPoolID == nil && stackID != "" {
+				_, _ = h.queue.EnqueueRun(ctx, queue.RunJobArgs{
+					RunID: id, StackID: stackID,
+					Tool: tool, ToolVersion: toolVersion, RunnerImage: runnerImage,
+					RepoURL: repoURL, RepoBranch: repoBranch, ProjectRoot: projectRoot,
+					RunType: "apply", APIURL: h.cfg.BaseURL,
+				})
+			}
+		}
+
+	case "approve":
+		tag, err := h.pool.Exec(ctx, `
+			UPDATE runs SET status = 'unconfirmed', approved_at = now()
+			WHERE id = $1 AND status = 'pending_approval'
+		`, id)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to approve run")
+		}
+		affected = tag.RowsAffected()
+
+	case "discard":
+		tag, err := h.pool.Exec(ctx, `
+			UPDATE runs SET status = 'discarded', finished_at = now()
+			WHERE id = $1 AND status IN ('unconfirmed', 'pending_approval')
+		`, id)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to discard run")
+		}
+		affected = tag.RowsAffected()
+	}
+
+	if affected == 0 {
+		return echo.NewHTTPError(http.StatusConflict, "run is not in a state that allows this action")
+	}
+
+	audit.Record(ctx, h.pool, audit.Event{
+		ActorType:    "chatops",
+		Action:       "run." + action + "d",
+		ResourceID:   id,
+		ResourceType: "run",
+	})
+
+	runPageURL := h.cfg.BaseURL + "/runs/" + id
+	return c.Redirect(http.StatusFound, runPageURL)
 }
