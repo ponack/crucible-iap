@@ -524,37 +524,36 @@ func (h *Handler) GetVersionDiff(c echo.Context) error {
 
 	oldRes := parseStateResources(fromData)
 	newRes := parseStateResources(toData)
-
-	// Added.
-	for addr, r := range newRes {
-		if _, ok := oldRes[addr]; !ok {
-			diff.Added = append(diff.Added, DiffEntry{Address: addr, Type: r.rtype, InstanceCount: r.count})
-		}
-	}
-	// Removed.
-	for addr, r := range oldRes {
-		if _, ok := newRes[addr]; !ok {
-			diff.Removed = append(diff.Removed, DiffEntry{Address: addr, Type: r.rtype, InstanceCount: r.count})
-		}
-	}
-	// Changed.
-	for addr, nr := range newRes {
-		or, ok := oldRes[addr]
-		if !ok {
-			continue
-		}
-		before, after, changed := diffAttrs(or.attrs, nr.attrs)
-		if changed {
-			diff.Changed = append(diff.Changed, ChangedEntry{
-				Address: addr, Type: nr.rtype, Before: before, After: after,
-			})
-		}
-	}
-
+	diff.Added, diff.Removed, diff.Changed = buildDiff(oldRes, newRes)
 	return c.JSON(http.StatusOK, diff)
 }
 
 // ── State diff helpers ────────────────────────────────────────────────────────
+
+func buildDiff(old, new map[string]parsedResource) (added []DiffEntry, removed []DiffEntry, changed []ChangedEntry) {
+	added, removed, changed = []DiffEntry{}, []DiffEntry{}, []ChangedEntry{}
+	for addr, r := range new {
+		if _, ok := old[addr]; !ok {
+			added = append(added, DiffEntry{Address: addr, Type: r.rtype, InstanceCount: r.count})
+		}
+	}
+	for addr, r := range old {
+		if _, ok := new[addr]; !ok {
+			removed = append(removed, DiffEntry{Address: addr, Type: r.rtype, InstanceCount: r.count})
+		}
+	}
+	for addr, nr := range new {
+		or, ok := old[addr]
+		if !ok {
+			continue
+		}
+		before, after, chg := diffAttrs(or.attrs, nr.attrs)
+		if chg {
+			changed = append(changed, ChangedEntry{Address: addr, Type: nr.rtype, Before: before, After: after})
+		}
+	}
+	return
+}
 
 type parsedResource struct {
 	rtype string
