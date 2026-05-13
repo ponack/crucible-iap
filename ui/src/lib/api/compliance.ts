@@ -5,10 +5,9 @@ export interface PolicyPack {
 	id: string;
 	slug: string;
 	name: string;
-	description?: string;
-	version: string;
-	installed_at: string;
 	last_synced_at: string | null;
+	last_sync_sha: string;
+	last_sync_error?: string;
 	policy_count: number;
 }
 
