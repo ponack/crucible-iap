@@ -14,16 +14,18 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
+	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
 )
 
 type Handler struct {
-	pool  *pgxpool.Pool
-	queue *queue.Client
+	pool   *pgxpool.Pool
+	queue  *queue.Client
+	engine *policy.Engine
 }
 
-func NewHandler(pool *pgxpool.Pool, q *queue.Client) *Handler {
-	return &Handler{pool: pool, queue: q}
+func NewHandler(pool *pgxpool.Pool, q *queue.Client, engine *policy.Engine) *Handler {
+	return &Handler{pool: pool, queue: q, engine: engine}
 }
 
 // ── Response type ─────────────────────────────────────────────────────────────

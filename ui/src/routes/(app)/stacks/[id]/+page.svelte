@@ -2033,7 +2033,7 @@
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
 							<th class="text-left px-4 py-2">Pack</th>
-							<th class="text-left px-4 py-2">Version</th>
+							<th class="text-left px-4 py-2">Synced</th>
 							<th class="text-left px-4 py-2">Policies</th>
 							<th class="px-4 py-2"></th>
 						</tr>
@@ -2042,7 +2042,7 @@
 						{#each stackPolicyPacks as pack (pack.id)}
 							<tr>
 								<td class="px-4 py-2.5 text-zinc-200">{pack.name}</td>
-								<td class="px-4 py-2.5 text-zinc-500 text-xs">{pack.version}</td>
+								<td class="px-4 py-2.5 text-zinc-500 text-xs">{pack.last_synced_at ? new Date(pack.last_synced_at).toLocaleDateString() : '—'}</td>
 								<td class="px-4 py-2.5 text-zinc-500 text-xs">{pack.policy_count}</td>
 								<td class="px-4 py-2.5 text-right">
 									<button onclick={() => detachPack(pack.id)}
@@ -2062,7 +2062,7 @@
 				<select class="field-input w-64" bind:value={attachingPackID}>
 					<option value="">— attach a pack —</option>
 					{#each unattachedPacks as pack (pack.id)}
-						<option value={pack.id}>{pack.name} v{pack.version}</option>
+						<option value={pack.id}>{pack.name}</option>
 					{/each}
 				</select>
 				<button onclick={attachPack} disabled={!attachingPackID}
@@ -2072,7 +2072,7 @@
 			</div>
 		{:else if catalogEntries.length > 0 && catalogEntries.every(e => !e.installed)}
 			<p class="text-xs text-zinc-500">
-				No compliance packs installed for this org. <a href="/compliance" class="text-teal-400 hover:underline">Install from the catalog.</a>
+				No compliance packs installed for this org. <a href="/policies/compliance-packs" class="text-teal-400 hover:underline">Install from the catalog.</a>
 			</p>
 		{/if}
 	</section>

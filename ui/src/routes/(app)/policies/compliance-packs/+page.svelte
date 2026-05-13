@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { complianceApi, type CatalogEntry } from '$lib/api/client';
+	import { auth } from '$lib/stores/auth.svelte';
 
 	let catalog = $state<CatalogEntry[]>([]);
 	let loading = $state(true);
@@ -46,7 +47,7 @@
 	}
 
 	async function uninstall(id: string, slug: string) {
-		if (!confirm('Uninstall this compliance pack? All attached stacks will stop evaluating its policies.')) return;
+		if (!confirm('Uninstall this compliance pack? All stacks will stop evaluating its policies.')) return;
 		working = { ...working, [slug]: true };
 		try {
 			await complianceApi.uninstall(id);
@@ -66,13 +67,19 @@
 	};
 </script>
 
-<div class="mx-auto max-w-5xl space-y-6 p-6">
-	<div>
-		<h1 class="text-xl font-semibold text-zinc-100">Compliance Policy Packs</h1>
-		<p class="mt-1 text-sm text-zinc-400">
-			Installable OPA policy bundles for common compliance frameworks. Install a pack to make it
-			available for attachment to any stack.
-		</p>
+<div class="p-6 space-y-6">
+	<div class="flex items-center justify-between">
+		<div>
+			<div class="flex items-center gap-3">
+				<a href="/policies" class="text-sm text-zinc-500 hover:text-zinc-300">Policies</a>
+				<span class="text-zinc-600">/</span>
+				<h1 class="text-lg font-semibold text-white">Compliance Packs</h1>
+			</div>
+			<p class="mt-1 text-sm text-zinc-400">
+				Installable OPA policy bundles for common compliance frameworks. Install a pack to
+				make it available for attachment to any stack.
+			</p>
+		</div>
 	</div>
 
 	{#if error}
@@ -95,46 +102,51 @@
 								<svg class="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
 									<path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z" clip-rule="evenodd" />
 								</svg>
-								Installed v{entry.installed.version}
+								Installed
 							</span>
 						{/if}
 					</div>
 
-					<p class="px-5 pb-4 text-sm text-zinc-400">{entry.description}</p>
+					<p class="px-5 pb-3 text-sm text-zinc-400">{entry.description}</p>
 
 					<div class="px-5 pb-4 text-xs text-zinc-500">
 						{entry.policy_count} {entry.policy_count === 1 ? 'policy' : 'policies'}
 						{#if entry.installed?.last_synced_at}
 							· last synced {new Date(entry.installed.last_synced_at).toLocaleDateString()}
 						{/if}
-					</div>
-
-					<div class="mt-auto flex items-center gap-2 border-t border-zinc-800 px-5 py-3">
-						{#if entry.installed}
-							<button
-								onclick={() => sync(entry.installed!.id, entry.slug)}
-								disabled={busy}
-								class="rounded px-3 py-1.5 text-xs font-medium text-zinc-300 ring-1 ring-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
-							>
-								{busy ? 'Syncing…' : 'Sync'}
-							</button>
-							<button
-								onclick={() => uninstall(entry.installed!.id, entry.slug)}
-								disabled={busy}
-								class="rounded px-3 py-1.5 text-xs font-medium text-red-400 ring-1 ring-red-900 hover:bg-red-950 disabled:opacity-50"
-							>
-								Uninstall
-							</button>
-						{:else}
-							<button
-								onclick={() => install(entry.slug)}
-								disabled={busy}
-								class="rounded px-3 py-1.5 text-xs font-medium bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50"
-							>
-								{busy ? 'Installing…' : 'Install'}
-							</button>
+						{#if entry.installed?.last_sync_error}
+							<span class="ml-1 text-red-400">· sync error</span>
 						{/if}
 					</div>
+
+					{#if auth.isAdmin}
+						<div class="mt-auto flex items-center gap-2 border-t border-zinc-800 px-5 py-3">
+							{#if entry.installed}
+								<button
+									onclick={() => sync(entry.installed!.id, entry.slug)}
+									disabled={busy}
+									class="rounded px-3 py-1.5 text-xs font-medium text-zinc-300 ring-1 ring-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+								>
+									{busy ? 'Syncing…' : 'Sync'}
+								</button>
+								<button
+									onclick={() => uninstall(entry.installed!.id, entry.slug)}
+									disabled={busy}
+									class="rounded px-3 py-1.5 text-xs font-medium text-red-400 ring-1 ring-red-900 hover:bg-red-950 disabled:opacity-50"
+								>
+									Uninstall
+								</button>
+							{:else}
+								<button
+									onclick={() => install(entry.slug)}
+									disabled={busy}
+									class="rounded px-3 py-1.5 text-xs font-medium bg-teal-700 text-white hover:bg-teal-600 disabled:opacity-50"
+								>
+									{busy ? 'Installing…' : 'Install'}
+								</button>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>

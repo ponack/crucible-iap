@@ -106,6 +106,12 @@
 			>
 				All policies
 			</a>
+			<a
+				href="/policies/compliance-packs"
+				class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-zinc-500 hover:text-white"
+			>
+				Compliance packs
+			</a>
 			{#if auth.isAdmin}
 				<button
 					onclick={() => (creating = !creating)}
