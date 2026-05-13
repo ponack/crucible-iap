@@ -49,6 +49,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/webhooks"
 	"github.com/ponack/crucible-iap/internal/workerpools"
 	"github.com/ponack/crucible-iap/internal/analytics"
+	"github.com/ponack/crucible-iap/internal/compliance"
 )
 
 type Server struct {
@@ -150,6 +151,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	}, webhookHandler)
 	projectHandler := projects.NewHandler(s.pool)
 	analyticsHandler := analytics.NewHandler(s.pool)
+	complianceHandler := compliance.NewHandler(s.pool, policyHandler.Engine())
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
@@ -168,6 +170,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	s.registerProjectRoutes(api, projectHandler, member, admin)
 	s.registerRunRoutes(api, runHandler, member, admin)
 	api.GET("/analytics/runs", analyticsHandler.Get)
+	s.registerComplianceRoutes(api, complianceHandler, member, admin)
 	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
 		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
 	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, admin, member)
@@ -433,6 +436,16 @@ func (s *Server) registerRunRoutes(
 	api.POST("/runs/:id/explain", runHandler.ExplainFailure)
 	api.DELETE("/runs/:id", runHandler.Delete, admin)
 	api.PATCH("/runs/:id/annotation", runHandler.Annotate, member)
+}
+
+func (s *Server) registerComplianceRoutes(api *echo.Group, h *compliance.Handler, member, admin echo.MiddlewareFunc) {
+	api.GET("/compliance/catalog", h.GetCatalog)
+	api.POST("/compliance/packs", h.Install, admin)
+	api.POST("/compliance/packs/:id/sync", h.Sync, admin)
+	api.DELETE("/compliance/packs/:id", h.Uninstall, admin)
+	api.GET("/stacks/:id/policy-packs", h.ListStackPacks)
+	api.POST("/stacks/:id/policy-packs", h.AttachPack, member)
+	api.DELETE("/stacks/:id/policy-packs/:packID", h.DetachPack, member)
 }
 
 func (s *Server) registerSystemRoutes(
