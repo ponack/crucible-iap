@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StateVersion, type StateDiff, type PlanDiff, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, complianceApi, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StateVersion, type StateDiff, type PlanDiff, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project, type PolicyPack, type CatalogEntry } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -15,6 +15,8 @@
 	let tokens = $state<StackToken[]>([]);
 	let stackPolicies = $state<StackPolicyRef[]>([]);
 	let allPolicies = $state<Policy[]>([]);
+	let stackPolicyPacks = $state<PolicyPack[]>([]);
+	let catalogEntries = $state<CatalogEntry[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
@@ -296,6 +298,8 @@
 			tokens = tokensRes;
 			stackPolicies = stackPoliciesRes;
 			allPolicies = allPoliciesRes;
+			complianceApi.listStackPacks(stackID).then(r => (stackPolicyPacks = r)).catch(() => {});
+			complianceApi.getCatalog().then(r => (catalogEntries = r)).catch(() => {});
 			envVars = envVarsRes;
 			remoteSources = remoteSourcesRes;
 			allStacksList = allStacksRes.data.filter(s => s.id !== stackID).map(s => ({ id: s.id, name: s.name }));
@@ -603,6 +607,34 @@
 			toast.error((e as Error).message);
 		}
 	}
+
+	let attachingPackID = $state('');
+
+	async function attachPack() {
+		if (!attachingPackID) return;
+		try {
+			await complianceApi.attachPack(stackID, attachingPackID);
+			stackPolicyPacks = await complianceApi.listStackPacks(stackID);
+			attachingPackID = '';
+		} catch (e) {
+			toast.error((e as Error).message);
+		}
+	}
+
+	async function detachPack(packID: string) {
+		try {
+			await complianceApi.detachPack(stackID, packID);
+			stackPolicyPacks = stackPolicyPacks.filter((p) => p.id !== packID);
+		} catch (e) {
+			toast.error((e as Error).message);
+		}
+	}
+
+	const unattachedPacks = $derived(
+		catalogEntries
+			.filter(e => e.installed && !stackPolicyPacks.some(p => p.id === e.installed!.id))
+			.map(e => e.installed!)
+	);
 
 	async function saveNotifications(e: SubmitEvent) {
 		e.preventDefault();
@@ -1989,6 +2021,59 @@
 					Attach
 				</button>
 			</div>
+		{/if}
+	</section>
+
+	<!-- Policy Packs -->
+	<section class="space-y-3">
+		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Compliance Policy Packs</h2>
+		{#if stackPolicyPacks.length > 0}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Pack</th>
+							<th class="text-left px-4 py-2">Version</th>
+							<th class="text-left px-4 py-2">Policies</th>
+							<th class="px-4 py-2"></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-700">
+						{#each stackPolicyPacks as pack (pack.id)}
+							<tr>
+								<td class="px-4 py-2.5 text-zinc-200">{pack.name}</td>
+								<td class="px-4 py-2.5 text-zinc-500 text-xs">{pack.version}</td>
+								<td class="px-4 py-2.5 text-zinc-500 text-xs">{pack.policy_count}</td>
+								<td class="px-4 py-2.5 text-right">
+									<button onclick={() => detachPack(pack.id)}
+										class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-zinc-600 text-sm">No compliance packs attached.</p>
+		{/if}
+
+		{#if unattachedPacks.length > 0}
+			<div class="flex items-center gap-2">
+				<select class="field-input w-64" bind:value={attachingPackID}>
+					<option value="">— attach a pack —</option>
+					{#each unattachedPacks as pack (pack.id)}
+						<option value={pack.id}>{pack.name} v{pack.version}</option>
+					{/each}
+				</select>
+				<button onclick={attachPack} disabled={!attachingPackID}
+					class="border border-zinc-700 hover:border-zinc-500 disabled:opacity-40 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+					Attach
+				</button>
+			</div>
+		{:else if catalogEntries.length > 0 && catalogEntries.every(e => !e.installed)}
+			<p class="text-xs text-zinc-500">
+				No compliance packs installed for this org. <a href="/compliance" class="text-teal-400 hover:underline">Install from the catalog.</a>
+			</p>
 		{/if}
 	</section>
 

@@ -8,3 +8,4 @@ export * from './policies';
 export * from './system';
 export * from './projects';
 export * from './analytics';
+export * from './compliance';

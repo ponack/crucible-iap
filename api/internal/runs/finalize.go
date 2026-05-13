@@ -198,6 +198,7 @@ func (f *Finalizer) evaluatePlanPolicies(ctx context.Context, log *slog.Logger, 
 		  AND (
 		    EXISTS (SELECT 1 FROM stack_policies sp WHERE sp.stack_id = $1 AND sp.policy_id = p.id)
 		    OR EXISTS (SELECT 1 FROM org_policy_defaults opd WHERE opd.org_id = s.org_id AND opd.policy_id = p.id)
+		    OR EXISTS (SELECT 1 FROM stack_policy_packs spp WHERE spp.stack_id = $1 AND spp.pack_id = p.pack_id)
 		  )
 	`, args.StackID, []string{string(policy.TypePostPlan), string(policy.TypeApproval)})
 	if err != nil {
