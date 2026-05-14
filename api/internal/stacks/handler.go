@@ -634,18 +634,26 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 			add(f.col, *f.v)
 		}
 	}
-	if r.MaxConcurrentRuns != nil {
-		if *r.MaxConcurrentRuns <= 0 {
-			add("max_concurrent_runs", nil) // 0 = unlimited
-		} else {
-			add("max_concurrent_runs", *r.MaxConcurrentRuns)
+	// Int fields with optional floor: nil skips, ≤0 stores NULL or floor value.
+	for _, f := range []struct {
+		col   string
+		v     *int
+		floor int // stored when v ≤ 0; use -1 to store NULL
+	}{
+		{"max_concurrent_runs", r.MaxConcurrentRuns, -1},
+		{"validation_interval", r.ValidationInterval, 0},
+	} {
+		if f.v == nil {
+			continue
 		}
-	}
-	if r.ValidationInterval != nil {
-		if *r.ValidationInterval < 0 {
-			add("validation_interval", 0)
+		if *f.v <= 0 {
+			if f.floor < 0 {
+				add(f.col, nil)
+			} else {
+				add(f.col, f.floor)
+			}
 		} else {
-			add("validation_interval", *r.ValidationInterval)
+			add(f.col, *f.v)
 		}
 	}
 	r.addPlanAlertSets(add)
