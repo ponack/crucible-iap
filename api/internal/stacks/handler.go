@@ -661,19 +661,8 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	r.addWorkerPoolSet(add)
 	r.addGitHubInstallationSet(add)
 	r.addProjectIDSet(add)
-	if r.ScheduledDestroyAt != nil {
-		if *r.ScheduledDestroyAt == "" {
-			add("scheduled_destroy_at", nil)
-		} else {
-			t, parseErr := time.Parse(time.RFC3339, *r.ScheduledDestroyAt)
-			if parseErr != nil {
-				t, parseErr = time.Parse("2006-01-02T15:04", *r.ScheduledDestroyAt)
-			}
-			if parseErr != nil {
-				return nil, nil, fmt.Errorf("scheduled_destroy_at must be RFC3339 or YYYY-MM-DDTHH:MM")
-			}
-			add("scheduled_destroy_at", t.UTC())
-		}
+	if err := r.addScheduledDestroySet(add); err != nil {
+		return nil, nil, err
 	}
 	for _, f := range []struct {
 		schedCol   string
@@ -733,6 +722,25 @@ func (r *updateStackReq) addProjectIDSet(add func(string, any)) {
 	} else {
 		add("project_id", *r.ProjectID)
 	}
+}
+
+func (r *updateStackReq) addScheduledDestroySet(add func(string, any)) error {
+	if r.ScheduledDestroyAt == nil {
+		return nil
+	}
+	if *r.ScheduledDestroyAt == "" {
+		add("scheduled_destroy_at", nil)
+		return nil
+	}
+	t, parseErr := time.Parse(time.RFC3339, *r.ScheduledDestroyAt)
+	if parseErr != nil {
+		t, parseErr = time.Parse("2006-01-02T15:04", *r.ScheduledDestroyAt)
+	}
+	if parseErr != nil {
+		return fmt.Errorf("scheduled_destroy_at must be RFC3339 or YYYY-MM-DDTHH:MM")
+	}
+	add("scheduled_destroy_at", t.UTC())
+	return nil
 }
 
 func (r *updateStackReq) addPlanAlertSets(add func(string, any)) {
