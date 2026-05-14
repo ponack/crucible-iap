@@ -9,3 +9,4 @@ export * from './system';
 export * from './projects';
 export * from './analytics';
 export * from './compliance';
+export * from './siem';

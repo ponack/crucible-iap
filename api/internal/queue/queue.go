@@ -176,6 +176,26 @@ func (c *Client) EnqueueValidation(ctx context.Context, args ValidationArgs) err
 	return nil
 }
 
+// SIEMDeliveryArgs is enqueued after each audit event is written, triggering
+// fan-out delivery to all enabled SIEM destinations for the org.
+type SIEMDeliveryArgs struct {
+	EventID int64  `json:"event_id"`
+	OrgID   string `json:"org_id"`
+}
+
+func (SIEMDeliveryArgs) Kind() string { return "siem_delivery" }
+
+func (SIEMDeliveryArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 5, Priority: 3, Queue: river.QueueDefault}
+}
+
+// EnqueueSIEMDelivery queues a SIEM fan-out job for a newly written audit event.
+// Satisfies audit.SIEMEnqueuer.
+func (c *Client) EnqueueSIEMDelivery(ctx context.Context, eventID int64, orgID string) error {
+	_, err := c.river.Insert(ctx, SIEMDeliveryArgs{EventID: eventID, OrgID: orgID}, nil)
+	return err
+}
+
 // TokenClaims holds the per-job JWT payload sent to runner containers.
 type TokenClaims struct {
 	RunID   string    `json:"run_id"`

@@ -18,6 +18,20 @@ import (
 	"github.com/ponack/crucible-iap/internal/pagination"
 )
 
+// SIEMEnqueuer is the subset of the queue client used for SIEM fan-out.
+// Defined here to avoid an import cycle; queue.Client satisfies it.
+type SIEMEnqueuer interface {
+	EnqueueSIEMDelivery(ctx context.Context, eventID int64, orgID string) error
+}
+
+// siemQueue is wired at server boot via SetSIEMQueue. When non-nil, every
+// successful audit INSERT enqueues a SIEM delivery job.
+var siemQueue SIEMEnqueuer
+
+// SetSIEMQueue wires the queue client so audit events trigger SIEM delivery.
+// Call once at server boot before serving requests.
+func SetSIEMQueue(q SIEMEnqueuer) { siemQueue = q }
+
 type Event struct {
 	ID           int64           `json:"id"`
 	OccurredAt   time.Time       `json:"occurred_at"`
@@ -44,16 +58,25 @@ func Record(ctx context.Context, pool *pgxpool.Pool, e Event) {
 		e.Context = json.RawMessage("{}")
 	}
 
-	_, err := pool.Exec(ctx, `
+	var id int64
+	err := pool.QueryRow(ctx, `
 		INSERT INTO audit_events
 		  (actor_id, actor_type, action, resource_id, resource_type, org_id, ip_address, context)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		RETURNING id
 	`, nilIfEmpty(e.ActorID), e.ActorType, e.Action,
 		nilIfEmpty(e.ResourceID), nilIfEmpty(e.ResourceType),
-		nilIfEmpty(e.OrgID), parseIP(e.IPAddress), e.Context)
+		nilIfEmpty(e.OrgID), parseIP(e.IPAddress), e.Context).Scan(&id)
 	if err != nil {
 		// Audit failures are logged but never fatal — don't break the request.
 		slog.Error("audit: failed to record event", "action", e.Action, "err", err)
+		return
+	}
+
+	if siemQueue != nil && e.OrgID != "" {
+		if err := siemQueue.EnqueueSIEMDelivery(ctx, id, e.OrgID); err != nil {
+			slog.Warn("audit: failed to enqueue SIEM delivery", "event_id", id, "err", err)
+		}
 	}
 }
 
