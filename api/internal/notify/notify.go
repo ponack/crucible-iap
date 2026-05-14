@@ -549,6 +549,177 @@ func (n *Notifier) BudgetAlert(ctx context.Context, runID string, exceeded []str
 	}
 }
 
+// stackChannels is a lightweight struct for stack-level notification config,
+// used by notifications that are not tied to a run (e.g. validation alerts).
+type stackChannels struct {
+	id                string
+	name              string
+	slackWebhookEnc   []byte
+	discordWebhookEnc []byte
+	teamsWebhookEnc   []byte
+	gotifyURL         string
+	gotifyTokenEnc    []byte
+	ntfyURL           string
+	ntfyTokenEnc      []byte
+	notifyEmail       string
+	orgSlackWebhook   string
+	orgDiscordWebhook string
+	orgTeamsWebhook   string
+	orgGotifyToken    string
+	orgNtfyToken      string
+}
+
+func (n *Notifier) loadStackChannels(ctx context.Context, stackID string) (*stackChannels, error) {
+	var sc stackChannels
+	sc.id = stackID
+	err := n.pool.QueryRow(ctx, `
+		SELECT name, slack_webhook_enc, discord_webhook_enc, teams_webhook_enc,
+		       COALESCE(gotify_url,''), gotify_token_enc,
+		       COALESCE(ntfy_url,''), ntfy_token_enc,
+		       COALESCE(notify_email,'')
+		FROM stacks WHERE id = $1
+	`, stackID).Scan(
+		&sc.name, &sc.slackWebhookEnc, &sc.discordWebhookEnc, &sc.teamsWebhookEnc,
+		&sc.gotifyURL, &sc.gotifyTokenEnc,
+		&sc.ntfyURL, &sc.ntfyTokenEnc,
+		&sc.notifyEmail,
+	)
+	if err != nil {
+		return nil, err
+	}
+	n.applyOrgDefaultsToStack(ctx, &sc)
+	return &sc, nil
+}
+
+func (n *Notifier) applyOrgDefaultsToStack(ctx context.Context, sc *stackChannels) {
+	var defSlack, defDiscord, defTeams string
+	var defGotifyURL, defGotifyToken string
+	var defNtfyURL, defNtfyToken string
+	_ = n.pool.QueryRow(ctx, `
+		SELECT COALESCE(default_slack_webhook,''),
+		       COALESCE(default_discord_webhook,''),
+		       COALESCE(default_teams_webhook,''),
+		       COALESCE(default_gotify_url,''), COALESCE(default_gotify_token,''),
+		       COALESCE(default_ntfy_url,''),   COALESCE(default_ntfy_token,'')
+		FROM system_settings LIMIT 1
+	`).Scan(&defSlack, &defDiscord, &defTeams, &defGotifyURL, &defGotifyToken, &defNtfyURL, &defNtfyToken)
+
+	if len(sc.slackWebhookEnc) == 0 && defSlack != "" {
+		sc.orgSlackWebhook = defSlack
+	}
+	if len(sc.discordWebhookEnc) == 0 && defDiscord != "" {
+		sc.orgDiscordWebhook = defDiscord
+	}
+	if len(sc.teamsWebhookEnc) == 0 && defTeams != "" {
+		sc.orgTeamsWebhook = defTeams
+	}
+	if sc.gotifyURL == "" && defGotifyURL != "" {
+		sc.gotifyURL = defGotifyURL
+		sc.orgGotifyToken = defGotifyToken
+	}
+	if sc.ntfyURL == "" && defNtfyURL != "" {
+		sc.ntfyURL = defNtfyURL
+		sc.orgNtfyToken = defNtfyToken
+	}
+}
+
+func (n *Notifier) scSlackWebhook(sc *stackChannels) string {
+	if len(sc.slackWebhookEnc) > 0 {
+		return n.decryptStr(sc.id, sc.slackWebhookEnc)
+	}
+	return sc.orgSlackWebhook
+}
+
+func (n *Notifier) scDiscordWebhook(sc *stackChannels) string {
+	if len(sc.discordWebhookEnc) > 0 {
+		return n.decryptStr(sc.id, sc.discordWebhookEnc)
+	}
+	return sc.orgDiscordWebhook
+}
+
+func (n *Notifier) scTeamsWebhook(sc *stackChannels) string {
+	if len(sc.teamsWebhookEnc) > 0 {
+		return n.decryptStr(sc.id, sc.teamsWebhookEnc)
+	}
+	return sc.orgTeamsWebhook
+}
+
+func (n *Notifier) scGotifyToken(sc *stackChannels) string {
+	if len(sc.gotifyTokenEnc) > 0 {
+		return n.decryptStr(sc.id, sc.gotifyTokenEnc)
+	}
+	return sc.orgGotifyToken
+}
+
+func (n *Notifier) scNtfyToken(sc *stackChannels) string {
+	if len(sc.ntfyTokenEnc) > 0 {
+		return n.decryptStr(sc.id, sc.ntfyTokenEnc)
+	}
+	return sc.orgNtfyToken
+}
+
+// ValidationAlert sends notifications when a stack's continuous validation
+// status changes. Only fires when the status transitions (e.g. pass→fail).
+func (n *Notifier) ValidationAlert(ctx context.Context, stackID, status string, denyCount, warnCount int, stackURL string) {
+	sc, err := n.loadStackChannels(ctx, stackID)
+	if err != nil {
+		slog.Warn("notify: validation alert: failed to load stack channels", "stack_id", stackID, "err", err)
+		return
+	}
+
+	var icon, priority string
+	switch status {
+	case "fail":
+		icon = "🔴"
+		priority = "high"
+	case "warn":
+		icon = "🟡"
+		priority = "default"
+	default:
+		icon = "🟢"
+		priority = "low"
+	}
+
+	title := fmt.Sprintf("%s %s — validation %s", icon, sc.name, status)
+	detail := ""
+	if denyCount > 0 {
+		detail += fmt.Sprintf("%d violation(s)", denyCount)
+	}
+	if warnCount > 0 {
+		if detail != "" {
+			detail += ", "
+		}
+		detail += fmt.Sprintf("%d warning(s)", warnCount)
+	}
+	if detail == "" {
+		detail = "all policies passed"
+	}
+
+	if slackURL := n.scSlackWebhook(sc); slackURL != "" {
+		msg := fmt.Sprintf("%s *%s* — %s. <%s|View stack>", icon, sc.name+" validation "+status, detail, stackURL)
+		n.slackPost(ctx, slackURL, msg)
+	}
+	if discordURL := n.scDiscordWebhook(sc); discordURL != "" {
+		n.discordPost(ctx, discordURL, fmt.Sprintf("%s **%s** — %s. %s", icon, sc.name+" validation "+status, detail, stackURL))
+	}
+	if teamsURL := n.scTeamsWebhook(sc); teamsURL != "" {
+		n.teamsPost(ctx, teamsURL, fmt.Sprintf("%s %s — %s. %s", icon, sc.name+" validation "+status, detail, stackURL))
+	}
+	if sc.gotifyURL != "" {
+		if tok := n.scGotifyToken(sc); tok != "" {
+			n.gotifyPost(ctx, sc.gotifyURL, tok, title, fmt.Sprintf("%s\n%s", detail, stackURL))
+		}
+	}
+	if sc.ntfyURL != "" {
+		n.ntfyPost(ctx, sc.ntfyURL, n.scNtfyToken(sc), title, fmt.Sprintf("%s\n%s", detail, stackURL), priority)
+	}
+	if sc.notifyEmail != "" {
+		body := fmt.Sprintf("<p>%s <strong>%s</strong></p><p>%s</p><p><a href='%s'>View stack</a></p>",
+			icon, sc.name+" validation "+status, detail, stackURL)
+		n.sendEmailNotification(ctx, sc.notifyEmail, title, body)
+	}
+}
+
 // ── VCS helpers ───────────────────────────────────────────────────────────────
 
 func (n *Notifier) setCommitStatus(ctx context.Context, provider, baseURL, owner, repo, sha, state, desc, token, runID string) {

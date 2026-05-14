@@ -65,7 +65,8 @@
 		plan_alert_add: undefined as number | undefined,
 		plan_alert_change: undefined as number | undefined,
 		plan_alert_destroy: undefined as number | undefined,
-		plan_block_on_alert: false
+		plan_block_on_alert: false,
+		validation_interval: 0
 	});
 
 	// Token creation
@@ -76,6 +77,10 @@
 	// Run creation
 	let triggeringRun = $state(false);
 	let triggeringDrift = $state(false);
+
+	// Continuous validation
+	let validationResults = $state<import('$lib/api/stacks').ValidationResult[]>([]);
+	let triggeringValidation = $state(false);
 	let showOverrides = $state(false);
 	let overrides = $state<{ key: string; value: string }[]>([]);
 	let newOverrideKey = $state('');
@@ -377,6 +382,11 @@
 
 		// Load outgoing webhooks independently.
 		stacks.outgoingWebhooks.list(stackID).then(r => (outgoingWebhooks = r)).catch((e) => console.error('outgoingWebhooks.list', e));
+
+		// Load validation results if interval is configured.
+		if (stack && stack.validation_interval > 0) {
+			stacks.validation.listResults(stackID).then(r => (validationResults = r)).catch(() => {});
+		}
 	});
 
 	// Separate sync onMount so we can return a cleanup — async onMount can't return a cleanup.
@@ -419,7 +429,8 @@
 			plan_alert_add: stack.plan_alert_add,
 			plan_alert_change: stack.plan_alert_change,
 			plan_alert_destroy: stack.plan_alert_destroy,
-			plan_block_on_alert: stack.plan_block_on_alert ?? false
+			plan_block_on_alert: stack.plan_block_on_alert ?? false,
+			validation_interval: stack.validation_interval ?? 0
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -547,6 +558,21 @@
 		} catch (e) {
 			toast.error((e as Error).message);
 			triggeringDrift = false;
+		}
+	}
+
+	async function triggerValidation() {
+		triggeringValidation = true;
+		try {
+			await stacks.validation.trigger(stackID);
+			toast.success('Validation queued');
+			setTimeout(async () => {
+				validationResults = await stacks.validation.listResults(stackID);
+			}, 3000);
+		} catch (e) {
+			toast.error((e as Error).message);
+		} finally {
+			triggeringValidation = false;
 		}
 	}
 
@@ -1296,6 +1322,12 @@
 						{triggeringDrift ? 'Queuing…' : 'Drift check'}
 					</button>
 				{/if}
+				{#if stack.validation_interval > 0}
+					<button onclick={triggerValidation} disabled={triggeringValidation}
+						class="border border-zinc-700 hover:border-zinc-500 text-zinc-300 text-sm px-3 py-1.5 rounded-lg transition-colors">
+						{triggeringValidation ? 'Queuing…' : 'Validate'}
+					</button>
+				{/if}
 
 				<!-- Separator -->
 				<div class="w-px h-5 bg-zinc-700 mx-1"></div>
@@ -1450,6 +1482,14 @@
 					Auto-remediate drift — automatically apply when drift is detected
 				</label>
 			{/if}
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-validation-interval">Continuous validation interval (minutes)</label>
+				<input id="edit-validation-interval" type="number" min="0" step="5"
+					class="field-input w-32"
+					bind:value={form.validation_interval}
+					placeholder="0" />
+				<p class="text-xs text-zinc-600">Set to 0 to disable. Requires at least one <em>validation</em>-type policy attached to the stack.</p>
+			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-destroy-at">Scheduled destroy (UTC)</label>
 				<div class="flex items-center gap-2">
@@ -1653,6 +1693,61 @@
 			{/if}
 		{/each}
 	</div>
+	{/if}
+
+	<!-- Continuous validation -->
+	{#if stack.validation_interval > 0}
+	{@const vs = stack.validation_status}
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Continuous Validation</h2>
+			<div class="flex items-center gap-3">
+				<span class="flex items-center gap-1.5 text-xs {vs === 'pass' ? 'text-green-400' : vs === 'warn' ? 'text-yellow-400' : vs === 'fail' ? 'text-red-400' : 'text-zinc-500'}">
+					<span class="h-2 w-2 rounded-full {vs === 'pass' ? 'bg-green-400' : vs === 'warn' ? 'bg-yellow-400' : vs === 'fail' ? 'bg-red-400' : 'bg-zinc-600'}"></span>
+					{vs}
+					{#if stack.last_validated_at}
+						<span class="text-zinc-600 ml-1">· {fmtDate(stack.last_validated_at)}</span>
+					{/if}
+				</span>
+				<span class="text-xs text-zinc-600">every {stack.validation_interval} min</span>
+			</div>
+		</div>
+		{#if validationResults.length === 0}
+			<p class="text-zinc-600 text-sm">No validation runs yet — click Validate or wait for the next scheduled check.</p>
+		{:else}
+			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+				{#each validationResults.slice(0, 5) as result (result.id)}
+					<div class="border-b border-zinc-800 last:border-b-0 px-4 py-3 space-y-2">
+						<div class="flex items-center justify-between">
+							<span class="flex items-center gap-2">
+								<span class="h-2 w-2 rounded-full {result.status === 'pass' ? 'bg-green-400' : result.status === 'warn' ? 'bg-yellow-400' : 'bg-red-400'}"></span>
+								<span class="text-sm font-medium {result.status === 'pass' ? 'text-green-400' : result.status === 'warn' ? 'text-yellow-400' : 'text-red-400'}">{result.status}</span>
+								{#if result.deny_count > 0}
+									<span class="text-xs text-red-400">{result.deny_count} violation{result.deny_count === 1 ? '' : 's'}</span>
+								{/if}
+								{#if result.warn_count > 0}
+									<span class="text-xs text-yellow-400">{result.warn_count} warning{result.warn_count === 1 ? '' : 's'}</span>
+								{/if}
+							</span>
+							<span class="text-xs text-zinc-600">{fmtDate(result.evaluated_at)}</span>
+						</div>
+						{#if result.details?.length > 0 && result.status !== 'pass'}
+							<div class="space-y-1 pl-4">
+								{#each result.details.filter(d => d.status !== 'pass') as d (d.policy_id)}
+									<div class="text-xs text-zinc-400">
+										<span class="text-zinc-500">{d.policy_name}:</span>
+										{#each [...(d.deny ?? []), ...(d.warn ?? [])] as msg}
+											<span class="block pl-2 text-zinc-400">{msg}</span>
+										{/each}
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</section>
 	{/if}
 
 	<!-- Resource explorer -->

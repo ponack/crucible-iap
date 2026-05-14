@@ -17,12 +17,13 @@ import (
 type Type string
 
 const (
-	TypePrePlan  Type = "pre_plan"
-	TypePostPlan Type = "post_plan"
-	TypePreApply Type = "pre_apply"
-	TypeTrigger  Type = "trigger"
-	TypeLogin    Type = "login"
-	TypeApproval Type = "approval"
+	TypePrePlan    Type = "pre_plan"
+	TypePostPlan   Type = "post_plan"
+	TypePreApply   Type = "pre_apply"
+	TypeTrigger    Type = "trigger"
+	TypeLogin      Type = "login"
+	TypeApproval   Type = "approval"
+	TypeValidation Type = "validation"
 )
 
 // Result is the output of evaluating a policy against an input.
@@ -252,6 +253,8 @@ func queryForType(t Type) string {
 		return "data.crucible.login"
 	case TypeApproval:
 		return "data.crucible.approval"
+	case TypeValidation:
+		return "data.crucible.validation"
 	default:
 		return "data.crucible.plan"
 	}

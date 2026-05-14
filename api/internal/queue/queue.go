@@ -150,6 +150,32 @@ func (c *Client) EnqueuePolicySync(ctx context.Context, args PolicySyncArgs) err
 	return nil
 }
 
+// ValidationArgs is enqueued when a stack's continuous validation interval fires
+// or a manual validation is triggered.
+type ValidationArgs struct {
+	StackID string `json:"stack_id"`
+}
+
+func (ValidationArgs) Kind() string { return "validation" }
+
+func (ValidationArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{
+		MaxAttempts: 1,
+		Priority:    3,
+		Queue:       river.QueueDefault,
+	}
+}
+
+// EnqueueValidation queues a continuous validation job for the given stack.
+func (c *Client) EnqueueValidation(ctx context.Context, args ValidationArgs) error {
+	_, err := c.river.Insert(ctx, args, nil)
+	if err != nil {
+		return fmt.Errorf("enqueue validation: %w", err)
+	}
+	slog.Info("validation job enqueued", "stack_id", args.StackID)
+	return nil
+}
+
 // TokenClaims holds the per-job JWT payload sent to runner containers.
 type TokenClaims struct {
 	RunID   string    `json:"run_id"`

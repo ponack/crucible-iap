@@ -175,6 +175,9 @@ type Stack struct {
 	HealthStatus         string     `json:"health_status"`  // healthy | degraded | unhealthy | unknown
 	IsPinned             bool       `json:"is_pinned"`
 	Tags                 []tags.TagRef `json:"tags"`
+	ValidationInterval   int        `json:"validation_interval"`
+	ValidationStatus     string     `json:"validation_status"`
+	LastValidatedAt      *time.Time `json:"last_validated_at,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -249,6 +252,7 @@ func (h *Handler) List(c echo.Context) error {
 		       s.module_namespace, s.module_name, s.module_provider,
 		       s.is_preview, s.project_id,
 		       `+healthScoreSQL+` AS health_score,
+		       s.validation_interval, s.validation_status, s.last_validated_at,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -281,6 +285,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 			&s.IsPreview, &s.ProjectID,
 			&s.HealthScore,
+			&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -495,7 +500,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.plan_alert_add, s.plan_alert_change, s.plan_alert_destroy, s.plan_block_on_alert,
 		       `+healthScoreSQL+` AS health_score,
 		       `+access.StackRoleSQL+` AS my_stack_role,
-		       `+access.IsRestrictedSQL+` AS is_restricted
+		       `+access.IsRestrictedSQL+` AS is_restricted,
+		       s.validation_interval, s.validation_status, s.last_validated_at
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
 		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
@@ -523,7 +529,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.GitHubInstallationUUID, &s.ProjectID,
 		&s.PlanAlertAdd, &s.PlanAlertChange, &s.PlanAlertDestroy, &s.PlanBlockOnAlert,
 		&s.HealthScore,
-		&s.MyStackRole, &s.IsRestricted)
+		&s.MyStackRole, &s.IsRestricted,
+		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -576,6 +583,7 @@ type updateStackReq struct {
 	PlanAlertChange     *int    `json:"plan_alert_change"`
 	PlanAlertDestroy    *int    `json:"plan_alert_destroy"`
 	PlanBlockOnAlert    *bool   `json:"plan_block_on_alert"`
+	ValidationInterval  *int    `json:"validation_interval"`    // minutes, 0 = disabled
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -626,11 +634,26 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 			add(f.col, *f.v)
 		}
 	}
-	if r.MaxConcurrentRuns != nil {
-		if *r.MaxConcurrentRuns <= 0 {
-			add("max_concurrent_runs", nil) // 0 = unlimited
+	// Int fields with optional floor: nil skips, ≤0 stores NULL or floor value.
+	for _, f := range []struct {
+		col   string
+		v     *int
+		floor int // stored when v ≤ 0; use -1 to store NULL
+	}{
+		{"max_concurrent_runs", r.MaxConcurrentRuns, -1},
+		{"validation_interval", r.ValidationInterval, 0},
+	} {
+		if f.v == nil {
+			continue
+		}
+		if *f.v <= 0 {
+			if f.floor < 0 {
+				add(f.col, nil)
+			} else {
+				add(f.col, f.floor)
+			}
 		} else {
-			add("max_concurrent_runs", *r.MaxConcurrentRuns)
+			add(f.col, *f.v)
 		}
 	}
 	r.addPlanAlertSets(add)
@@ -638,19 +661,8 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	r.addWorkerPoolSet(add)
 	r.addGitHubInstallationSet(add)
 	r.addProjectIDSet(add)
-	if r.ScheduledDestroyAt != nil {
-		if *r.ScheduledDestroyAt == "" {
-			add("scheduled_destroy_at", nil)
-		} else {
-			t, parseErr := time.Parse(time.RFC3339, *r.ScheduledDestroyAt)
-			if parseErr != nil {
-				t, parseErr = time.Parse("2006-01-02T15:04", *r.ScheduledDestroyAt)
-			}
-			if parseErr != nil {
-				return nil, nil, fmt.Errorf("scheduled_destroy_at must be RFC3339 or YYYY-MM-DDTHH:MM")
-			}
-			add("scheduled_destroy_at", t.UTC())
-		}
+	if err := r.addScheduledDestroySet(add); err != nil {
+		return nil, nil, err
 	}
 	for _, f := range []struct {
 		schedCol   string
@@ -710,6 +722,25 @@ func (r *updateStackReq) addProjectIDSet(add func(string, any)) {
 	} else {
 		add("project_id", *r.ProjectID)
 	}
+}
+
+func (r *updateStackReq) addScheduledDestroySet(add func(string, any)) error {
+	if r.ScheduledDestroyAt == nil {
+		return nil
+	}
+	if *r.ScheduledDestroyAt == "" {
+		add("scheduled_destroy_at", nil)
+		return nil
+	}
+	t, parseErr := time.Parse(time.RFC3339, *r.ScheduledDestroyAt)
+	if parseErr != nil {
+		t, parseErr = time.Parse("2006-01-02T15:04", *r.ScheduledDestroyAt)
+	}
+	if parseErr != nil {
+		return fmt.Errorf("scheduled_destroy_at must be RFC3339 or YYYY-MM-DDTHH:MM")
+	}
+	add("scheduled_destroy_at", t.UTC())
+	return nil
 }
 
 func (r *updateStackReq) addPlanAlertSets(add func(string, any)) {
