@@ -68,6 +68,7 @@ func New(pool *pgxpool.Pool, cfg *config.Config, r *runner.Runner, s *storage.Cl
 	})
 	river.AddWorker(workers, policygit.NewPolicySyncWorker(pool, v, e))
 	river.AddWorker(workers, NewValidationWorker(pool, s, e, n, cfg.BaseURL))
+	river.AddWorker(workers, &SIEMDeliveryWorker{pool: pool, vault: v})
 
 	rc, err := river.NewClient(riverpgxv5.New(pool), &river.Config{
 		Queues: map[string]river.QueueConfig{

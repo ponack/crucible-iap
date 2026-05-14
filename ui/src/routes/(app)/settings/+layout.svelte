@@ -11,7 +11,8 @@
 		{ label: 'GitHub App', href: '/settings/github-app' },
 		{ label: 'API Tokens', href: '/settings/api-tokens' },
 		{ label: 'Tags', href: '/settings/tags' },
-		{ label: 'Export / Import', href: '/settings/export' }
+		{ label: 'Export / Import', href: '/settings/export' },
+		{ label: 'SIEM Streaming', href: '/settings/siem' }
 	];
 
 	const activePath = $derived(page.url.pathname);

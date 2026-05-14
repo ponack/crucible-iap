@@ -49,6 +49,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/webhooks"
 	"github.com/ponack/crucible-iap/internal/workerpools"
 	"github.com/ponack/crucible-iap/internal/analytics"
+	"github.com/ponack/crucible-iap/internal/siem"
 	"github.com/ponack/crucible-iap/internal/validation"
 )
 
@@ -153,6 +154,10 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	analyticsHandler := analytics.NewHandler(s.pool)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 	validationHandler := validation.New(s.pool, q)
+	siemHandler := siem.NewHandler(s.pool, v)
+
+	// Wire audit → SIEM delivery: every audit.Record call will enqueue a fan-out job.
+	audit.SetSIEMQueue(q)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
 	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
@@ -172,6 +177,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/analytics/runs", analyticsHandler.Get)
 	s.registerComplianceRoutes(api, policyGitHandler, member, admin)
 	s.registerValidationRoutes(api, validationHandler, member)
+	s.registerSIEMRoutes(api, siemHandler, admin)
 	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
 		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
 	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, admin, member)
@@ -452,6 +458,15 @@ func (s *Server) registerComplianceRoutes(api *echo.Group, h *policygit.Handler,
 func (s *Server) registerValidationRoutes(api *echo.Group, h *validation.Handler, member echo.MiddlewareFunc) {
 	api.GET("/stacks/:id/validation/results", h.List)
 	api.POST("/stacks/:id/validation/trigger", h.Trigger, member)
+}
+
+func (s *Server) registerSIEMRoutes(api *echo.Group, h *siem.Handler, admin echo.MiddlewareFunc) {
+	api.GET("/siem/destinations", h.List, admin)
+	api.POST("/siem/destinations", h.Create, admin)
+	api.PUT("/siem/destinations/:id", h.Update, admin)
+	api.DELETE("/siem/destinations/:id", h.Delete, admin)
+	api.POST("/siem/destinations/:id/test", h.TestConnection, admin)
+	api.GET("/siem/deliveries", h.ListDeliveries, admin)
 }
 
 func (s *Server) registerSystemRoutes(
