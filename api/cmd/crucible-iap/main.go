@@ -191,6 +191,7 @@ func runWorker() {
 	worker.StartDriftScheduler(ctx, pool, cfg, q)
 	worker.StartTTLScheduler(ctx, pool, cfg, q)
 	worker.StartScheduleRunner(ctx, pool, cfg, q)
+	worker.StartValidationScheduler(ctx, pool, q)
 	worker.StartRetentionScheduler(ctx, pool, cfg, store)
 	worker.StartApprovalExpiry(ctx, pool)
 

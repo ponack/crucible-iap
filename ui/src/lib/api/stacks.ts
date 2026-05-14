@@ -93,8 +93,26 @@ export interface Stack {
 	health_status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
 	is_pinned: boolean;
 	tags: TagRef[];
+	validation_interval: number;
+	validation_status: 'pass' | 'warn' | 'fail' | 'unknown';
+	last_validated_at?: string;
 	created_at: string;
 	updated_at: string;
+}
+
+export interface ValidationResult {
+	id: string;
+	status: 'pass' | 'warn' | 'fail';
+	deny_count: number;
+	warn_count: number;
+	details: Array<{
+		policy_id: string;
+		policy_name: string;
+		status: 'pass' | 'warn' | 'fail';
+		deny?: string[];
+		warn?: string[];
+	}>;
+	evaluated_at: string;
 }
 
 export interface StackToken {
@@ -457,7 +475,14 @@ export const stacks = {
 	},
 
 	planDiff: (stackID: string, fromRunID: string, toRunID: string) =>
-		request<PlanDiff>(`/stacks/${stackID}/plan-diff?from=${fromRunID}&to=${toRunID}`)
+		request<PlanDiff>(`/stacks/${stackID}/plan-diff?from=${fromRunID}&to=${toRunID}`),
+
+	validation: {
+		listResults: (stackID: string, limit = 20, offset = 0) =>
+			request<ValidationResult[]>(`/stacks/${stackID}/validation/results?limit=${limit}&offset=${offset}`),
+		trigger: (stackID: string) =>
+			request<null>(`/stacks/${stackID}/validation/trigger`, { method: 'POST' })
+	}
 };
 
 export const stackMembers = {

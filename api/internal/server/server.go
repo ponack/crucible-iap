@@ -49,6 +49,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/webhooks"
 	"github.com/ponack/crucible-iap/internal/workerpools"
 	"github.com/ponack/crucible-iap/internal/analytics"
+	"github.com/ponack/crucible-iap/internal/validation"
 )
 
 type Server struct {
@@ -151,6 +152,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	projectHandler := projects.NewHandler(s.pool)
 	analyticsHandler := analytics.NewHandler(s.pool)
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
+	validationHandler := validation.New(s.pool, q)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
 	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
@@ -169,6 +171,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	s.registerRunRoutes(api, runHandler, member, admin)
 	api.GET("/analytics/runs", analyticsHandler.Get)
 	s.registerComplianceRoutes(api, policyGitHandler, member, admin)
+	s.registerValidationRoutes(api, validationHandler, member)
 	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
 		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
 	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, admin, member)
@@ -444,6 +447,11 @@ func (s *Server) registerComplianceRoutes(api *echo.Group, h *policygit.Handler,
 	api.GET("/stacks/:id/policy-packs", h.ListStackPacks)
 	api.POST("/stacks/:id/policy-packs", h.AttachPack, member)
 	api.DELETE("/stacks/:id/policy-packs/:packID", h.DetachPack, member)
+}
+
+func (s *Server) registerValidationRoutes(api *echo.Group, h *validation.Handler, member echo.MiddlewareFunc) {
+	api.GET("/stacks/:id/validation/results", h.List)
+	api.POST("/stacks/:id/validation/trigger", h.Trigger, member)
 }
 
 func (s *Server) registerSystemRoutes(

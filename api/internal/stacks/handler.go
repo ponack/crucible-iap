@@ -175,6 +175,9 @@ type Stack struct {
 	HealthStatus         string     `json:"health_status"`  // healthy | degraded | unhealthy | unknown
 	IsPinned             bool       `json:"is_pinned"`
 	Tags                 []tags.TagRef `json:"tags"`
+	ValidationInterval   int        `json:"validation_interval"`
+	ValidationStatus     string     `json:"validation_status"`
+	LastValidatedAt      *time.Time `json:"last_validated_at,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -249,6 +252,7 @@ func (h *Handler) List(c echo.Context) error {
 		       s.module_namespace, s.module_name, s.module_provider,
 		       s.is_preview, s.project_id,
 		       `+healthScoreSQL+` AS health_score,
+		       s.validation_interval, s.validation_status, s.last_validated_at,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -281,6 +285,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.ModuleNamespace, &s.ModuleName, &s.ModuleProvider,
 			&s.IsPreview, &s.ProjectID,
 			&s.HealthScore,
+			&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -495,7 +500,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.plan_alert_add, s.plan_alert_change, s.plan_alert_destroy, s.plan_block_on_alert,
 		       `+healthScoreSQL+` AS health_score,
 		       `+access.StackRoleSQL+` AS my_stack_role,
-		       `+access.IsRestrictedSQL+` AS is_restricted
+		       `+access.IsRestrictedSQL+` AS is_restricted,
+		       s.validation_interval, s.validation_status, s.last_validated_at
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
 		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
@@ -523,7 +529,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.GitHubInstallationUUID, &s.ProjectID,
 		&s.PlanAlertAdd, &s.PlanAlertChange, &s.PlanAlertDestroy, &s.PlanBlockOnAlert,
 		&s.HealthScore,
-		&s.MyStackRole, &s.IsRestricted)
+		&s.MyStackRole, &s.IsRestricted,
+		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -576,6 +583,7 @@ type updateStackReq struct {
 	PlanAlertChange     *int    `json:"plan_alert_change"`
 	PlanAlertDestroy    *int    `json:"plan_alert_destroy"`
 	PlanBlockOnAlert    *bool   `json:"plan_block_on_alert"`
+	ValidationInterval  *int    `json:"validation_interval"`    // minutes, 0 = disabled
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -631,6 +639,13 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 			add("max_concurrent_runs", nil) // 0 = unlimited
 		} else {
 			add("max_concurrent_runs", *r.MaxConcurrentRuns)
+		}
+	}
+	if r.ValidationInterval != nil {
+		if *r.ValidationInterval < 0 {
+			add("validation_interval", 0)
+		} else {
+			add("validation_interval", *r.ValidationInterval)
 		}
 	}
 	r.addPlanAlertSets(add)

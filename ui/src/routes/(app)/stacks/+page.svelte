@@ -86,6 +86,13 @@
 		unknown:   { dot: 'bg-zinc-600',   label: 'text-zinc-600',   title: 'No data' }
 	};
 
+	const validationBadge: Record<string, { dot: string; title: string }> = {
+		pass:    { dot: 'bg-green-400',  title: 'Validation passing' },
+		warn:    { dot: 'bg-yellow-400', title: 'Validation warnings' },
+		fail:    { dot: 'bg-red-400',    title: 'Validation failing' },
+		unknown: { dot: 'bg-zinc-600',   title: 'Validation not run' }
+	};
+
 	const toolBadge: Record<string, string> = {
 		opentofu: 'bg-violet-900 text-violet-300',
 		terraform: 'bg-purple-900 text-purple-300',
@@ -256,6 +263,7 @@
 						<th class="text-left px-4 py-3">Branch</th>
 						<th class="text-left px-4 py-3">Last run</th>
 						<th class="text-left px-4 py-3">Health</th>
+						<th class="text-left px-4 py-3">Validation</th>
 						<th class="text-left px-4 py-3">Auto-apply</th>
 						<th class="px-4 py-3 w-8"></th>
 					</tr>
@@ -263,6 +271,7 @@
 				<tbody class="divide-y divide-zinc-800">
 					{#each items as stack (stack.id)}
 						{@const hb = healthBadge[stack.health_status] ?? healthBadge.unknown}
+						{@const vb = stack.validation_interval > 0 ? (validationBadge[stack.validation_status] ?? validationBadge.unknown) : null}
 						<tr class="hover:bg-zinc-900/50 transition-colors">
 							<td class="px-4 py-3">
 								<div class="flex items-center gap-2 flex-wrap">
@@ -333,6 +342,16 @@
 									<span class="h-2 w-2 rounded-full flex-shrink-0 {hb.dot}"></span>
 									<span class="text-xs {hb.label}">{hb.title}</span>
 								</span>
+							</td>
+							<td class="px-4 py-3">
+								{#if vb}
+									<span class="flex items-center gap-1.5" title="{vb.title}">
+										<span class="h-2 w-2 rounded-full flex-shrink-0 {vb.dot}"></span>
+										<span class="text-xs text-zinc-400">{stack.validation_status}</span>
+									</span>
+								{:else}
+									<span class="text-zinc-600 text-xs">—</span>
+								{/if}
 							</td>
 							<td class="px-4 py-3 text-zinc-400">
 								{stack.auto_apply ? '✓' : '—'}
