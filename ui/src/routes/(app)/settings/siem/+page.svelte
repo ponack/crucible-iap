@@ -364,8 +364,8 @@
 				{/if}
 
 				<!-- Type-specific config fields -->
-				{@const fields = CONFIG_FIELDS[formType]}
 				{#if !editingDest || true}
+					{@const fields = CONFIG_FIELDS[formType]}
 					<div class="space-y-3">
 						<p class="text-xs font-medium text-zinc-500 uppercase tracking-widest">
 							{editingDest ? 'Update config (leave blank to keep existing)' : 'Configuration'}

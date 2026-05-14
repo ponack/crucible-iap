@@ -3,18 +3,21 @@ package siem
 
 import (
 	"bytes"
-	"context"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
-	"golang.org/x/oauth2/google"
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/ponack/crucible-iap/internal/audit"
 )
-
-const chronicleScope = "https://www.googleapis.com/auth/chronicle-backstory"
 
 type chronicleAdapter struct {
 	cfg ChronicleConfig
@@ -30,6 +33,72 @@ func newChronicleAdapter(cfg ChronicleConfig) *chronicleAdapter {
 	return &chronicleAdapter{cfg: cfg}
 }
 
+// serviceAccountJSON is the subset of fields we need from a GCP service account key file.
+type serviceAccountJSON struct {
+	ClientEmail string `json:"client_email"`
+	PrivateKey  string `json:"private_key"`
+	TokenURI    string `json:"token_uri"`
+}
+
+const chronicleScope = "https://www.googleapis.com/auth/chronicle-backstory"
+
+func (a *chronicleAdapter) fetchToken() (string, error) {
+	var sa serviceAccountJSON
+	if err := json.Unmarshal([]byte(a.cfg.ServiceAccountJSON), &sa); err != nil {
+		return "", fmt.Errorf("chronicle: parse service account JSON: %w", err)
+	}
+	if sa.TokenURI == "" {
+		sa.TokenURI = "https://oauth2.googleapis.com/token"
+	}
+
+	block, _ := pem.Decode([]byte(sa.PrivateKey))
+	if block == nil {
+		return "", fmt.Errorf("chronicle: decode private key PEM: no block found")
+	}
+	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return "", fmt.Errorf("chronicle: parse private key: %w", err)
+	}
+	rsaKey, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return "", fmt.Errorf("chronicle: private key is not RSA")
+	}
+
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":   sa.ClientEmail,
+		"sub":   sa.ClientEmail,
+		"aud":   sa.TokenURI,
+		"scope": chronicleScope,
+		"iat":   now.Unix(),
+		"exp":   now.Add(time.Hour).Unix(),
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodRS256, claims).SignedString(rsaKey)
+	if err != nil {
+		return "", fmt.Errorf("chronicle: sign JWT: %w", err)
+	}
+
+	resp, err := http.PostForm(sa.TokenURI, url.Values{
+		"grant_type": {"urn:ietf:params:oauth:grant-type:jwt-bearer"},
+		"assertion":  {signed},
+	})
+	if err != nil {
+		return "", fmt.Errorf("chronicle: token exchange: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("chronicle: token exchange status %d: %s", resp.StatusCode, string(body))
+	}
+	var tok struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &tok); err != nil || tok.AccessToken == "" {
+		return "", fmt.Errorf("chronicle: parse token response: %s", string(body))
+	}
+	return tok.AccessToken, nil
+}
+
 func (a *chronicleAdapter) Send(events []audit.Event) error {
 	udmEvents := make([]map[string]any, len(events))
 	for i, e := range events {
@@ -42,8 +111,8 @@ func (a *chronicleAdapter) Send(events []audit.Event) error {
 func (a *chronicleAdapter) TestConnection() error {
 	body, _ := json.Marshal(map[string]any{
 		"events": []map[string]any{toUDM(audit.Event{
-			Action:    "test.connection",
-			ActorType: "system",
+			Action:     "test.connection",
+			ActorType:  "system",
 			OccurredAt: time.Now(),
 		})},
 	})
@@ -51,22 +120,17 @@ func (a *chronicleAdapter) TestConnection() error {
 }
 
 func (a *chronicleAdapter) post(body []byte) error {
-	ctx := context.Background()
-	creds, err := google.CredentialsFromJSON(ctx, []byte(a.cfg.ServiceAccountJSON), chronicleScope)
-	if err != nil {
-		return fmt.Errorf("chronicle: parse service account: %w", err)
-	}
-	token, err := creds.TokenSource.Token()
-	if err != nil {
-		return fmt.Errorf("chronicle: obtain token: %w", err)
-	}
-
-	url := fmt.Sprintf("https://%s-chronicle.googleapis.com/v2/udmevents:batchCreate", a.cfg.Region)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	token, err := a.fetchToken()
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+
+	apiURL := fmt.Sprintf("https://%s-chronicle.googleapis.com/v2/udmevents:batchCreate", a.cfg.Region)
+	req, err := http.NewRequest(http.MethodPost, apiURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
 	client := newHTTPClient(false)
@@ -76,8 +140,8 @@ func (a *chronicleAdapter) post(body []byte) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		var buf bytes.Buffer
-		_, _ = buf.ReadFrom(resp.Body)
+		var buf strings.Builder
+		_, _ = io.Copy(&buf, resp.Body)
 		return fmt.Errorf("chronicle returned %d: %s", resp.StatusCode, buf.String())
 	}
 	return nil
