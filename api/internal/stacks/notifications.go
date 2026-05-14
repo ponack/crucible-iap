@@ -19,6 +19,7 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 	var req struct {
 		VCSProvider    *string  `json:"vcs_provider"`    // nil = no change
 		VCSBaseURL     *string  `json:"vcs_base_url"`    // nil = no change; "" = clear
+		VCSUsername    *string  `json:"vcs_username"`    // nil = no change; "" = clear (Bitbucket)
 		VCSToken       *string  `json:"vcs_token"`       // nil = no change; "" = clear
 		SlackWebhook   *string  `json:"slack_webhook"`   // nil = no change; "" = clear
 		DiscordWebhook *string  `json:"discord_webhook"` // nil = no change; "" = clear
@@ -43,14 +44,15 @@ func (h *Handler) UpdateNotifications(c echo.Context) error {
 	}
 
 	if req.VCSProvider != nil {
-		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true}
+		valid := map[string]bool{"github": true, "gitlab": true, "gitea": true, "bitbucket": true, "azure_devops": true}
 		if !valid[*req.VCSProvider] {
-			return echo.NewHTTPError(http.StatusBadRequest, "vcs_provider must be one of: github, gitlab, gitea")
+			return echo.NewHTTPError(http.StatusBadRequest, "vcs_provider must be one of: github, gitlab, gitea, bitbucket, azure_devops")
 		}
 		_, _ = h.pool.Exec(ctx, `UPDATE stacks SET vcs_provider = $1 WHERE id = $2`, *req.VCSProvider, stackID)
 	}
 
 	h.setNullableStr(ctx, stackID, "vcs_base_url", req.VCSBaseURL)
+	h.setNullableStr(ctx, stackID, "vcs_username", req.VCSUsername)
 
 	if err := h.setEncryptedField(ctx, stackID, "vcs_token_enc", req.VCSToken); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "encryption failed")

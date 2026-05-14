@@ -107,6 +107,7 @@
 
 	// Notifications
 	let notifVCSToken = $state('');
+	let notifVCSUsername = $state('');
 	let notifSlackWebhook = $state('');
 	let notifDiscordWebhook = $state('');
 	let notifTeamsWebhook = $state('');
@@ -327,6 +328,7 @@
 			}
 			notifVCSProvider = stackRes.vcs_provider ?? 'github';
 			notifVCSBaseURL = stackRes.vcs_base_url ?? '';
+			notifVCSUsername = stackRes.vcs_username ?? '';
 			moduleNamespace = stackRes.module_namespace ?? '';
 			moduleName = stackRes.module_name ?? '';
 			moduleProvider = stackRes.module_provider ?? 'aws';
@@ -670,6 +672,7 @@
 			const data: Record<string, unknown> = { notify_events: notifEvents };
 			if (notifVCSProvider) data.vcs_provider = notifVCSProvider;
 			data.vcs_base_url = notifVCSBaseURL; // allow clearing
+			data.vcs_username = notifVCSUsername; // allow clearing
 			if (notifVCSToken !== '') data.vcs_token = notifVCSToken;
 			if (notifSlackWebhook !== '') data.slack_webhook = notifSlackWebhook;
 			if (notifDiscordWebhook !== '') data.discord_webhook = notifDiscordWebhook;
@@ -2456,6 +2459,8 @@
 						<option value="github">GitHub</option>
 						<option value="gitlab">GitLab</option>
 						<option value="gitea">Gitea / Gogs</option>
+						<option value="bitbucket">Bitbucket Cloud</option>
+						<option value="azure_devops">Azure DevOps</option>
 					</select>
 				</div>
 				{#if notifVCSProvider === 'gitlab' || notifVCSProvider === 'gitea'}
@@ -2471,6 +2476,14 @@
 						<input id="notif-vcs-base-url" class="field-input font-mono text-sm"
 							bind:value={notifVCSBaseURL}
 							placeholder="https://gitea.example.com" />
+					</div>
+				{:else if notifVCSProvider === 'bitbucket'}
+					<div class="space-y-1.5">
+						<label class="field-label" for="notif-vcs-username">Workspace username</label>
+						<input id="notif-vcs-username" class="field-input"
+							bind:value={notifVCSUsername}
+							placeholder="my-workspace" />
+						<p class="text-xs text-zinc-600">Required for PR comments and commit status checks.</p>
 					</div>
 				{:else}
 					<div></div>

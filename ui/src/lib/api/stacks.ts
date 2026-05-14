@@ -32,8 +32,9 @@ export interface Stack {
 	drift_detection: boolean;
 	drift_schedule?: string;
 	auto_remediate_drift: boolean;
-	vcs_provider: 'github' | 'gitlab' | 'gitea';
+	vcs_provider: 'github' | 'gitlab' | 'gitea' | 'bitbucket' | 'azure_devops';
 	vcs_base_url?: string;
+	vcs_username?: string;
 	has_vcs_token: boolean;
 	has_slack_webhook: boolean;
 	has_discord_webhook: boolean;
@@ -361,6 +362,7 @@ export const stacks = {
 			data: {
 				vcs_provider?: string;
 				vcs_base_url?: string;
+				vcs_username?: string;
 				vcs_token?: string;
 				slack_webhook?: string;
 				gotify_url?: string;

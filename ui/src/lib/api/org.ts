@@ -2,7 +2,7 @@
 import { request } from './base';
 
 export type IntegrationType =
-	| 'github' | 'gitlab' | 'gitea'
+	| 'github' | 'gitlab' | 'gitea' | 'bitbucket' | 'azure_devops'
 	| 'aws_sm' | 'hc_vault' | 'bitwarden_sm' | 'vaultwarden';
 
 export interface Integration {
@@ -15,6 +15,15 @@ export interface Integration {
 
 export interface VCSIntegrationConfig {
 	token: string;
+}
+
+export interface BitbucketIntegrationConfig {
+	username: string;
+	app_password: string;
+}
+
+export interface AzureDevOpsIntegrationConfig {
+	token: string; // personal access token
 }
 
 export interface AWSSecretStoreConfig {
@@ -53,6 +62,8 @@ export interface VaultwardenSecretStoreConfig {
 
 type IntegrationConfig =
 	| VCSIntegrationConfig
+	| BitbucketIntegrationConfig
+	| AzureDevOpsIntegrationConfig
 	| AWSSecretStoreConfig
 	| HCVaultSecretStoreConfig
 	| BitwardenSecretStoreConfig

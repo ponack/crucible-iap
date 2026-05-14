@@ -116,6 +116,7 @@ type Stack struct {
 	WebhookURL           string     `json:"webhook_url,omitempty"`    // only populated on Get
 	VCSProvider          string     `json:"vcs_provider"`
 	VCSBaseURL           string     `json:"vcs_base_url,omitempty"`
+	VCSUsername          string     `json:"vcs_username,omitempty"`
 	HasVCSToken          bool       `json:"has_vcs_token"`
 	HasSlackWebhook      bool       `json:"has_slack_webhook"`
 	HasDiscordWebhook    bool       `json:"has_discord_webhook"`
@@ -477,7 +478,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       COALESCE(s.tool_version,''), s.repo_url, s.repo_branch, s.project_root,
 		       COALESCE(s.runner_image,''), s.auto_apply, s.drift_detection,
 		       COALESCE(s.drift_schedule,''), s.auto_remediate_drift, s.webhook_secret,
-		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
+		       s.vcs_provider, COALESCE(s.vcs_base_url,''), COALESCE(s.vcs_username,''),
 		       s.vcs_token_enc IS NOT NULL, s.slack_webhook_enc IS NOT NULL,
 		       s.discord_webhook_enc IS NOT NULL, s.teams_webhook_enc IS NOT NULL,
 		       COALESCE(s.gotify_url,''), s.gotify_token_enc IS NOT NULL,
@@ -511,7 +512,7 @@ func (h *Handler) Get(c echo.Context) error {
 	`, id, orgID, userID).Scan(&s.ID, &s.OrgID, &s.Slug, &s.Name, &s.Description,
 		&s.Tool, &s.ToolVersion, &s.RepoURL, &s.RepoBranch, &s.ProjectRoot,
 		&s.RunnerImage, &s.AutoApply, &s.DriftDetection, &s.DriftSchedule, &s.AutoRemediateDrift,
-		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL,
+		&webhookSecretPtr, &s.VCSProvider, &s.VCSBaseURL, &s.VCSUsername,
 		&s.HasVCSToken, &s.HasSlackWebhook, &s.HasDiscordWebhook, &s.HasTeamsWebhook,
 		&s.GotifyURL, &s.HasGotifyToken, &s.NtfyURL, &s.HasNtfyToken,
 		&s.NotifyEmail, &s.NotifyEvents,
