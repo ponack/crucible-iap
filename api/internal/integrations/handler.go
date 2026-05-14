@@ -26,9 +26,11 @@ type Integration struct {
 // validTypes is the full set of accepted integration type identifiers.
 var validTypes = map[string]bool{
 	// VCS — used for authenticated git clone
-	"github": true,
-	"gitlab": true,
-	"gitea":  true,
+	"github":       true,
+	"gitlab":       true,
+	"gitea":        true,
+	"bitbucket":    true,
+	"azure_devops": true,
 	// Secret stores — used for secret injection at run time
 	"aws_sm":       true,
 	"hc_vault":     true,

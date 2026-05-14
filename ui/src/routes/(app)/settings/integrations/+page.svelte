@@ -5,6 +5,8 @@
 		type Integration,
 		type IntegrationType,
 		type VCSIntegrationConfig,
+		type BitbucketIntegrationConfig,
+		type AzureDevOpsIntegrationConfig,
 		type AWSSecretStoreConfig,
 		type HCVaultSecretStoreConfig,
 		type BitwardenSecretStoreConfig,
@@ -27,6 +29,8 @@
 	let formType = $state<IntegrationType>('github');
 	// VCS
 	let vcsCfg = $state<VCSIntegrationConfig>({ token: '' });
+	let bbCfg = $state<BitbucketIntegrationConfig>({ username: '', app_password: '' });
+	let adoCfg = $state<AzureDevOpsIntegrationConfig>({ token: '' });
 	// AWS SM
 	let awsCfg = $state<AWSSecretStoreConfig>({ region: '', secret_names: [] });
 	let awsSecretNamesRaw = $state('');
@@ -71,6 +75,8 @@
 
 	function resetConfigs() {
 		vcsCfg = { token: '' };
+		bbCfg = { username: '', app_password: '' };
+		adoCfg = { token: '' };
 		awsCfg = { region: '', secret_names: [] };
 		awsSecretNamesRaw = '';
 		vaultCfg = { address: '', mount: 'secret', path: '' };
@@ -80,6 +86,8 @@
 
 	function currentConfig() {
 		if (formType === 'github' || formType === 'gitlab' || formType === 'gitea') return vcsCfg;
+		if (formType === 'bitbucket') return bbCfg;
+		if (formType === 'azure_devops') return adoCfg;
 		if (formType === 'aws_sm') {
 			return { ...awsCfg, secret_names: awsSecretNamesRaw.split('\n').map(s => s.trim()).filter(Boolean) };
 		}
@@ -125,6 +133,8 @@
 		github: 'GitHub',
 		gitlab: 'GitLab',
 		gitea: 'Gitea',
+		bitbucket: 'Bitbucket Cloud',
+		azure_devops: 'Azure DevOps',
 		aws_sm: 'AWS Secrets Manager',
 		hc_vault: 'HashiCorp Vault',
 		bitwarden_sm: 'Bitwarden Secrets Manager',
@@ -132,17 +142,18 @@
 	};
 
 	const typeGroups = [
-		{ label: 'VCS / Git credentials', types: ['github', 'gitlab', 'gitea'] as IntegrationType[] },
+		{ label: 'VCS / Git credentials', types: ['github', 'gitlab', 'gitea', 'bitbucket', 'azure_devops'] as IntegrationType[] },
 		{ label: 'Secret stores', types: ['aws_sm', 'hc_vault', 'bitwarden_sm', 'vaultwarden'] as IntegrationType[] }
 	];
 
+	const vcsTypes = new Set(['github', 'gitlab', 'gitea', 'bitbucket', 'azure_devops']);
+
 	function groupItems(type: 'vcs' | 'secret') {
-		const vcsTypes = new Set(['github', 'gitlab', 'gitea']);
 		return items.filter(i => type === 'vcs' ? vcsTypes.has(i.type) : !vcsTypes.has(i.type));
 	}
 
 	function isVCS(t: IntegrationType) {
-		return t === 'github' || t === 'gitlab' || t === 'gitea';
+		return vcsTypes.has(t);
 	}
 </script>
 
@@ -263,8 +274,8 @@
 				</div>
 				{/if}
 
-				<!-- VCS config -->
-				{#if isVCS(formType)}
+				<!-- VCS config — GitHub / GitLab / Gitea -->
+				{#if formType === 'github' || formType === 'gitlab' || formType === 'gitea'}
 					<div>
 						<label class="block text-xs text-zinc-400 mb-1" for="int-token">
 							Personal access token {editingID ? '(leave blank to keep existing)' : ''}
@@ -277,6 +288,36 @@
 							{:else if formType === 'gitlab'}Requires <code>read_repository</code> scope.
 							{:else}Requires repository read access.{/if}
 						</p>
+					</div>
+
+				<!-- Bitbucket Cloud -->
+				{:else if formType === 'bitbucket'}
+					<div>
+						<label class="block text-xs text-zinc-400 mb-1" for="bb-username">Workspace username</label>
+						<input id="bb-username" type="text" bind:value={bbCfg.username}
+							placeholder="my-workspace"
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
+					</div>
+					<div>
+						<label class="block text-xs text-zinc-400 mb-1" for="bb-app-password">
+							App password {editingID ? '(leave blank to keep existing)' : ''}
+						</label>
+						<input id="bb-app-password" type="password" bind:value={bbCfg.app_password}
+							placeholder={editingID ? '••••••••' : 'ATBB…'}
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
+						<p class="text-xs text-zinc-500 mt-1">Requires <code>repository:read</code> permission. Used to clone repositories.</p>
+					</div>
+
+				<!-- Azure DevOps -->
+				{:else if formType === 'azure_devops'}
+					<div>
+						<label class="block text-xs text-zinc-400 mb-1" for="ado-token">
+							Personal access token {editingID ? '(leave blank to keep existing)' : ''}
+						</label>
+						<input id="ado-token" type="password" bind:value={adoCfg.token}
+							placeholder={editingID ? '••••••••' : 'ADO PAT…'}
+							class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-teal-500" />
+						<p class="text-xs text-zinc-500 mt-1">Requires <code>Code (read)</code> scope. Used to clone repositories.</p>
 					</div>
 
 				<!-- AWS Secrets Manager -->

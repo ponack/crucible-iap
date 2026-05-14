@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -75,6 +76,7 @@ type runData struct {
 	repoURL         string
 	vcsProvider     string
 	vcsBaseURL      string
+	vcsUsername     string
 	vcsTokenEnc     []byte
 	slackWebhookEnc []byte
 	gotifyURL       string
@@ -104,7 +106,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		       COALESCE(r.commit_sha,''),
 		       r.pr_number, r.plan_add, r.plan_change, r.plan_destroy,
 		       s.name, s.repo_url,
-		       s.vcs_provider, COALESCE(s.vcs_base_url,''),
+		       s.vcs_provider, COALESCE(s.vcs_base_url,''), COALESCE(s.vcs_username,''),
 		       s.vcs_token_enc, s.slack_webhook_enc,
 		       COALESCE(s.gotify_url,''), s.gotify_token_enc,
 		       COALESCE(s.ntfy_url,''), s.ntfy_token_enc,
@@ -121,7 +123,7 @@ func (n *Notifier) load(ctx context.Context, runID string) (*runData, error) {
 		&d.commitSHA,
 		&d.prNumber, &d.planAdd, &d.planChange, &d.planDestroy,
 		&d.stackName, &d.repoURL,
-		&d.vcsProvider, &d.vcsBaseURL,
+		&d.vcsProvider, &d.vcsBaseURL, &d.vcsUsername,
 		&d.vcsTokenEnc, &d.slackWebhookEnc,
 		&d.gotifyURL, &d.gotifyTokenEnc,
 		&d.ntfyURL, &d.ntfyTokenEnc,
@@ -283,9 +285,9 @@ func (n *Notifier) PlanComplete(ctx context.Context, runID string) {
 			if d.runType == "proposed" {
 				statusDesc = "Plan complete"
 			}
-			n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, "success", statusDesc, vcsToken, runID)
+			n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, "success", statusDesc, vcsToken, d.vcsUsername, runID)
 			if d.prNumber != nil {
-				n.postPRComment(ctx, provider, d.vcsBaseURL, owner, repo, *d.prNumber, n.planCommentBody(d), vcsToken)
+				n.postPRComment(ctx, provider, d.vcsBaseURL, owner, repo, *d.prNumber, n.planCommentBody(d), vcsToken, d.vcsUsername)
 			}
 		}
 	}
@@ -333,7 +335,7 @@ func (n *Notifier) RunFinished(ctx context.Context, runID string, success bool) 
 			if !success {
 				state, desc = "failure", "Apply failed"
 			}
-			n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, state, desc, vcsToken, runID)
+			n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, state, desc, vcsToken, d.vcsUsername, runID)
 		}
 	}
 
@@ -497,14 +499,14 @@ func (n *Notifier) PolicyDenied(ctx context.Context, runID string, messages []st
 		return
 	}
 
-	n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, "failure", "Policy check failed", vcsToken, runID)
+	n.setCommitStatus(ctx, provider, d.vcsBaseURL, owner, repo, d.commitSHA, "failure", "Policy check failed", vcsToken, d.vcsUsername, runID)
 	if d.prNumber != nil {
 		body := "## Crucible — Policy Denied\n\nThis plan was blocked by the following policies:\n\n"
 		for _, m := range messages {
 			body += "- " + m + "\n"
 		}
 		body += "\n[View run →](" + n.runURL(runID) + ")"
-		n.postPRComment(ctx, provider, d.vcsBaseURL, owner, repo, *d.prNumber, body, vcsToken)
+		n.postPRComment(ctx, provider, d.vcsBaseURL, owner, repo, *d.prNumber, body, vcsToken, d.vcsUsername)
 	}
 }
 
@@ -722,7 +724,7 @@ func (n *Notifier) ValidationAlert(ctx context.Context, stackID, status string, 
 
 // ── VCS helpers ───────────────────────────────────────────────────────────────
 
-func (n *Notifier) setCommitStatus(ctx context.Context, provider, baseURL, owner, repo, sha, state, desc, token, runID string) {
+func (n *Notifier) setCommitStatus(ctx context.Context, provider, baseURL, owner, repo, sha, state, desc, token, username, runID string) {
 	switch provider {
 	case "github":
 		n.ghSetStatus(ctx, owner, repo, sha, state, desc, token, runID)
@@ -730,10 +732,14 @@ func (n *Notifier) setCommitStatus(ctx context.Context, provider, baseURL, owner
 		n.glSetStatus(ctx, baseURL, owner, repo, sha, state, desc, token, runID)
 	case "gitea":
 		n.gitSetStatus(ctx, baseURL, owner, repo, sha, state, desc, token, runID)
+	case "bitbucket":
+		n.bbSetStatus(ctx, owner, repo, sha, state, desc, username, token, runID)
+	case "azure_devops":
+		n.adoSetStatus(ctx, owner, repo, sha, state, desc, token, runID)
 	}
 }
 
-func (n *Notifier) postPRComment(ctx context.Context, provider, baseURL, owner, repo string, prNumber int, body, token string) {
+func (n *Notifier) postPRComment(ctx context.Context, provider, baseURL, owner, repo string, prNumber int, body, token, username string) {
 	switch provider {
 	case "github":
 		n.ghPostComment(ctx, owner, repo, prNumber, body, token)
@@ -741,6 +747,10 @@ func (n *Notifier) postPRComment(ctx context.Context, provider, baseURL, owner, 
 		n.glPostNote(ctx, baseURL, owner, repo, prNumber, body, token)
 	case "gitea":
 		n.gitPostComment(ctx, baseURL, owner, repo, prNumber, body, token)
+	case "bitbucket":
+		n.bbPostComment(ctx, owner, repo, prNumber, body, username, token)
+	case "azure_devops":
+		n.adoPostComment(ctx, owner, repo, prNumber, body, token)
 	}
 }
 
@@ -824,6 +834,114 @@ func (n *Notifier) gitPostComment(ctx context.Context, baseURL, owner, repo stri
 	apiURL := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/%d/comments", apiBase, owner, repo, issueIndex)
 	if err := n.jsonPost(ctx, apiURL, map[string]string{"body": body}, "token "+token); err != nil {
 		slog.Warn("notify: gitea post comment failed", "err", err)
+	}
+}
+
+// ── Bitbucket Cloud ───────────────────────────────────────────────────────────
+
+func bbBasicAuth(username, appPassword string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+appPassword))
+}
+
+// Bitbucket commit status states: SUCCESSFUL | FAILED | INPROGRESS | STOPPED
+func bbState(state string) string {
+	switch state {
+	case "success":
+		return "SUCCESSFUL"
+	case "failure":
+		return "FAILED"
+	default:
+		return "INPROGRESS"
+	}
+}
+
+func (n *Notifier) bbSetStatus(ctx context.Context, workspace, repoSlug, sha, state, desc, username, appPassword, runID string) {
+	if username == "" || appPassword == "" {
+		return
+	}
+	apiURL := fmt.Sprintf("https://api.bitbucket.org/2.0/repositories/%s/%s/commit/%s/statuses/build",
+		workspace, repoSlug, sha)
+	payload := map[string]string{
+		"state":       bbState(state),
+		"key":         "crucible",
+		"url":         n.runURL(runID),
+		"description": desc,
+	}
+	if err := n.jsonPost(ctx, apiURL, payload, bbBasicAuth(username, appPassword)); err != nil {
+		slog.Warn("notify: bitbucket set status failed", "err", err)
+	}
+}
+
+func (n *Notifier) bbPostComment(ctx context.Context, workspace, repoSlug string, prID int, body, username, appPassword string) {
+	if username == "" || appPassword == "" {
+		return
+	}
+	apiURL := fmt.Sprintf("https://api.bitbucket.org/2.0/repositories/%s/%s/pullrequests/%d/comments",
+		workspace, repoSlug, prID)
+	payload := map[string]any{"content": map[string]string{"raw": body}}
+	if err := n.jsonPost(ctx, apiURL, payload, bbBasicAuth(username, appPassword)); err != nil {
+		slog.Warn("notify: bitbucket post comment failed", "err", err)
+	}
+}
+
+// ── Azure DevOps ──────────────────────────────────────────────────────────────
+
+func adoBasicAuth(pat string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(":"+pat))
+}
+
+// adoState maps generic state strings to ADO commit status states.
+func adoState(state string) string {
+	if state == "success" {
+		return "succeeded"
+	}
+	return "failed"
+}
+
+// adoSplitRepo splits owner/project/_git/repo into (org, project, repo).
+// owner is the ADO organisation; repo encodes "project/_git/reponame".
+func adoSplitRepo(owner, repo string) (org, project, repoName string) {
+	parts := strings.SplitN(repo, "/_git/", 2)
+	if len(parts) != 2 {
+		return owner, "", repo
+	}
+	return owner, parts[0], parts[1]
+}
+
+func (n *Notifier) adoSetStatus(ctx context.Context, owner, repo, sha, state, desc, pat, runID string) {
+	if pat == "" {
+		return
+	}
+	org, project, repoName := adoSplitRepo(owner, repo)
+	apiURL := fmt.Sprintf(
+		"https://dev.azure.com/%s/%s/_apis/git/repositories/%s/commits/%s/statuses?api-version=7.1",
+		org, project, repoName, sha,
+	)
+	payload := map[string]any{
+		"state":       adoState(state),
+		"description": desc,
+		"targetUrl":   n.runURL(runID),
+		"context":     map[string]string{"name": "crucible", "genre": "iac"},
+	}
+	if err := n.jsonPost(ctx, apiURL, payload, adoBasicAuth(pat)); err != nil {
+		slog.Warn("notify: azure devops set status failed", "err", err)
+	}
+}
+
+func (n *Notifier) adoPostComment(ctx context.Context, owner, repo string, prID int, body, pat string) {
+	if pat == "" {
+		return
+	}
+	org, project, repoName := adoSplitRepo(owner, repo)
+	apiURL := fmt.Sprintf(
+		"https://dev.azure.com/%s/%s/_apis/git/repositories/%s/pullRequests/%d/threads?api-version=7.1",
+		org, project, repoName, prID,
+	)
+	payload := map[string]any{
+		"comments": []map[string]any{{"content": body, "commentType": 1}},
+	}
+	if err := n.jsonPost(ctx, apiURL, payload, adoBasicAuth(pat)); err != nil {
+		slog.Warn("notify: azure devops post comment failed", "err", err)
 	}
 }
 
@@ -1229,6 +1347,27 @@ func (n *Notifier) runEmailBody(d *runData, success bool) string {
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
+// detectVCSProvider returns the VCS provider string for raw (host+path).
+// vcsProvider hint from the stack config wins; falls back to URL heuristics.
+func detectVCSProvider(raw, vcsProvider string) string {
+	switch vcsProvider {
+	case "github", "gitlab", "gitea", "bitbucket", "azure_devops":
+		return vcsProvider
+	}
+	switch {
+	case strings.Contains(raw, "github.com"):
+		return "github"
+	case strings.Contains(raw, "gitlab.com"), strings.Contains(raw, "gitlab"):
+		return "gitlab"
+	case strings.Contains(raw, "bitbucket.org"):
+		return "bitbucket"
+	case strings.Contains(raw, "dev.azure.com"), strings.Contains(raw, "visualstudio.com"):
+		return "azure_devops"
+	default:
+		return ""
+	}
+}
+
 // parseRepo extracts owner, repo name, and provider from a variety of URL formats.
 // The vcsProvider and vcsBaseURL hints from the stack config take priority over
 // URL-based heuristics, enabling self-hosted instances.
@@ -1258,17 +1397,9 @@ func parseRepo(repoURL, vcsProvider, vcsBaseURL string) (owner, repo, provider s
 	raw = strings.TrimSuffix(raw, ".git")
 
 	// Determine provider: explicit hint wins, then URL heuristics.
-	switch vcsProvider {
-	case "github", "gitlab", "gitea":
-		provider = vcsProvider
-	default:
-		if strings.Contains(raw, "github.com") {
-			provider = "github"
-		} else if strings.Contains(raw, "gitlab.com") || strings.Contains(raw, "gitlab") {
-			provider = "gitlab"
-		} else {
-			return // unknown host, no hint
-		}
+	provider = detectVCSProvider(raw, vcsProvider)
+	if provider == "" {
+		return
 	}
 
 	// Strip the host prefix to get owner/repo.

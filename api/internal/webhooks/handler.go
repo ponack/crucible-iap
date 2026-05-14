@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -342,6 +343,10 @@ func (h *Handler) Redeliver(c echo.Context) error {
 		event, err = parseGitHub(eventType, rawPayload)
 	case "gitlab":
 		event, err = parseGitLab(eventType, rawPayload)
+	case "bitbucket":
+		event, err = parseBitbucket(eventType, rawPayload)
+	case "azure_devops":
+		event, err = parseAzureDevOps(rawPayload)
 	default:
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, "unsupported forge")
 	}
@@ -623,6 +628,8 @@ func trimPayload(body []byte) json.RawMessage {
 
 func detectForge(r *http.Request) string {
 	switch {
+	case r.Header.Get("X-Event-Key") != "":
+		return "bitbucket"
 	case r.Header.Get("X-Gitlab-Token") != "" || r.Header.Get("X-Gitlab-Event") != "":
 		return "gitlab"
 	case r.Header.Get("X-Gitea-Event") != "" || r.Header.Get("X-Gitea-Signature") != "" || r.Header.Get("X-Gitea-Delivery") != "":
@@ -631,13 +638,15 @@ func detectForge(r *http.Request) string {
 		return "gogs"
 	case r.Header.Get("X-GitHub-Event") != "" || r.Header.Get("X-Hub-Signature-256") != "":
 		return "github"
+	case strings.HasPrefix(r.Header.Get("Authorization"), "Basic "):
+		return "azure_devops"
 	default:
 		return "unknown"
 	}
 }
 
 func extractEventType(r *http.Request) string {
-	for _, h := range []string{"X-GitHub-Event", "X-Gitea-Event", "X-Gogs-Event", "X-Gitlab-Event"} {
+	for _, h := range []string{"X-Event-Key", "X-GitHub-Event", "X-Gitea-Event", "X-Gogs-Event", "X-Gitlab-Event"} {
 		if v := r.Header.Get(h); v != "" {
 			return v
 		}
@@ -646,7 +655,7 @@ func extractEventType(r *http.Request) string {
 }
 
 func extractDeliveryID(r *http.Request) string {
-	for _, h := range []string{"X-GitHub-Delivery", "X-Gitea-Delivery"} {
+	for _, h := range []string{"X-GitHub-Delivery", "X-Gitea-Delivery", "X-Hook-UUID"} {
 		if v := r.Header.Get(h); v != "" {
 			return v
 		}
@@ -740,7 +749,40 @@ func parseAndVerify(r *http.Request, body []byte, secret string) (*webhookEvent,
 		}
 		return parseGitLab(r.Header.Get("X-Gitlab-Event"), body)
 	}
+	// Bitbucket Cloud: X-Event-Key + optional X-Hub-Signature (sha256=…)
+	if eventKey := r.Header.Get("X-Event-Key"); eventKey != "" {
+		return verifyBitbucket(r, body, eventKey, secret)
+	}
+	// Azure DevOps: Basic auth — password field must match the stack's webhook_secret.
+	if strings.HasPrefix(r.Header.Get("Authorization"), "Basic ") {
+		return verifyAzureDevOps(r, body, secret)
+	}
 	return nil, fmt.Errorf("no webhook signature header present")
+}
+
+func verifyBitbucket(r *http.Request, body []byte, eventKey, secret string) (*webhookEvent, error) {
+	if sig := r.Header.Get("X-Hub-Signature"); sig != "" {
+		if !verifyGitHubSig(body, secret, sig) {
+			return nil, fmt.Errorf("invalid Bitbucket signature")
+		}
+	}
+	return parseBitbucket(eventKey, body)
+}
+
+func verifyAzureDevOps(r *http.Request, body []byte, secret string) (*webhookEvent, error) {
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(r.Header.Get("Authorization"), "Basic "))
+	if err != nil {
+		return nil, fmt.Errorf("invalid Basic auth encoding")
+	}
+	parts := strings.SplitN(string(decoded), ":", 2)
+	password := ""
+	if len(parts) == 2 {
+		password = parts[1]
+	}
+	if password != secret {
+		return nil, fmt.Errorf("invalid Azure DevOps webhook secret")
+	}
+	return parseAzureDevOps(body)
 }
 
 func verifyGitHubSig(body []byte, secret, sig string) bool {
