@@ -8,6 +8,25 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// RequireInstanceAdmin allows only users with is_instance_admin=true.
+func RequireInstanceAdmin(pool *pgxpool.Pool) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			userID, _ := c.Get("userID").(string)
+			if userID == "" {
+				return echo.NewHTTPError(http.StatusUnauthorized, "missing auth context")
+			}
+			var ok bool
+			if err := pool.QueryRow(c.Request().Context(),
+				`SELECT is_instance_admin FROM users WHERE id = $1`, userID,
+			).Scan(&ok); err != nil || !ok {
+				return echo.NewHTTPError(http.StatusForbidden, "instance admin access required")
+			}
+			return next(c)
+		}
+	}
+}
+
 // Role represents an org membership level. Higher value = more privilege.
 type Role int
 

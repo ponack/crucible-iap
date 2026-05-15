@@ -50,7 +50,8 @@
 				id: payload.uid,
 				email: payload.email,
 				name: payload.name,
-				is_admin: false
+				is_admin: false,
+				is_instance_admin: payload.iadm ?? false
 			});
 			goto(next, { replaceState: true });
 		} catch {

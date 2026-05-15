@@ -49,7 +49,8 @@
 				id: payload.uid,
 				email: payload.email,
 				name: payload.name,
-				is_admin: false
+				is_admin: false,
+				is_instance_admin: payload.iadm ?? false
 			});
 			auth.setOrgRole(role as OrgRole);
 			goto('/stacks', { replaceState: true });
