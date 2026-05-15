@@ -32,7 +32,7 @@ Crucible IAP orchestrates OpenTofu, Terraform, Ansible, and Pulumi runs with pol
 
 | Area | What you get |
 | ---- | ------------ |
-| **GitOps & runs** | Push or PR triggers a tracked run (plan → confirm → apply) with PR comments and commit status checks. Works with GitHub, GitLab, Gitea, and Gogs (HMAC-verified webhooks). Tracked / proposed / destroy / drift run types, auto-apply, and scheduled drift detection. |
+| **GitOps & runs** | Push or PR triggers a tracked run (plan → confirm → apply) with PR comments and commit status checks. Works with GitHub, GitLab, Gitea, Gogs, Bitbucket Cloud, and Azure DevOps (HMAC-verified webhooks; ADO Basic-auth). Tracked / proposed / destroy / drift run types, auto-apply, and scheduled drift detection. |
 | **Policy-as-code** | OPA/Rego policies at `pre_plan`, `post_plan`, `pre_apply`, `trigger`, `login`, `approval`, and `validation` hooks. Blocking denies + non-blocking warnings. Approval gating on blast radius. GitOps sync — store `.rego` files in a git repo and Crucible syncs them on push (GitHub / GitLab, HMAC-verified). Standalone `/policies/test` playground with OPA evaluation trace. Compliance policy packs (SOC 2, CIS AWS Foundations, HIPAA, PCI-DSS) — one-click install and attach to any stack. Continuous validation — periodic policy checks against live state with configurable intervals and status-change alerts. Full append-only audit log. |
 | **State & runners** | OpenTofu, Terraform, Ansible, and Pulumi. Built-in Terraform HTTP backend on MinIO (zero config) or per-stack S3 / GCS / Azure Blob overrides. Each run in a fresh, read-only, capability-dropped Docker container — cosign-signed, digest-pinned runner image. |
 | **Secrets & identity** | Per-stack OIDC workload identity federation with AWS, GCP, Azure, Vault, Authentik, or any OIDC IdP — no static cloud credentials. Encrypted stack env vars + reusable variable sets. External secret stores: AWS Secrets Manager, Vault KV v2, Bitwarden, Vaultwarden. See [`docs/security.md`](docs/security.md) for crypto details. |
@@ -104,7 +104,7 @@ docker compose --profile external-proxy --profile authentik up -d
 ## Architecture
 
 ```text
-GitHub / GitLab webhook
+GitHub / GitLab / Bitbucket / Azure DevOps webhook
     │
     ▼
 Browser / CI
@@ -430,7 +430,7 @@ cd api && go test -race ./...
 - [ ] Multi-org support — single Crucible instance hosting multiple isolated organizations; targets MSPs and consultancies managing multiple client environments from one deployment
 - [ ] RustFS object storage — replace the bundled MinIO with RustFS for a fully Rust-native, S3-compatible object store; same API surface, lower resource footprint
 - [x] Projects / Spaces — hierarchical org → project → stack layout; per-project RBAC (admin / member / viewer) with org-member fallback; stacks optionally assigned to a project (unassigned stacks remain visible to all org members); project list page with stack and member counts; project detail with stacks tab and members tab; project filter on the stacks list; project assignment in stack create and edit forms; per-project member management with inline role changes; audit events on project create and delete
-- [ ] Bitbucket and Azure DevOps VCS — first-class webhook ingestion, PR comments, and commit status checks for Bitbucket Server / Cloud and Azure DevOps Repos; same auth and integration model as the existing GitHub / GitLab / Gitea support
+- [x] Bitbucket Cloud and Azure DevOps VCS — first-class webhook ingestion, PR comments, and commit status checks; Bitbucket uses HMAC-SHA256 (`X-Hub-Signature`) + Basic workspace:app_password for API calls; Azure DevOps uses Basic-auth webhook validation + Basic `:PAT` for Commit Statuses and PR Threads APIs; `vcs_username` column added to `stacks` for Bitbucket workspace identification; migration 069
 - [x] ChatOps approvals — approve, confirm, and discard runs directly from Slack, Teams, Discord, Gotify, ntfy, and email notifications; HMAC-SHA256-signed action links (24 h TTL, keyed to `CRUCIBLE_SECRET_KEY`) embedded in plan notifications for all six channels; clicking a link performs the action server-side and redirects to the run detail page; no Slack App, bot token, or extra installation required — works with any incoming webhook; confirm/approve and discard links vary by run state (`unconfirmed` vs `pending_approval`)
 - [x] Terragrunt support — first-class `tool: terragrunt` value; `run-all plan/apply/destroy` orchestration with `--terragrunt-non-interactive`; binary auto-downloaded from GitHub releases per run (`CRUCIBLE_TOOL_VERSION` sets the version, default `0.72.1`); arch-detected at runtime (amd64 / arm64) and cached in `/tmp/versioned/`; drift detection supported (run-all plan exit code); `TF_HTTP_*` state backend wired to Crucible's built-in state API; Terragrunt option added to stack create, stacks list filter, blueprints, and stack templates UI; green tool badge on stack detail page; no plan artifact upload (run-all produces per-module plans, not a single binary)
 - [ ] Customer-managed encryption keys (BYOK) — bring-your-own-key for stack secrets via AWS KMS, HashiCorp Vault Transit, or Azure Key Vault; per-stack data-encryption keys are wrapped by the customer-controlled KMS instead of the bundled `secret_key`
