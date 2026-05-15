@@ -12,7 +12,8 @@
 		{ label: 'API Tokens', href: '/settings/api-tokens' },
 		{ label: 'Tags', href: '/settings/tags' },
 		{ label: 'Export / Import', href: '/settings/export' },
-		{ label: 'SIEM Streaming', href: '/settings/siem' }
+		{ label: 'SIEM Streaming', href: '/settings/siem' },
+		{ label: 'BYOK', href: '/settings/byok' }
 	];
 
 	const activePath = $derived(page.url.pathname);

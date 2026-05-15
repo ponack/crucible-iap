@@ -34,6 +34,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/state"
 	"github.com/ponack/crucible-iap/internal/storage"
 	"github.com/ponack/crucible-iap/internal/blueprints"
+	"github.com/ponack/crucible-iap/internal/byok"
 	"github.com/ponack/crucible-iap/internal/export"
 	"github.com/ponack/crucible-iap/internal/githubapp"
 	"github.com/ponack/crucible-iap/internal/policygit"
@@ -155,6 +156,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	agentHandler := agent.NewHandler(s.pool, s.cfg, v, store, q, n, policyHandler.Engine())
 	validationHandler := validation.New(s.pool, q)
 	siemHandler := siem.NewHandler(s.pool, v)
+	byokHandler := byok.NewHandler(s.pool, v, s.cfg.SecretKey)
 
 	// Wire audit → SIEM delivery: every audit.Record call will enqueue a fan-out job.
 	audit.SetSIEMQueue(q)
@@ -178,6 +180,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	s.registerComplianceRoutes(api, policyGitHandler, member, admin)
 	s.registerValidationRoutes(api, validationHandler, member)
 	s.registerSIEMRoutes(api, siemHandler, admin)
+	s.registerBYOKRoutes(api, byokHandler, admin)
 	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
 		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
 	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, admin, member)
@@ -467,6 +470,14 @@ func (s *Server) registerSIEMRoutes(api *echo.Group, h *siem.Handler, admin echo
 	api.DELETE("/siem/destinations/:id", h.Delete, admin)
 	api.POST("/siem/destinations/:id/test", h.TestConnection, admin)
 	api.GET("/siem/deliveries", h.ListDeliveries, admin)
+}
+
+func (s *Server) registerBYOKRoutes(api *echo.Group, h *byok.Handler, admin echo.MiddlewareFunc) {
+	api.GET("/byok", h.GetStatus, admin)
+	api.POST("/byok/test", h.Test, admin)
+	api.POST("/byok/enable", h.Enable, admin)
+	api.POST("/byok/rotate", h.Rotate, admin)
+	api.POST("/byok/disable", h.Disable, admin)
 }
 
 func (s *Server) registerSystemRoutes(
