@@ -95,7 +95,8 @@
 				id: payload.uid,
 				email: payload.email,
 				name: payload.name,
-				is_admin: false
+				is_admin: false,
+				is_instance_admin: payload.iadm ?? false
 			});
 			const switched = myOrgs.list.find(o => o.id === orgID);
 			if (switched) auth.setOrgRole(switched.role as OrgRole);
@@ -292,6 +293,30 @@
 					</div>
 				{/each}
 			</nav>
+
+			<!-- Instance Admin nav -->
+			{#if auth.isInstanceAdmin}
+				<div class="px-2 py-2" style="border-top: 1px solid var(--color-zinc-800);">
+					<p class="px-3 mb-1 text-[10px] font-medium uppercase tracking-widest text-amber-600">Instance Admin</p>
+					<ul class="space-y-0.5">
+						<li>
+							<a href="/admin/orgs"
+								class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors duration-100 relative"
+								style={isActive('/admin')
+									? 'color: var(--accent); background: var(--accent-muted); border-left: 2px solid var(--accent); padding-left: calc(0.75rem - 2px);'
+									: 'color: var(--color-zinc-400);'}
+								class:hover:bg-zinc-800={!isActive('/admin')}
+								class:hover:text-zinc-200={!isActive('/admin')}
+							>
+								<svg class="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 3.75h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Zm0 3h.008v.008h-.008v-.008Z"/>
+								</svg>
+								Organizations
+							</a>
+						</li>
+					</ul>
+				</div>
+			{/if}
 
 			<!-- Forge theme switcher -->
 			<div class="px-4 py-2.5 flex items-center gap-3" style="border-top: 1px solid var(--color-zinc-800);">

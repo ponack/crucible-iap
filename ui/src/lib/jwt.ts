@@ -3,6 +3,7 @@ export interface JWTPayload {
 	email: string;
 	name: string;
 	org?: string;
+	iadm?: boolean;
 	[key: string]: unknown;
 }
 

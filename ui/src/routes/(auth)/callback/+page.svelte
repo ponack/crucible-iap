@@ -21,7 +21,8 @@
 				id: payload.uid,
 				email: payload.email,
 				name: payload.name,
-				is_admin: false
+				is_admin: false,
+				is_instance_admin: payload.iadm ?? false
 			});
 			goto('/stacks', { replaceState: true });
 		} catch {

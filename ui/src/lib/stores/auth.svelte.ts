@@ -7,6 +7,7 @@ export interface User {
 	name: string;
 	avatar_url?: string;
 	is_admin: boolean;
+	is_instance_admin: boolean;
 }
 
 export type OrgRole = 'admin' | 'member' | 'viewer';
@@ -69,6 +70,9 @@ function createAuthStore() {
 		},
 		get isMemberOrAbove() {
 			return state.orgRole === 'admin' || state.orgRole === 'member';
+		},
+		get isInstanceAdmin() {
+			return state.user?.is_instance_admin ?? false;
 		},
 
 		setTokens(accessToken: string, user: User) {

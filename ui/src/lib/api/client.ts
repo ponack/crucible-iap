@@ -11,3 +11,4 @@ export * from './analytics';
 export * from './compliance';
 export * from './siem';
 export * from './byok';
+export * from './admin';

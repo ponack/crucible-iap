@@ -53,7 +53,8 @@ export async function tryRefresh(): Promise<boolean> {
 				id: payload.uid,
 				email: payload.email,
 				name: payload.name,
-				is_admin: false
+				is_admin: false,
+				is_instance_admin: payload.iadm ?? false
 			});
 		} catch {
 			auth.setAccessToken(access_token);
