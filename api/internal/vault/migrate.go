@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/ponack/crucible-iap/internal/kms"
 )
 
 // LoadOrCreate loads the deployment vault salt from the vault_config table,
@@ -52,13 +53,19 @@ func LoadOrCreate(ctx context.Context, pool *pgxpool.Pool, secretKey string) (*V
 	// concurrent server/worker starts don't both attempt the data migration.
 	var salt []byte
 	var migratedAt *time.Time
+	var kmsProvider, kmsKeyID *string
+	var masterKeyWrapped []byte
 	if err := tx.QueryRow(ctx, `
-		SELECT salt, data_migrated_at FROM vault_config WHERE id = true FOR UPDATE
-	`).Scan(&salt, &migratedAt); err != nil {
+		SELECT salt, data_migrated_at, kms_provider, kms_key_id, master_key_wrapped
+		FROM vault_config WHERE id = true FOR UPDATE
+	`).Scan(&salt, &migratedAt, &kmsProvider, &kmsKeyID, &masterKeyWrapped); err != nil {
 		return nil, fmt.Errorf("load vault salt: %w", err)
 	}
 
-	newVault := NewWithSalt(secretKey, salt)
+	newVault, err := buildPrimaryVault(ctx, secretKey, salt, kmsProvider, kmsKeyID, masterKeyWrapped)
+	if err != nil {
+		return nil, err
+	}
 
 	if migratedAt == nil {
 		slog.Info("vault: starting one-time re-encryption of secrets with deployment salt")
@@ -80,6 +87,27 @@ func LoadOrCreate(ctx context.Context, pool *pgxpool.Pool, secretKey string) (*V
 		return nil, fmt.Errorf("commit vault migration: %w", err)
 	}
 	return newVault, nil
+}
+
+// buildPrimaryVault returns the vault used for steady-state encrypt/decrypt.
+// When BYOK is enabled (kmsProvider != nil) the HKDF master is unwrapped via
+// the customer KMS; otherwise it is derived from secretKey.
+func buildPrimaryVault(ctx context.Context, secretKey string, salt []byte, kmsProvider, kmsKeyID *string, wrapped []byte) (*Vault, error) {
+	if kmsProvider == nil {
+		return NewWithSalt(secretKey, salt), nil
+	}
+	provider, err := kms.NewProvider(*kmsProvider, *kmsKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("kms provider: %w", err)
+	}
+	master, err := provider.Unwrap(ctx, wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("kms unwrap master key: %w", err)
+	}
+	if len(master) != 32 {
+		return nil, fmt.Errorf("kms unwrap returned %d bytes, expected 32", len(master))
+	}
+	return NewWithMaster(master, salt), nil
 }
 
 // encTask describes one (table, encrypted-column, context-column) triple to
