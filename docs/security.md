@@ -113,6 +113,53 @@ Crucible does not currently store stack-level credentials. Cloud provider creden
 
 ---
 
+## BYOK — customer-managed master key
+
+By default, the HKDF master key that protects every vault row is derived from `CRUCIBLE_SECRET_KEY` (server env). BYOK replaces that derivation with a random 32-byte master wrapped by a key in your own KMS. The wrapped blob is stored in `vault_config.master_key_wrapped`; the plaintext master is unwrapped once at server boot and held in memory.
+
+Enable, rotate, and disable from **Settings → BYOK** (admin only). Each transition re-encrypts every vault-protected row in a single transaction and atomically swaps the in-memory master after commit.
+
+### Supported providers
+
+| Provider | `provider` value | Key identifier |
+| -------- | ---------------- | -------------- |
+| AWS KMS | `aws_kms` | KMS key ARN or alias |
+| HashiCorp Vault Transit | `hc_vault_transit` | Transit key name |
+| Azure Key Vault | `azure_kv` | Full key URL `https://{vault}.vault.azure.net/keys/{name}[/{version}]` |
+
+### Environment variables
+
+KMS auth lives in env vars — never the database — so the vault can boot without first decrypting any rows.
+
+**AWS KMS:**
+
+- `CRUCIBLE_KMS_AWS_REGION` (required; falls back to `AWS_REGION`)
+- `CRUCIBLE_KMS_AWS_ACCESS_KEY_ID` (falls back to `AWS_ACCESS_KEY_ID`)
+- `CRUCIBLE_KMS_AWS_SECRET_ACCESS_KEY` (falls back to `AWS_SECRET_ACCESS_KEY`)
+- IAM permissions on the key: `kms:Encrypt`, `kms:Decrypt`
+
+**HashiCorp Vault Transit:**
+
+- `CRUCIBLE_KMS_VAULT_ADDR` (required, e.g. `https://vault.example.com`)
+- Either `CRUCIBLE_KMS_VAULT_TOKEN` (static token) or `CRUCIBLE_KMS_VAULT_ROLE_ID` + `CRUCIBLE_KMS_VAULT_SECRET_ID` (AppRole)
+- Policy must allow `transit/encrypt/{key}` and `transit/decrypt/{key}`
+
+**Azure Key Vault:**
+
+- `CRUCIBLE_KMS_AZURE_TENANT_ID`
+- `CRUCIBLE_KMS_AZURE_CLIENT_ID`
+- `CRUCIBLE_KMS_AZURE_CLIENT_SECRET`
+- The service principal needs `wrapKey` and `unwrapKey` permissions on the key
+
+### Operational notes
+
+- **KMS outage at boot** — a running server keeps working (master is in memory); only restarts during the outage will fail. Treat your KMS as a hard dependency.
+- **Rotation** is online — every vault row is re-encrypted in a single transaction, the in-memory master swaps post-commit, and no restart is required.
+- **Disable** reverts to `CRUCIBLE_SECRET_KEY`. The KMS-wrapped blob is cleared and `CRUCIBLE_SECRET_KEY` must remain set in the server env afterwards.
+- All three transitions emit audit events: `byok.enabled`, `byok.rotated`, `byok.disabled`.
+
+---
+
 ## Network architecture
 
 ```

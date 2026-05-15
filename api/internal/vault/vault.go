@@ -11,12 +11,17 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"sync"
 
 	"golang.org/x/crypto/hkdf"
 )
 
-// Vault encrypts and decrypts secret values using a master key.
+// Vault encrypts and decrypts secret values using a master key. The master
+// can be swapped at runtime by the BYOK control plane (EnableKMS, RotateMasterKey,
+// DisableKMS); the RWMutex serialises swaps against in-flight derivations so
+// every encryption op sees a consistent master+salt pair.
 type Vault struct {
+	mu        sync.RWMutex
 	masterKey []byte
 	salt      []byte // nil = legacy nil-salt HKDF (pre-migration only)
 }
@@ -41,6 +46,14 @@ func NewWithSalt(secretKey string, salt []byte) *Vault {
 // and the raw bytes passed in here. Salt and HKDF derivation are unchanged.
 func NewWithMaster(masterKey, salt []byte) *Vault {
 	return &Vault{masterKey: masterKey, salt: salt}
+}
+
+// deriveSecretKeyMaster returns the 32-byte master key derived from a secret
+// string the same way New / NewWithSalt do. Exposed inside the package so the
+// BYOK control plane can recover the legacy master on DisableKMS.
+func deriveSecretKeyMaster(secretKey string) []byte {
+	h := sha256.Sum256([]byte(secretKey))
+	return h[:]
 }
 
 // Encrypt encrypts plaintext for the given stackID using AES-256-GCM.
@@ -111,10 +124,32 @@ func (v *Vault) decryptWithContext(ctx string, data []byte) ([]byte, error) {
 }
 
 func (v *Vault) deriveKeyFor(info string) ([]byte, error) {
-	r := hkdf.New(sha256.New, v.masterKey, v.salt, []byte(info))
+	v.mu.RLock()
+	master := v.masterKey
+	salt := v.salt
+	v.mu.RUnlock()
+	r := hkdf.New(sha256.New, master, salt, []byte(info))
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(r, key); err != nil {
 		return nil, err
 	}
 	return key, nil
+}
+
+// swapMaster atomically replaces the master key. Used by the BYOK control
+// plane after a successful re-encryption transition. Salt is unchanged.
+func (v *Vault) swapMaster(newMaster []byte) {
+	v.mu.Lock()
+	v.masterKey = newMaster
+	v.mu.Unlock()
+}
+
+// currentMaster returns a copy of the master key under a read lock — used by
+// BYOK transitions to construct the throwaway "old vault" they decrypt with.
+func (v *Vault) currentMaster() []byte {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	m := make([]byte, len(v.masterKey))
+	copy(m, v.masterKey)
+	return m
 }

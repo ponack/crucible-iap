@@ -10,3 +10,4 @@ export * from './projects';
 export * from './analytics';
 export * from './compliance';
 export * from './siem';
+export * from './byok';
