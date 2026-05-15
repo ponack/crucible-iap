@@ -36,6 +36,13 @@ func NewWithSalt(secretKey string, salt []byte) *Vault {
 	return &Vault{masterKey: h[:], salt: salt}
 }
 
+// NewWithMaster creates a Vault from a raw 32-byte master key. Used when the
+// master is held in an external KMS — the wrapped blob is unwrapped at boot
+// and the raw bytes passed in here. Salt and HKDF derivation are unchanged.
+func NewWithMaster(masterKey, salt []byte) *Vault {
+	return &Vault{masterKey: masterKey, salt: salt}
+}
+
 // Encrypt encrypts plaintext for the given stackID using AES-256-GCM.
 // The nonce (12 bytes) is prepended to the ciphertext in the returned slice.
 func (v *Vault) Encrypt(stackID string, plaintext []byte) ([]byte, error) {
