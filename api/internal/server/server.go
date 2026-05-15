@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/time/rate"
+	"github.com/ponack/crucible-iap/internal/admin"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
 	"github.com/ponack/crucible-iap/internal/config"
@@ -157,34 +158,37 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	validationHandler := validation.New(s.pool, q)
 	siemHandler := siem.NewHandler(s.pool, v)
 	byokHandler := byok.NewHandler(s.pool, v, s.cfg.SecretKey)
+	adminHandler := admin.NewHandler(s.pool)
 
 	// Wire audit → SIEM delivery: every audit.Record call will enqueue a fan-out job.
 	audit.SetSIEMQueue(q)
 
 	member := cruciblemw.RequireRole(s.pool, cruciblemw.RoleMember)
-	admin := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
+	adminRole := cruciblemw.RequireRole(s.pool, cruciblemw.RoleAdmin)
+	instanceAdmin := cruciblemw.RequireInstanceAdmin(s.pool)
 
 	if oidc != nil {
 		oidc.RegisterRoutes(e)
 	}
 	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler, githubAppHandler, runHandler)
 	api := s.registerAuthGroup(e)
-	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, githubAppHandler, member, admin)
-	s.registerPolicyRoutes(api, policyHandler, policyGitHandler, member, admin)
+	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, githubAppHandler, member, adminRole)
+	s.registerPolicyRoutes(api, policyHandler, policyGitHandler, member, adminRole)
 	s.registerStackRoutes(api, stackHandler, tagHandler, envVarHandler, stateHandler,
 		webhookHandler, outgoingHandler, varSetHandler, stackMembersHandler,
-		depsHandler, integrationHandler, member, admin)
-	s.registerProjectRoutes(api, projectHandler, member, admin)
-	s.registerRunRoutes(api, runHandler, member, admin)
+		depsHandler, integrationHandler, member, adminRole)
+	s.registerProjectRoutes(api, projectHandler, member, adminRole)
+	s.registerRunRoutes(api, runHandler, member, adminRole)
 	api.GET("/analytics/runs", analyticsHandler.Get)
-	s.registerComplianceRoutes(api, policyGitHandler, member, admin)
+	s.registerComplianceRoutes(api, policyGitHandler, member, adminRole)
 	s.registerValidationRoutes(api, validationHandler, member)
-	s.registerSIEMRoutes(api, siemHandler, admin)
-	s.registerBYOKRoutes(api, byokHandler, admin)
+	s.registerSIEMRoutes(api, siemHandler, adminRole)
+	s.registerBYOKRoutes(api, byokHandler, adminRole)
 	s.registerSystemRoutes(api, auditHandler, settingsHandler, tmplHandler,
-		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, admin, member)
-	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, admin, member)
+		blueprintHandler, exportHandler, workerPoolHandler, varSetHandler, adminRole, member)
+	s.registerRegistryRoutes(e, api, registryHandler, providersHandler, adminRole, member)
 	s.registerAgentRoutes(e, agentHandler, runHandler)
+	s.registerAdminRoutes(api, adminHandler, instanceAdmin)
 }
 
 func (s *Server) registerPublicRoutes(
@@ -599,6 +603,19 @@ func (s *Server) registerAgentRoutes(
 	internal.GET("/provider-cache", runHandler.ListProviderCache)
 	internal.GET("/provider-cache/*key", runHandler.GetProviderCache)
 	internal.PUT("/provider-cache/*key", runHandler.PutProviderCache)
+}
+
+func (s *Server) registerAdminRoutes(api *echo.Group, h *admin.Handler, instanceAdmin echo.MiddlewareFunc) {
+	a := api.Group("/admin", instanceAdmin)
+	a.GET("/orgs", h.ListOrgs)
+	a.POST("/orgs", h.CreateOrg)
+	a.GET("/orgs/:id", h.GetOrg)
+	a.POST("/orgs/:id/archive", h.ArchiveOrg)
+	a.POST("/orgs/:id/unarchive", h.UnarchiveOrg)
+	a.GET("/orgs/:id/members", h.ListOrgMembers)
+	a.POST("/orgs/:id/members", h.AddOrgMember)
+	a.POST("/users/:userID/grant-instance-admin", h.GrantInstanceAdmin)
+	a.POST("/users/:userID/revoke-instance-admin", h.RevokeInstanceAdmin)
 }
 
 func (s *Server) Start(ctx context.Context) error {

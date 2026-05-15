@@ -34,14 +34,14 @@ type Invite struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
-// ListMyOrgs returns all organizations the authenticated user belongs to.
+// ListMyOrgs returns all non-archived organizations the authenticated user belongs to.
 func (h *Handler) ListMyOrgs(c echo.Context) error {
 	userID := c.Get("userID").(string)
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT o.id, o.name, o.slug, om.role
 		FROM organizations o
 		JOIN organization_members om ON om.org_id = o.id
-		WHERE om.user_id = $1
+		WHERE om.user_id = $1 AND o.archived_at IS NULL
 		ORDER BY om.joined_at
 	`, userID)
 	if err != nil {

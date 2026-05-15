@@ -68,6 +68,12 @@ type Config struct {
 	AIProvider      string `mapstructure:"AI_PROVIDER"`
 	AIModel         string `mapstructure:"AI_MODEL"`
 	AIBaseURL       string `mapstructure:"AI_BASE_URL"`
+
+	// Multi-org
+	// CRUCIBLE_INSTANCE_ADMIN_EMAIL: on first login the matching user gets is_instance_admin=true.
+	// CRUCIBLE_DISABLE_PERSONAL_ORGS: skip auto-creating a personal workspace on login (MSP mode).
+	InstanceAdminEmail   string `mapstructure:"CRUCIBLE_INSTANCE_ADMIN_EMAIL"`
+	DisablePersonalOrgs  bool   `mapstructure:"CRUCIBLE_DISABLE_PERSONAL_ORGS"`
 }
 
 func Load() (*Config, error) {
@@ -109,6 +115,8 @@ func Load() (*Config, error) {
 	v.SetDefault("RUNNER_CPU_LIMIT", "1.0")
 	v.SetDefault("RUNNER_NETWORK", "crucible-runner")
 	v.SetDefault("RUNNER_API_URL", "")
+	v.SetDefault("CRUCIBLE_INSTANCE_ADMIN_EMAIL", "")
+	v.SetDefault("CRUCIBLE_DISABLE_PERSONAL_ORGS", false)
 
 	v.AutomaticEnv()
 

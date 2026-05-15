@@ -29,22 +29,30 @@ import (
 
 // Claims represents the JWT claims issued by Crucible to authenticated users.
 type Claims struct {
-	UserID string `json:"uid"`
-	OrgID  string `json:"org,omitempty"`
-	Email  string `json:"email"`
-	Name   string `json:"name"`
+	UserID          string `json:"uid"`
+	OrgID           string `json:"org,omitempty"`
+	Email           string `json:"email"`
+	Name            string `json:"name"`
+	IsInstanceAdmin bool   `json:"iadm,omitempty"`
 	jwt.RegisteredClaims
 }
 
 type Handler struct {
-	cfg      *config.Config
-	pool     *pgxpool.Pool
-	provider *gooidc.Provider
-	oauth2   *oauth2.Config
+	cfg                *config.Config
+	pool               *pgxpool.Pool
+	provider           *gooidc.Provider
+	oauth2             *oauth2.Config
+	instanceAdminEmail string
+	disablePersonalOrgs bool
 }
 
 func NewHandler(cfg *config.Config, pool *pgxpool.Pool) *Handler {
-	h := &Handler{cfg: cfg, pool: pool}
+	h := &Handler{
+		cfg:                 cfg,
+		pool:                pool,
+		instanceAdminEmail:  cfg.InstanceAdminEmail,
+		disablePersonalOrgs: cfg.DisablePersonalOrgs,
+	}
 
 	if cfg.OIDCIssuerURL != "" {
 		provider, err := gooidc.NewProvider(context.Background(), cfg.OIDCIssuerURL)
@@ -207,7 +215,7 @@ func (h *Handler) Callback(c echo.Context) error {
 	}
 	applyGroupMappings(c.Request().Context(), h.pool, userID, idClaims.Groups)
 
-	accessToken, err := h.issueAccessToken(userID, orgID, idClaims.Email, idClaims.Name)
+	accessToken, err := h.issueAccessToken(c.Request().Context(), userID, orgID, idClaims.Email, idClaims.Name)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
 	}
@@ -245,20 +253,24 @@ func (h *Handler) Refresh(c echo.Context) error {
 	}
 
 	userID := rc.Subject
-	var email, name, orgID string
-	err = h.pool.QueryRow(c.Request().Context(), `
-		SELECT u.email, u.name, om.org_id
-		FROM users u
-		JOIN organization_members om ON om.user_id = u.id
-		WHERE u.id = $1
-		ORDER BY om.joined_at
-		LIMIT 1
-	`, userID).Scan(&email, &name, &orgID)
-	if err != nil {
+	var email, name string
+	if err = h.pool.QueryRow(c.Request().Context(),
+		`SELECT email, name FROM users WHERE id = $1`, userID,
+	).Scan(&email, &name); err != nil {
 		return echo.NewHTTPError(http.StatusUnauthorized, "user not found")
 	}
 
-	accessToken, err := h.issueAccessToken(userID, orgID, email, name)
+	var orgID string
+	_ = h.pool.QueryRow(c.Request().Context(), `
+		SELECT om.org_id
+		FROM organization_members om
+		JOIN organizations o ON o.id = om.org_id
+		WHERE om.user_id = $1 AND o.archived_at IS NULL
+		ORDER BY om.joined_at
+		LIMIT 1
+	`, userID).Scan(&orgID)
+
+	accessToken, err := h.issueAccessToken(c.Request().Context(), userID, orgID, email, name)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
 	}
@@ -512,7 +524,7 @@ func RunnerAuthMiddleware(secretKey string) echo.MiddlewareFunc {
 }
 
 func (h *Handler) respondWithTokens(c echo.Context, userID, orgID, email, name string) error {
-	accessToken, err := h.issueAccessToken(userID, orgID, email, name)
+	accessToken, err := h.issueAccessToken(c.Request().Context(), userID, orgID, email, name)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to issue token")
 	}
@@ -543,7 +555,8 @@ func (h *Handler) SwitchOrg(c echo.Context) error {
 		SELECT u.email, u.name
 		FROM users u
 		JOIN organization_members om ON om.user_id = u.id
-		WHERE u.id = $1 AND om.org_id = $2
+		JOIN organizations o ON o.id = om.org_id
+		WHERE u.id = $1 AND om.org_id = $2 AND o.archived_at IS NULL
 	`, userID, req.OrgID).Scan(&email, &name)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusForbidden, "not a member of this org")
@@ -576,12 +589,16 @@ func (h *Handler) clearRefreshCookie(c echo.Context) {
 	})
 }
 
-func (h *Handler) issueAccessToken(userID, orgID, email, name string) (string, error) {
+func (h *Handler) issueAccessToken(ctx context.Context, userID, orgID, email, name string) (string, error) {
+	var isAdmin bool
+	_ = h.pool.QueryRow(ctx, `SELECT is_instance_admin FROM users WHERE id = $1`, userID).Scan(&isAdmin)
+
 	claims := &Claims{
-		UserID: userID,
-		OrgID:  orgID,
-		Email:  email,
-		Name:   name,
+		UserID:          userID,
+		OrgID:           orgID,
+		Email:           email,
+		Name:            name,
+		IsInstanceAdmin: isAdmin,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
@@ -602,8 +619,9 @@ func (h *Handler) issueRefreshToken(userID string) (string, error) {
 	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(h.cfg.SecretKey))
 }
 
-// upsertUser creates or updates the user and ensures they have a personal org.
-// Returns (userID, orgID, error).
+// upsertUser creates or updates the user, optionally grants instance-admin,
+// and ensures the user has a personal org (unless disabled). Returns (userID, orgID, error).
+// orgID may be empty when personal orgs are disabled and the user has no memberships yet.
 func (h *Handler) upsertUser(ctx context.Context, email, name, avatarURL string) (string, string, error) {
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
@@ -624,25 +642,45 @@ func (h *Handler) upsertUser(ctx context.Context, email, name, avatarURL string)
 		return "", "", err
 	}
 
-	// Create (or find) the user's personal workspace org.
-	orgSlug := "personal-" + userID[:8]
-	orgName := name + "'s workspace"
-	var orgID string
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO organizations (slug, name)
-		VALUES ($1, $2)
-		ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
-		RETURNING id
-	`, orgSlug, orgName).Scan(&orgID); err != nil {
-		return "", "", err
+	// Bootstrap instance admin: first login for the configured email grants the flag.
+	if h.instanceAdminEmail != "" && email == h.instanceAdminEmail {
+		if _, err := tx.Exec(ctx,
+			`UPDATE users SET is_instance_admin = true WHERE id = $1 AND is_instance_admin = false`,
+			userID,
+		); err != nil {
+			return "", "", err
+		}
 	}
 
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO organization_members (org_id, user_id, role)
-		VALUES ($1, $2, 'admin')
-		ON CONFLICT (org_id, user_id) DO NOTHING
-	`, orgID, userID); err != nil {
-		return "", "", err
+	var orgID string
+
+	if !h.disablePersonalOrgs {
+		orgSlug := "personal-" + userID[:8]
+		orgName := name + "'s workspace"
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO organizations (slug, name)
+			VALUES ($1, $2)
+			ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+			RETURNING id
+		`, orgSlug, orgName).Scan(&orgID); err != nil {
+			return "", "", err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO organization_members (org_id, user_id, role)
+			VALUES ($1, $2, 'admin')
+			ON CONFLICT (org_id, user_id) DO NOTHING
+		`, orgID, userID); err != nil {
+			return "", "", err
+		}
+	} else {
+		// Personal orgs disabled: return the user's first existing membership (if any).
+		_ = tx.QueryRow(ctx, `
+			SELECT org_id FROM organization_members
+			WHERE user_id = $1
+			ORDER BY joined_at
+			LIMIT 1
+		`, userID).Scan(&orgID)
+		// orgID stays "" if the user has no memberships yet — the UI handles this.
 	}
 
 	return userID, orgID, tx.Commit(ctx)
