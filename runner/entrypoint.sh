@@ -50,15 +50,47 @@ upload_plan() {
 upload_plan_json() {
     local bin="$1"
     local plan_file="$2"
-    if [[ -f "${plan_file}" ]]; then
-        log "uploading plan JSON for diff"
-        "${bin}" show -json "${plan_file}" \
-            | curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan-json" \
-                -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
-                -H "Content-Type: application/json" \
-                --data-binary @- \
-            || log "warn: plan JSON upload failed"
+    [[ -f "${plan_file}" ]] || return 0
+    log "generating plan JSON"
+    if ! "${bin}" show -json "${plan_file}" > /workspace/plan.json 2>/dev/null; then
+        log "warn: plan JSON generation failed — skipping"
+        return 0
     fi
+    log "uploading plan JSON for diff"
+    curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/plan-json" \
+        -H "Authorization: Bearer ${CRUCIBLE_JOB_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data-binary "@/workspace/plan.json" \
+        || log "warn: plan JSON upload failed"
+}
+
+# ── Infracost ─────────────────────────────────────────────────────────────────
+# Runs after upload_plan_json has saved /workspace/plan.json.
+# Reports monthly cost add/remove to the Crucible cost API.
+# Silently skipped when INFRACOST_API_KEY is unset or infracost is not installed.
+report_infracost() {
+    [[ -n "${INFRACOST_API_KEY:-}" ]] || return 0
+    [[ -f /workspace/plan.json ]] || { log "info: no plan JSON — skipping Infracost"; return 0; }
+    command -v infracost &>/dev/null || { log "warn: infracost binary not found — skipping cost estimate"; return 0; }
+
+    log "running infracost breakdown"
+    local cost_json
+    if ! cost_json=$(infracost breakdown --path /workspace/plan.json --format json 2>/tmp/infracost.err); then
+        log "warn: infracost breakdown failed — $(head -3 /tmp/infracost.err 2>/dev/null)"
+        return 0
+    fi
+
+    local currency diff cost_add cost_remove
+    currency=$(printf '%s' "${cost_json}" | jq -r '.currency // "USD"')
+    diff=$(printf '%s' "${cost_json}"     | jq -r '.diffTotalMonthlyCost // "0"')
+    cost_add=$(printf '%s'    "${diff}" | awk '{v=$1+0; printf "%.4f", (v>0)?v:0}')
+    cost_remove=$(printf '%s' "${diff}" | awk '{v=$1+0; printf "%.4f", (v<0)?-v:0}')
+
+    log "infracost: add=${cost_add} remove=${cost_remove} currency=${currency}"
+    curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/cost" \
+        "${API_HEADERS[@]}" \
+        -d "{\"monthly_cost_add\":${cost_add},\"monthly_cost_change\":0,\"monthly_cost_remove\":${cost_remove},\"currency\":\"${currency}\"}" \
+        || log "warn: failed to report infracost data"
 }
 
 # ── Provider cache (OpenTofu / Terraform) ────────────────────────────────────
@@ -189,6 +221,7 @@ run_tf_generic() {
             ${bin} plan -no-color -destroy -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
             upload_plan_json "${bin}" /workspace/plan.tfplan
+            report_infracost
             run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             log "plan complete — awaiting confirmation before destroy"
             ;;
@@ -215,6 +248,7 @@ run_tf_generic() {
             ${bin} plan -no-color -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
             upload_plan_json "${bin}" /workspace/plan.tfplan
+            report_infracost
             run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             ;;
 
@@ -226,6 +260,7 @@ run_tf_generic() {
             ${bin} plan -no-color -out=/workspace/plan.tfplan
             upload_plan /workspace/plan.tfplan
             upload_plan_json "${bin}" /workspace/plan.tfplan
+            report_infracost
             run_hook "post_plan" "${CRUCIBLE_HOOK_POST_PLAN:-}"
             log "plan complete — awaiting confirmation"
             ;;
