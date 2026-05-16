@@ -3,6 +3,7 @@ package runs
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -608,11 +609,12 @@ func (h *Handler) Delete(c echo.Context) error {
 // object storage. For these we serve the archived file rather than the
 // live broker (which has no data once the worker exits).
 var archivedStatuses = map[string]bool{
-	"unconfirmed": true, // plan done, awaiting approval
-	"finished":    true,
-	"failed":      true,
-	"canceled":    true,
-	"discarded":   true,
+	"unconfirmed":      true, // plan done, awaiting approval
+	"pending_approval": true, // plan done, awaiting human approval step
+	"finished":         true,
+	"failed":           true,
+	"canceled":         true,
+	"discarded":        true,
 }
 
 // Logs serves run output as Server-Sent Events.
@@ -680,7 +682,14 @@ func (h *Handler) Logs(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to acquire connection for log streaming")
 	}
-	defer conn.Release()
+	// pgxpool does not send UNLISTEN on release, so subscriptions persist on the
+	// connection and are delivered to the next request that acquires it. Unlisten
+	// explicitly before returning the connection to the pool so a future run's SSE
+	// handler doesn't receive buffered notifications from this run's channel.
+	defer func() {
+		conn.Exec(context.Background(), "UNLISTEN *")
+		conn.Release()
+	}()
 
 	channel := "run_log_" + strings.ReplaceAll(id, "-", "")
 	if _, err := conn.Exec(c.Request().Context(), fmt.Sprintf(`LISTEN "%s"`, channel)); err != nil {
