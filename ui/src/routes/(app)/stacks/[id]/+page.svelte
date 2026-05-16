@@ -206,6 +206,7 @@
 
 	// Resource explorer
 	let stateResources = $state<StateResource[]>([]);
+	let stateLoadError = $state(false);
 	let resourceFilter = $state('');
 
 	// State version history
@@ -387,7 +388,10 @@
 		}
 
 		// Load state resources and version history independently — no state yet is normal.
-		stacks.state.resources(stackID).then(r => (stateResources = r)).catch((e) => console.error('state.resources', e));
+		stacks.state.resources(stackID).then(r => (stateResources = r)).catch((e) => {
+			console.error('state.resources', e);
+			stateLoadError = true;
+		});
 		stacks.state.versions(stackID).then(r => (stateVersions = r)).catch((e) => console.error('state.versions', e));
 
 		// Load outgoing webhooks independently.
@@ -1778,7 +1782,9 @@
 				<span class="text-xs text-zinc-600">{stateResources.length} resource{stateResources.length === 1 ? '' : 's'}</span>
 			{/if}
 		</div>
-		{#if stateResources.length === 0}
+		{#if stateLoadError}
+			<p class="text-red-500 text-sm">Failed to load state — check that the API can reach MinIO storage.</p>
+		{:else if stateResources.length === 0}
 			<p class="text-zinc-600 text-sm">No state yet — trigger a run to populate resources.</p>
 		{:else}
 			{#if stateResources.length > 5}
