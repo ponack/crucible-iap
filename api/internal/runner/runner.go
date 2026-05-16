@@ -278,11 +278,27 @@ func (r *Runner) createContainer(ctx context.Context, spec JobSpec, img, contain
 // streamAndWait attaches to container logs, streams them to logWriter, then
 // waits for the container to exit. Returns an error if the container exits
 // non-zero or the timeout is exceeded.
+//
+// runCtx is derived from context.Background() (not from the River job ctx) so
+// that River's own job-level timeout — which defaults to 1 minute — does not
+// cancel long-running infrastructure jobs. The River job ctx is still watched:
+// if it is cancelled (server shutdown) we cancel runCtx early so the log stream
+// is closed promptly.
 func (r *Runner) streamAndWait(ctx context.Context, containerID, runID string, timeoutMins int, logWriter io.Writer) error {
-	logCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMins)*time.Minute)
+	runCtx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutMins)*time.Minute)
 	defer cancel()
 
-	logs, err := r.docker.ContainerLogs(logCtx, containerID, container.LogsOptions{
+	// Propagate shutdown: if the River job context is cancelled for any reason
+	// other than our own timeout, cancel runCtx so the log stream is released.
+	go func() {
+		select {
+		case <-ctx.Done():
+			cancel()
+		case <-runCtx.Done():
+		}
+	}()
+
+	logs, err := r.docker.ContainerLogs(runCtx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
@@ -298,8 +314,6 @@ func (r *Runner) streamAndWait(ctx context.Context, containerID, runID string, t
 		slog.Warn("log stream interrupted", "run_id", runID, "err", err)
 	}
 
-	// ContainerWait must use a fresh context — the job context (ctx) may already
-	// be cancelled if the timeout fired, which would cause an immediate error.
 	statusCh, errCh := r.docker.ContainerWait(context.Background(), containerID, container.WaitConditionNotRunning)
 	select {
 	case status := <-statusCh:
@@ -308,7 +322,10 @@ func (r *Runner) streamAndWait(ctx context.Context, containerID, runID string, t
 		}
 	case err := <-errCh:
 		return fmt.Errorf("container wait: %w", err)
-	case <-logCtx.Done():
+	case <-runCtx.Done():
+		if ctx.Err() != nil {
+			return fmt.Errorf("run aborted: server shutting down")
+		}
 		return fmt.Errorf("run timed out after %d minutes", timeoutMins)
 	}
 	return nil

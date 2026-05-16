@@ -126,6 +126,11 @@ type RunWorker struct {
 	finalizer    *runs.Finalizer
 }
 
+// Timeout returns -1 so River does not impose its own job-level timeout.
+// The runner manages the real timeout internally via streamAndWait.
+// River's default (1 minute) would cancel long-running infrastructure jobs.
+func (w *RunWorker) Timeout(*river.Job[queue.RunJobArgs]) time.Duration { return -1 }
+
 func (w *RunWorker) Work(ctx context.Context, job *river.Job[queue.RunJobArgs]) error {
 	args := job.Args
 	log := slog.With("run_id", args.RunID, "stack_id", args.StackID)
