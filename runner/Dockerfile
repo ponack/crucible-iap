@@ -8,6 +8,7 @@ ARG OPENTOFU_VERSION=1.9.0
 ARG TERRAFORM_VERSION=1.10.5
 ARG ANSIBLE_VERSION=11.2.0
 ARG PULUMI_VERSION=3.154.0
+ARG INFRACOST_VERSION=0.10.40
 ARG NODE_VERSION=22
 
 # Install runtime dependencies
@@ -46,6 +47,12 @@ RUN pip3 install --no-cache-dir --break-system-packages ansible==${ANSIBLE_VERSI
 RUN curl -fsSL "https://github.com/pulumi/pulumi/releases/download/v${PULUMI_VERSION}/pulumi-v${PULUMI_VERSION}-linux-x64.tar.gz" \
     | tar -xz --strip-components=1 -C /usr/local/bin/ pulumi/pulumi \
     && chmod +x /usr/local/bin/pulumi
+
+# Install Infracost
+RUN curl -fsSL "https://github.com/infracost/infracost/releases/download/v${INFRACOST_VERSION}/infracost-linux-amd64.tar.gz" \
+    | tar -xzC /usr/local/bin/ \
+    && mv /usr/local/bin/infracost-linux-amd64 /usr/local/bin/infracost \
+    && chmod +x /usr/local/bin/infracost
 
 # Non-root user for running jobs
 RUN addgroup -S runner && adduser -S -G runner runner
