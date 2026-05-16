@@ -87,7 +87,7 @@ func (h *Handler) Get(c echo.Context) error {
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE s.org_id = $1
 		  AND r.queued_at >= $2
-		  AND r.status IN ('finished','failed','cancelled','discarded')
+		  AND r.status IN ('finished','failed','canceled','discarded')
 		GROUP BY day
 		ORDER BY day
 	`, orgID, since)
@@ -127,7 +127,7 @@ func (h *Handler) Get(c echo.Context) error {
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE s.org_id = $1
 		  AND r.queued_at >= $2
-		  AND r.status IN ('finished','failed','cancelled','discarded')
+		  AND r.status IN ('finished','failed','canceled','discarded')
 		GROUP BY s.id, s.name
 		ORDER BY total DESC
 		LIMIT 50
@@ -165,7 +165,7 @@ func (h *Handler) Get(c echo.Context) error {
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE s.org_id = $1
 		  AND r.queued_at >= $2
-		  AND r.status IN ('finished','failed','cancelled','discarded')
+		  AND r.status IN ('finished','failed','canceled','discarded')
 	`, orgID, since).Scan(&ov.TotalRuns, &ov.Finished, &ov.Failed,
 		&ov.TotalAdd, &ov.TotalChange, &ov.TotalDestroy)
 
@@ -247,7 +247,7 @@ func (h *Handler) GetCosts(c echo.Context) error {
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE s.org_id = $1
 		  AND r.queued_at >= $2
-		  AND r.status IN ('finished','failed','cancelled','discarded')
+		  AND r.status IN ('finished','failed','canceled','discarded')
 		GROUP BY day
 		ORDER BY day
 	`, orgID, since)
@@ -284,7 +284,7 @@ func (h *Handler) GetCosts(c echo.Context) error {
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE s.org_id = $1
 		  AND r.queued_at >= $2
-		  AND r.status IN ('finished','failed','cancelled','discarded')
+		  AND r.status IN ('finished','failed','canceled','discarded')
 		GROUP BY s.id, s.name, s.budget_threshold_usd
 		HAVING COUNT(*) FILTER (WHERE r.cost_add IS NOT NULL OR r.cost_change IS NOT NULL OR r.cost_remove IS NOT NULL) > 0
 		ORDER BY ABS(SUM(COALESCE(r.cost_add,0)) + SUM(COALESCE(r.cost_change,0)) - SUM(COALESCE(r.cost_remove,0))) DESC
@@ -322,7 +322,7 @@ func (h *Handler) GetCosts(c echo.Context) error {
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE s.org_id = $1
 		  AND r.queued_at >= $2
-		  AND r.status IN ('finished','failed','cancelled','discarded')
+		  AND r.status IN ('finished','failed','canceled','discarded')
 	`, orgID, since).Scan(&ov.TotalCostAdd, &ov.TotalCostChange, &ov.TotalCostRemove, &ov.RunsWithCost)
 
 	ov.NetDelta = ov.TotalCostAdd + ov.TotalCostChange - ov.TotalCostRemove
@@ -355,7 +355,7 @@ func (h *Handler) StackCostHistory(c echo.Context) error {
 		       COALESCE(cost_currency, 'USD')
 		FROM runs
 		WHERE stack_id = $1
-		  AND status IN ('finished','failed','cancelled','discarded')
+		  AND status IN ('finished','failed','canceled','discarded')
 		  AND (cost_add IS NOT NULL OR cost_change IS NOT NULL OR cost_remove IS NOT NULL)
 		ORDER BY queued_at DESC
 		LIMIT 20
