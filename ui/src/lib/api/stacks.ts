@@ -90,6 +90,7 @@ export interface Stack {
 	plan_alert_change?: number;
 	plan_alert_destroy?: number;
 	plan_block_on_alert: boolean;
+	budget_threshold_usd?: number;
 	health_score: number;
 	health_status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown';
 	is_pinned: boolean;

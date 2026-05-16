@@ -332,13 +332,17 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 func (f *Finalizer) checkBudgetThresholds(ctx context.Context, runID string) []string {
 	var planAdd, planChange, planDestroy int
 	var alertAdd, alertChange, alertDestroy *int
+	var costAdd *float64
+	var budgetThreshold *float64
 	err := f.pool.QueryRow(ctx, `
 		SELECT COALESCE(r.plan_add, 0), COALESCE(r.plan_change, 0), COALESCE(r.plan_destroy, 0),
-		       s.plan_alert_add, s.plan_alert_change, s.plan_alert_destroy
+		       s.plan_alert_add, s.plan_alert_change, s.plan_alert_destroy,
+		       r.cost_add, s.budget_threshold_usd
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE r.id = $1
-	`, runID).Scan(&planAdd, &planChange, &planDestroy, &alertAdd, &alertChange, &alertDestroy)
+	`, runID).Scan(&planAdd, &planChange, &planDestroy, &alertAdd, &alertChange, &alertDestroy,
+		&costAdd, &budgetThreshold)
 	if err != nil {
 		return nil
 	}
@@ -352,6 +356,9 @@ func (f *Finalizer) checkBudgetThresholds(ctx context.Context, runID string) []s
 	}
 	if alertDestroy != nil && planDestroy > *alertDestroy {
 		exceeded = append(exceeded, fmt.Sprintf("destroys: %d (limit %d)", planDestroy, *alertDestroy))
+	}
+	if budgetThreshold != nil && costAdd != nil && *costAdd > *budgetThreshold {
+		exceeded = append(exceeded, fmt.Sprintf("estimated cost add: $%.2f (limit $%.2f)", *costAdd, *budgetThreshold))
 	}
 	return exceeded
 }

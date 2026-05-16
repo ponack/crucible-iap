@@ -1,17 +1,24 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { analyticsApi, type RunAnalytics } from '$lib/api/client';
+	import { analyticsApi, type RunAnalytics, type CostAnalytics } from '$lib/api/client';
 
-	let data = $state<RunAnalytics | null>(null);
+	let tab = $state<'runs' | 'costs'>('runs');
+	let days = $state(30);
+
+	let runsData = $state<RunAnalytics | null>(null);
+	let costsData = $state<CostAnalytics | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let days = $state(30);
 
 	async function load() {
 		loading = true;
 		error = null;
 		try {
-			data = await analyticsApi.getRuns(days);
+			if (tab === 'runs') {
+				runsData = await analyticsApi.getRuns(days);
+			} else {
+				costsData = await analyticsApi.getCosts(days);
+			}
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -25,16 +32,29 @@
 		return total === 0 ? 0 : Math.round((n / total) * 100);
 	}
 
+	function fmt(v: number) {
+		return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	}
+
 	const maxDailyTotal = $derived(
-		data ? Math.max(...data.daily.map((d) => d.total), 1) : 1
+		runsData ? Math.max(...runsData.daily.map((d) => d.total), 1) : 1
 	);
+
+	const maxDailyCostAdd = $derived(
+		costsData ? Math.max(...costsData.daily.map((d) => d.cost_add), 0.01) : 0.01
+	);
+
+	function switchTab(t: 'runs' | 'costs') {
+		tab = t;
+		load();
+	}
 </script>
 
 <div class="p-6 space-y-6 max-w-5xl">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-lg font-semibold text-white">Analytics</h1>
-			<p class="text-sm text-zinc-500 mt-0.5">Run activity and plan change stats across all stacks.</p>
+			<p class="text-sm text-zinc-500 mt-0.5">Run activity and Infracost estimates across all stacks.</p>
 		</div>
 		<div class="flex items-center gap-2">
 			<label class="text-xs text-zinc-500" for="window">Window</label>
@@ -47,41 +67,55 @@
 		</div>
 	</div>
 
+	<!-- Tabs -->
+	<div class="flex border-b border-zinc-800 gap-1">
+		<button
+			onclick={() => switchTab('runs')}
+			class="px-4 py-2 text-sm font-medium transition-colors rounded-t-lg {tab === 'runs' ? 'text-white border-b-2 border-teal-500' : 'text-zinc-500 hover:text-zinc-300'}">
+			Runs
+		</button>
+		<button
+			onclick={() => switchTab('costs')}
+			class="px-4 py-2 text-sm font-medium transition-colors rounded-t-lg {tab === 'costs' ? 'text-white border-b-2 border-teal-500' : 'text-zinc-500 hover:text-zinc-300'}">
+			Cost estimates
+		</button>
+	</div>
+
 	{#if loading}
 		<p class="text-zinc-500 text-sm">Loading…</p>
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
-	{:else if data}
+	{:else if tab === 'runs' && runsData}
 		<!-- Overview cards -->
 		<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
 			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-wide">Total runs</p>
-				<p class="text-2xl font-semibold text-white mt-1">{data.overview.total_runs}</p>
+				<p class="text-2xl font-semibold text-white mt-1">{runsData.overview.total_runs}</p>
 			</div>
 			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-wide">Success rate</p>
-				<p class="text-2xl font-semibold mt-1 {data.overview.success_rate >= 90 ? 'text-emerald-400' : data.overview.success_rate >= 70 ? 'text-yellow-400' : 'text-red-400'}">
-					{data.overview.success_rate.toFixed(1)}%
+				<p class="text-2xl font-semibold mt-1 {runsData.overview.success_rate >= 90 ? 'text-emerald-400' : runsData.overview.success_rate >= 70 ? 'text-yellow-400' : 'text-red-400'}">
+					{runsData.overview.success_rate.toFixed(1)}%
 				</p>
 			</div>
 			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-wide">Failed</p>
-				<p class="text-2xl font-semibold text-red-400 mt-1">{data.overview.failed}</p>
+				<p class="text-2xl font-semibold text-red-400 mt-1">{runsData.overview.failed}</p>
 			</div>
 			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-wide">Plan changes</p>
 				<p class="text-2xl font-semibold text-white mt-1">
-					+{data.overview.total_add} ~{data.overview.total_change} -{data.overview.total_destroy}
+					+{runsData.overview.total_add} ~{runsData.overview.total_change} -{runsData.overview.total_destroy}
 				</p>
 			</div>
 		</div>
 
 		<!-- Daily chart -->
-		{#if data.daily.length > 0}
+		{#if runsData.daily.length > 0}
 			<div class="rounded-xl border border-zinc-800 p-5 space-y-3">
 				<h2 class="text-sm font-medium text-zinc-300">Runs per day</h2>
 				<div class="flex items-end gap-1 h-24">
-					{#each data.daily as bucket (bucket.date)}
+					{#each runsData.daily as bucket (bucket.date)}
 						{@const totalH = pct(bucket.total, maxDailyTotal)}
 						{@const finH = pct(bucket.finished, maxDailyTotal)}
 						{@const failH = pct(bucket.failed, maxDailyTotal)}
@@ -107,7 +141,7 @@
 		{/if}
 
 		<!-- Per-stack table -->
-		{#if data.by_stack.length > 0}
+		{#if runsData.by_stack.length > 0}
 			<div class="rounded-xl border border-zinc-800 overflow-hidden">
 				<div class="px-4 py-3 bg-zinc-900 border-b border-zinc-800">
 					<h2 class="text-sm font-medium text-zinc-300">By stack</h2>
@@ -125,7 +159,7 @@
 						</tr>
 					</thead>
 					<tbody class="divide-y divide-zinc-800">
-						{#each data.by_stack as s (s.stack_id)}
+						{#each runsData.by_stack as s (s.stack_id)}
 							<tr class="hover:bg-zinc-900/30 transition-colors">
 								<td class="px-4 py-2.5 text-zinc-200 font-medium">
 									<a href="/stacks/{s.stack_id}" class="hover:text-teal-400 transition-colors">{s.stack_name}</a>
@@ -143,6 +177,95 @@
 			</div>
 		{:else}
 			<p class="text-zinc-500 text-sm">No completed runs in this window.</p>
+		{/if}
+
+	{:else if tab === 'costs' && costsData}
+		<!-- Cost overview cards -->
+		<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+				<p class="text-xs text-zinc-500 uppercase tracking-wide">Net delta</p>
+				<p class="text-2xl font-semibold mt-1 {costsData.overview.net_delta > 0 ? 'text-red-400' : costsData.overview.net_delta < 0 ? 'text-emerald-400' : 'text-zinc-300'}">
+					{costsData.overview.net_delta >= 0 ? '+' : ''}${fmt(costsData.overview.net_delta)}
+				</p>
+			</div>
+			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+				<p class="text-xs text-zinc-500 uppercase tracking-wide">Cost add</p>
+				<p class="text-2xl font-semibold text-red-400 mt-1">${fmt(costsData.overview.total_cost_add)}</p>
+			</div>
+			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+				<p class="text-xs text-zinc-500 uppercase tracking-wide">Cost removed</p>
+				<p class="text-2xl font-semibold text-emerald-400 mt-1">${fmt(costsData.overview.total_cost_remove)}</p>
+			</div>
+			<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
+				<p class="text-xs text-zinc-500 uppercase tracking-wide">Runs with costs</p>
+				<p class="text-2xl font-semibold text-white mt-1">{costsData.overview.runs_with_cost}</p>
+			</div>
+		</div>
+
+		<!-- Daily cost chart -->
+		{#if costsData.daily.length > 0}
+			<div class="rounded-xl border border-zinc-800 p-5 space-y-3">
+				<h2 class="text-sm font-medium text-zinc-300">Estimated cost add per day (USD/mo)</h2>
+				<div class="flex items-end gap-1 h-24">
+					{#each costsData.daily as bucket (bucket.date)}
+						{@const h = Math.round((bucket.cost_add / maxDailyCostAdd) * 100)}
+						<div class="flex-1 flex flex-col justify-end group relative"
+							title="{bucket.date}: +${fmt(bucket.cost_add)} / ~${fmt(bucket.cost_change)} / -${fmt(bucket.cost_remove)} ({bucket.run_count} runs)">
+							{#if h > 0}
+								<div class="bg-orange-500 rounded-sm" style="height:{h}%"></div>
+							{/if}
+						</div>
+					{/each}
+				</div>
+				<div class="flex items-center gap-4 text-xs text-zinc-500">
+					<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-orange-500 inline-block"></span>Cost add (USD/mo)</span>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Per-stack cost table -->
+		{#if costsData.by_stack.length > 0}
+			<div class="rounded-xl border border-zinc-800 overflow-hidden">
+				<div class="px-4 py-3 bg-zinc-900 border-b border-zinc-800">
+					<h2 class="text-sm font-medium text-zinc-300">By stack</h2>
+				</div>
+				<table class="w-full text-sm">
+					<thead class="bg-zinc-900/50 text-zinc-500 text-xs uppercase tracking-wide">
+						<tr>
+							<th class="text-left px-4 py-2">Stack</th>
+							<th class="text-right px-4 py-2">Net Δ</th>
+							<th class="text-right px-4 py-2">Add</th>
+							<th class="text-right px-4 py-2">Removed</th>
+							<th class="text-right px-4 py-2">Budget</th>
+							<th class="text-right px-4 py-2">Runs</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-zinc-800">
+						{#each costsData.by_stack as s (s.stack_id)}
+							{@const overBudget = s.budget_threshold_usd != null && s.cost_add > s.budget_threshold_usd}
+							<tr class="hover:bg-zinc-900/30 transition-colors {overBudget ? 'bg-red-950/20' : ''}">
+								<td class="px-4 py-2.5 text-zinc-200 font-medium">
+									<a href="/stacks/{s.stack_id}" class="hover:text-teal-400 transition-colors">{s.stack_name}</a>
+									{#if overBudget}
+										<span class="ml-2 text-xs text-red-400 font-normal">over budget</span>
+									{/if}
+								</td>
+								<td class="px-4 py-2.5 text-right font-mono {s.net_delta > 0 ? 'text-red-400' : s.net_delta < 0 ? 'text-emerald-400' : 'text-zinc-500'}">
+									{s.net_delta >= 0 ? '+' : ''}${fmt(s.net_delta)}
+								</td>
+								<td class="px-4 py-2.5 text-right font-mono text-zinc-300">${fmt(s.cost_add)}</td>
+								<td class="px-4 py-2.5 text-right font-mono text-zinc-300">${fmt(s.cost_remove)}</td>
+								<td class="px-4 py-2.5 text-right font-mono {overBudget ? 'text-red-400' : 'text-zinc-500'}">
+									{s.budget_threshold_usd != null ? '$' + fmt(s.budget_threshold_usd) : '—'}
+								</td>
+								<td class="px-4 py-2.5 text-right text-zinc-500">{s.runs_with_cost}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{:else}
+			<p class="text-zinc-500 text-sm">No Infracost data found in this window. Make sure Infracost is configured in your runner.</p>
 		{/if}
 	{/if}
 </div>

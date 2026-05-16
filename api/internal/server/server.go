@@ -180,6 +180,8 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	s.registerProjectRoutes(api, projectHandler, member, adminRole)
 	s.registerRunRoutes(api, runHandler, member, adminRole)
 	api.GET("/analytics/runs", analyticsHandler.Get)
+	api.GET("/analytics/costs", analyticsHandler.GetCosts)
+	api.GET("/stacks/:stackID/analytics/costs", analyticsHandler.StackCostHistory)
 	s.registerComplianceRoutes(api, policyGitHandler, member, adminRole)
 	s.registerValidationRoutes(api, validationHandler, member)
 	s.registerSIEMRoutes(api, siemHandler, adminRole)
