@@ -173,11 +173,26 @@ run_tf_generic() {
         *)       log "state backend returned ${state_check} — continuing (empty state is normal for first run)" ;;
     esac
 
+    # Inject an override file that forces the HTTP backend.
+    # TF_HTTP_* env vars are only read when the backend type is "http" — if the
+    # user's code omits a backend block entirely (or uses a different backend),
+    # Terraform silently writes state to the ephemeral tmpfs and it is lost.
+    # Writing to crucible_backend_override.tf.json (cwd = WORKDIR at call time)
+    # ensures the HTTP backend is always selected. TF_HTTP_* env vars then supply
+    # all the actual settings so an empty block is sufficient.
+    cat > crucible_backend_override.tf.json <<'TFEOF'
+{
+  "terraform": [{
+    "backend": [{"http": [{}]}]
+  }]
+}
+TFEOF
+
     export TF_PLUGIN_CACHE_DIR="${PROVIDER_CACHE_DIR}"
     restore_provider_cache
 
     log "initialising"
-    ${bin} init -no-color
+    ${bin} init -no-color -reconfigure
 
     save_provider_cache
 
