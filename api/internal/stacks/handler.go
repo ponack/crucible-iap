@@ -172,6 +172,7 @@ type Stack struct {
 	PlanAlertChange     *int       `json:"plan_alert_change,omitempty"`
 	PlanAlertDestroy    *int       `json:"plan_alert_destroy,omitempty"`
 	PlanBlockOnAlert    bool       `json:"plan_block_on_alert"`
+	BudgetThresholdUSD  *float64   `json:"budget_threshold_usd,omitempty"`
 	HealthScore          int        `json:"health_score"`   // 0–100; -1 = no data
 	HealthStatus         string     `json:"health_status"`  // healthy | degraded | unhealthy | unknown
 	IsPinned             bool       `json:"is_pinned"`
@@ -499,6 +500,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       s.worker_pool_id, wp.name,
 		       s.github_installation_uuid, s.project_id,
 		       s.plan_alert_add, s.plan_alert_change, s.plan_alert_destroy, s.plan_block_on_alert,
+		       s.budget_threshold_usd,
 		       `+healthScoreSQL+` AS health_score,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted,
@@ -529,6 +531,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.WorkerPoolID, &s.WorkerPoolName,
 		&s.GitHubInstallationUUID, &s.ProjectID,
 		&s.PlanAlertAdd, &s.PlanAlertChange, &s.PlanAlertDestroy, &s.PlanBlockOnAlert,
+		&s.BudgetThresholdUSD,
 		&s.HealthScore,
 		&s.MyStackRole, &s.IsRestricted,
 		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt)
@@ -580,11 +583,12 @@ type updateStackReq struct {
 	WorkerPoolID        *string `json:"worker_pool_id"`         // empty string clears
 	GitHubInstallationUUID *string `json:"github_installation_uuid"` // empty string clears
 	ProjectID           *string `json:"project_id"`             // empty string clears
-	PlanAlertAdd        *int    `json:"plan_alert_add"`         // null clears
-	PlanAlertChange     *int    `json:"plan_alert_change"`
-	PlanAlertDestroy    *int    `json:"plan_alert_destroy"`
-	PlanBlockOnAlert    *bool   `json:"plan_block_on_alert"`
-	ValidationInterval  *int    `json:"validation_interval"`    // minutes, 0 = disabled
+	PlanAlertAdd        *int     `json:"plan_alert_add"`         // null clears
+	PlanAlertChange     *int     `json:"plan_alert_change"`
+	PlanAlertDestroy    *int     `json:"plan_alert_destroy"`
+	PlanBlockOnAlert    *bool    `json:"plan_block_on_alert"`
+	BudgetThresholdUSD  *float64 `json:"budget_threshold_usd"`   // null clears; ≤0 clears
+	ValidationInterval  *int     `json:"validation_interval"`    // minutes, 0 = disabled
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -763,6 +767,13 @@ func (r *updateStackReq) addPlanAlertSets(add func(string, any)) {
 	}
 	if r.PlanBlockOnAlert != nil {
 		add("plan_block_on_alert", *r.PlanBlockOnAlert)
+	}
+	if r.BudgetThresholdUSD != nil {
+		if *r.BudgetThresholdUSD <= 0 {
+			add("budget_threshold_usd", nil)
+		} else {
+			add("budget_threshold_usd", *r.BudgetThresholdUSD)
+		}
 	}
 }
 

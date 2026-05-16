@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, complianceApi, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StateVersion, type StateDiff, type PlanDiff, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project, type PolicyPack, type CatalogEntry } from '$lib/api/client';
+	import { stacks, runs, policies, integrations, varSets, deps, stackMembers, org, orgTags, cloudOIDC, stackTemplates, workerPools, githubApp, projects, complianceApi, analyticsApi, type Stack, type Run, type StackToken, type Policy, type StackPolicyRef, type StackEnvVar, type Integration, type StateBackendProvider, type S3StateBackendConfig, type GCSStateBackendConfig, type AzureStateBackendConfig, type RemoteStateSource, type WebhookDelivery, type VarSet, type StackVarSetRef, type StateResource, type StateVersion, type StateDiff, type PlanDiff, type StackDep, type StackMember, type OrgMember, type CloudOIDCConfig, type OutgoingWebhook, type OutgoingWebhookDelivery, type StackTemplate, type WorkerPool, type Tag, type GitHubAppView, type Project, type PolicyPack, type CatalogEntry, type CostPoint } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
@@ -66,6 +66,7 @@
 		plan_alert_change: undefined as number | undefined,
 		plan_alert_destroy: undefined as number | undefined,
 		plan_block_on_alert: false,
+		budget_threshold_usd: undefined as number | undefined,
 		validation_interval: 0
 	});
 
@@ -220,6 +221,10 @@
 	let planDiffError = $state('');
 	let planRuns = $derived(recentRuns.filter(r => r.plan_add != null || r.plan_change != null));
 
+	// Cost sparkline
+	let costHistory = $state<CostPoint[]>([]);
+	const maxCostAdd = $derived(Math.max(...costHistory.map(p => p.cost_add), 0.01));
+
 	// Access / stack members
 	let members = $state<StackMember[]>([]);
 	let orgUsers = $state<OrgMember[]>([]);
@@ -334,6 +339,9 @@
 			moduleProvider = stackRes.module_provider ?? 'aws';
 			resetForm();
 
+			// Load cost sparkline — best-effort, empty list if no Infracost data.
+			analyticsApi.getStackCostHistory(stackID).then(h => (costHistory = h)).catch(() => {});
+
 			// Load OIDC config independently — 404 is expected when not configured.
 			try {
 				oidcConfig = await cloudOIDC.get(stackID);
@@ -432,6 +440,7 @@
 			plan_alert_change: stack.plan_alert_change,
 			plan_alert_destroy: stack.plan_alert_destroy,
 			plan_block_on_alert: stack.plan_block_on_alert ?? false,
+			budget_threshold_usd: stack.budget_threshold_usd,
 			validation_interval: stack.validation_interval ?? 0
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
@@ -1643,6 +1652,14 @@
 					<input type="checkbox" bind:checked={form.plan_block_on_alert} class="rounded border-zinc-700 bg-zinc-900 text-teal-500" />
 					Block auto-apply when a budget threshold is exceeded
 				</label>
+				<div class="space-y-1.5 pt-1">
+					<label class="field-label" for="edit-budget-threshold">Infracost cost add limit (USD/mo)</label>
+					<input id="edit-budget-threshold" type="number" min="0" step="0.01" class="field-input w-full max-w-[200px]"
+						placeholder="e.g. 100.00"
+						value={form.budget_threshold_usd ?? ''}
+						oninput={(e) => form.budget_threshold_usd = (e.currentTarget as HTMLInputElement).value === '' ? undefined : Number((e.currentTarget as HTMLInputElement).value)} />
+					<p class="text-xs text-zinc-600">Alert (and optionally block) when Infracost estimated monthly cost add exceeds this amount. Leave blank to disable.</p>
+				</div>
 			</div>
 
 			<div class="flex gap-3 pt-1">
@@ -2003,6 +2020,41 @@
 			</div>
 		{/if}
 	</section>
+
+	<!-- Cost history sparkline -->
+	{#if costHistory.length > 0}
+	<section class="space-y-3">
+		<div class="flex items-center justify-between">
+			<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Infracost history</h2>
+			{#if stack.budget_threshold_usd}
+				<span class="text-xs text-zinc-500">Budget: <span class="text-zinc-300">${stack.budget_threshold_usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mo</span></span>
+			{/if}
+		</div>
+		<div class="rounded-xl border border-zinc-800 p-4 space-y-3">
+			<p class="text-xs text-zinc-500">Estimated monthly cost add — last {costHistory.length} runs with cost data (newest → oldest)</p>
+			<div class="flex items-end gap-1 h-16">
+				{#each [...costHistory].reverse() as p (p.run_id)}
+					{@const h = Math.round((p.cost_add / maxCostAdd) * 100)}
+					{@const overBudget = stack.budget_threshold_usd != null && p.cost_add > stack.budget_threshold_usd}
+					<div class="flex-1 flex flex-col justify-end"
+						title="{new Date(p.queued_at).toLocaleDateString()}: +${p.cost_add.toFixed(2)} / ~${p.cost_change.toFixed(2)} / -${p.cost_remove.toFixed(2)} {p.currency}">
+						{#if h > 0}
+							<div class="rounded-sm {overBudget ? 'bg-red-500' : 'bg-orange-500'}" style="height:{h}%"></div>
+						{:else}
+							<div class="rounded-sm bg-zinc-700" style="height:2px"></div>
+						{/if}
+					</div>
+				{/each}
+			</div>
+			{#if stack.budget_threshold_usd}
+				<div class="flex items-center gap-4 text-xs text-zinc-500">
+					<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-orange-500 inline-block"></span>Within budget</span>
+					<span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-sm bg-red-500 inline-block"></span>Over budget</span>
+				</div>
+			{/if}
+		</div>
+	</section>
+	{/if}
 
 	<!-- Tags -->
 	{#if stack.my_stack_role !== 'viewer'}
