@@ -258,5 +258,10 @@ The **Dashboard** (home page after login) shows all runs awaiting approval acros
 | Run Ansible playbooks (including OS updates) | [docs/guides/ansible.md](guides/ansible.md) |
 | Deploy to production with TLS | [docs/operator-guide.md](operator-guide.md) |
 | Write advanced policies | [docs/policies.md](policies.md) |
-| Add team members with OIDC | [docs/operator-guide.md](operator-guide.md#authentication) |
+| Add team members with OIDC | [docs/operator-guide.md](operator-guide.md#first-time-deployment) |
 | Reuse env vars across stacks | Settings → Variable Sets |
+| Enable Terraform cost estimates | Settings → Integrations → Infracost API key |
+| Enforce compliance controls (SOC 2, CIS, HIPAA, PCI-DSS) | [docs/operator-guide.md](operator-guide.md#compliance-packs) |
+| Get Slack/Teams approval links | [docs/operator-guide.md](operator-guide.md#chatops-approvals) |
+| Detect state drift without a push | [docs/operator-guide.md](operator-guide.md#continuous-validation) |
+| Connect Bitbucket or Azure DevOps | [docs/operator-guide.md](operator-guide.md#vcs-integrations) |

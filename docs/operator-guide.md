@@ -7,10 +7,17 @@
 3. [Configuration reference](#configuration-reference)
 4. [Cloud OIDC workload identity federation](#cloud-oidc-workload-identity-federation)
 5. [External worker agents](#external-worker-agents)
-6. [Upgrading](#upgrading)
-7. [Backup and restore](#backup-and-restore)
-8. [Monitoring](#monitoring)
-9. [Troubleshooting](#troubleshooting)
+6. [Infracost cost estimation](#infracost-cost-estimation)
+7. [VCS integrations — Bitbucket Cloud and Azure DevOps](#vcs-integrations)
+8. [ChatOps approvals](#chatops-approvals)
+9. [SIEM audit log streaming](#siem-audit-log-streaming)
+10. [Multi-org administration](#multi-org-administration)
+11. [Compliance packs](#compliance-packs)
+12. [Continuous validation](#continuous-validation)
+13. [Upgrading](#upgrading)
+14. [Backup and restore](#backup-and-restore)
+15. [Monitoring](#monitoring)
+16. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -151,6 +158,8 @@ See [`deploy/proxy-examples/`](../deploy/proxy-examples/) for ready-to-use confi
 | `GRAFANA_ADMIN_USER` | no | `admin` | Grafana admin username |
 | `GRAFANA_ADMIN_PASSWORD` | no | `changeme` | **Change this** |
 | `CADDY_ACME_EMAIL` | no | — | Let's Encrypt email; blank = self-signed |
+| `CRUCIBLE_INSTANCE_ADMIN_EMAIL` | no | — | Email of the user who receives `is_instance_admin` on first login |
+| `CRUCIBLE_DISABLE_PERSONAL_ORGS` | no | `false` | Set `true` to skip auto-creating a personal org on login (MSP mode) |
 
 ### Runtime settings (UI-configurable)
 
@@ -372,6 +381,206 @@ For Vault, Authentik, and Generic providers the default JWT audience (`aud` clai
 
 ---
 
+## Infracost cost estimation
+
+The Infracost integration adds Terraform/OpenTofu cost estimates to every plan. When enabled, the runner runs `infracost breakdown` against the saved plan JSON; the cost delta is displayed on the run detail page and aggregated in the **Dashboard → Analytics** view.
+
+**To enable:** Navigate to **Settings → Integrations** and paste your Infracost API key. Obtain a free key at [infracost.io](https://www.infracost.io/). The key is stored encrypted in the database and injected into runner containers as `INFRACOST_API_KEY`.
+
+A self-hosted pricing endpoint can be configured alongside the key — leave blank to use the default public API.
+
+**Per-stack budget threshold:** Set a monthly cost threshold in the stack **Settings** tab. When a planned cost delta exceeds it, a warning appears on the run and a notification is sent to the configured webhook.
+
+**Known limitation:** Resources that do not map to Infracost's pricing database — such as `null_resource`, `local_file`, and some provider-specific types — show `$0`. The total displayed is a plan-time estimate, not actual cloud spend.
+
+---
+
+## VCS integrations
+
+In addition to GitHub, GitLab, and Gitea, Crucible supports **Bitbucket Cloud** and **Azure DevOps** as first-class VCS providers.
+
+Set the provider on the stack detail page → **Settings** tab → **VCS provider** dropdown. The org-wide default is configured in **Settings → General → Default VCS provider**.
+
+### Bitbucket Cloud
+
+Set **VCS provider** to `Bitbucket`. For private repositories, also set **VCS username** to the Bitbucket workspace username — the runner clones using `https://<vcs_username>:<token>@bitbucket.org/...`.
+
+Webhook setup: Repository → **Settings** → **Webhooks** → **Add webhook**
+
+- URL: copy from the stack detail page
+- Active: enabled
+- Triggers: **Repository push**, **Pull request created**, **Pull request updated**, **Pull request fulfilled**
+
+Bitbucket signs payloads with `X-Hub-Signature` (HMAC-SHA256) — the same format as GitHub. Set the webhook secret in the stack settings.
+
+### Azure DevOps
+
+Set **VCS provider** to `Azure DevOps`. Repo URL format:
+
+```text
+https://dev.azure.com/<org>/<project>/_git/<repo>
+```
+
+Webhook setup: Project → **Project Settings** → **Service hooks** → **Web Hooks**
+
+- Trigger on: **Code pushed**, **Pull request created**, **Pull request updated**
+- URL: copy from the stack detail page
+- Basic auth: set username to `crucible` and password to the webhook secret from the stack settings
+
+Azure DevOps sends an `Authorization: Basic <base64>` header for authentication rather than an HMAC signature header.
+
+---
+
+## ChatOps approvals
+
+Crucible embeds signed approval links in every run notification. Clicking **Confirm**, **Discard**, or **Approve destroy** in a Slack, Teams, or Discord message performs the action immediately — no bot token or app installation required.
+
+### How it works
+
+Links point to `GET /api/v1/runs/:id/chatops/:action?token=<token>`.
+
+The token is `<expiry_unix>.<HMAC-SHA256(runID:action:expiry, CRUCIBLE_SECRET_KEY)>`. Tokens are valid for **24 hours** and are single-use per action. If a run is already confirmed when the link is clicked, the endpoint returns a clear status message rather than an error.
+
+Valid actions: `confirm`, `discard`, `approve_destroy`, `cancel`.
+
+The endpoint is public (no session cookie required) because the HMAC provides equivalent authentication scoped to the specific run and action.
+
+### Setup
+
+1. **Org-wide default:** Settings → General → **Default Slack webhook** — all stacks with no per-stack webhook inherit this.
+2. **Per-stack:** Stack detail → **Settings** → **Notification webhook** — overrides the org default for that stack.
+
+Both fields accept any standard incoming webhook URL (Slack, Teams, Discord). Crucible posts a JSON payload; the approval links are included in the notification body automatically. No additional configuration is needed.
+
+---
+
+## SIEM audit log streaming
+
+Crucible can forward all audit events to an external SIEM in near-real-time. Configure destinations in **Settings → Audit → SIEM streaming**.
+
+### Supported destinations
+
+| Type | Description |
+| --- | --- |
+| `splunk` | HTTP Event Collector — configure URL, HEC token, index, and sourcetype |
+| `datadog` | Logs API — configure API key and site (`datadoghq.com`, `datadoghq.eu`, `us3.datadoghq.com`) |
+| `elasticsearch` | REST `_bulk` API — supports Basic auth or API key (`base64(id:key)`) |
+| `webhook` | Generic JSON POST — optional HMAC-SHA256 request signing |
+| `chronicle` | GCP SecOps / Chronicle — requires a GCP service account JSON |
+| `wazuh` | REST API or TCP syslog fallback (set `syslog_address` to `host:port` for syslog mode) |
+| `graylog` | GELF HTTP endpoint |
+
+### Delivery
+
+Each destination config is stored **encrypted** in the vault. Use the **Test connection** button to send a synthetic ping event before saving.
+
+The streaming worker delivers events fan-out to all active destinations with up to 3 retries and exponential backoff. Delivery outcomes are recorded in the delivery log at **Settings → Audit → Delivery log**. Failed events are not retried after the backoff window — if your SIEM is down for an extended period, those events will not be replayed.
+
+---
+
+## Multi-org administration
+
+Instance admins can create, manage, and archive organizations across the entire Crucible deployment. This is intended for MSP and shared-platform deployments where a single Crucible instance serves multiple teams or customers.
+
+### Bootstrapping an instance admin
+
+Set `CRUCIBLE_INSTANCE_ADMIN_EMAIL` in `.env` to the email address of your first instance admin. On that user's next login, `is_instance_admin` is set on their account. The env var can be removed afterwards — subsequent instance admins are granted via **Admin → Users**.
+
+### MSP mode
+
+Set `CRUCIBLE_DISABLE_PERSONAL_ORGS=true` to prevent Crucible from auto-creating a personal organization on each user's first login. In this mode, users must be invited to an existing org before they can access any resources. Recommended for deployments where personal workspaces are not desired.
+
+### Instance admin capabilities
+
+- **Admin → Organizations** — list all orgs (active and archived), create orgs, archive and restore orgs
+- **Admin → Users** — grant or revoke instance-admin on any user account
+
+When creating an organization, you can specify a name, a URL slug, and optionally the email address of a first admin. That user must already exist in the system (have logged in at least once).
+
+Archived organizations retain all data but are hidden from all members. Restore restores full access.
+
+### JWT claim
+
+Instance admins carry the `iadm: true` claim in their access JWT. The admin panel routes require this claim; all other routes treat it as a regular org member within each org context.
+
+---
+
+## Compliance packs
+
+Compliance packs are curated sets of OPA policies that enforce common regulatory controls. They are distributed as part of the Crucible binary (seeded on install) and optionally kept in sync with the [ponack/crucible-policies](https://github.com/ponack/crucible-policies) repository.
+
+### Available packs
+
+| Slug | Name | Policies included |
+| --- | --- | --- |
+| `soc2` | SOC 2 | Approval-required changes (CC6), unencrypted storage detection (CC6.7), logging requirements (CC7.2) |
+| `cis-aws` | CIS AWS Foundations | No root access keys, S3 block public access, IAM password policy |
+| `hipaa` | HIPAA | PHI encryption at rest, audit logging requirements |
+| `pci-dss` | PCI-DSS | No public ingress, TLS enforcement |
+
+### Installing and attaching
+
+1. Navigate to **Policies → Compliance packs**.
+2. Click **Install** on the desired pack. Policies are seeded immediately from the embedded bundle and a policy git source is registered for ongoing sync.
+3. To attach a pack to a stack: Stack detail → **Policies** → **Attach compliance pack** → select the pack.
+
+All policies in a pack are evaluated on every plan for that stack, alongside any custom policies. A pack policy `deny` blocks the run like any other denial.
+
+### Keeping packs up to date
+
+Installed packs sync periodically from `ponack/crucible-policies`. The last sync timestamp and SHA are shown on the Compliance packs page. Trigger a manual sync with the **Sync now** button. If sync fails (e.g. the upstream repo is unreachable), the previously installed policy versions continue to run.
+
+---
+
+## Continuous validation
+
+Continuous validation runs OPA `validation` policies against the **live Terraform state** of a stack on a schedule — no push or plan required. Use it to detect drift from your compliance baseline between runs.
+
+### Validation schedule
+
+A background worker queries all stacks where `validation_interval > 0` and whose `last_validated_at + interval` has elapsed. For each, it reads the current state from the state backend, passes `input.state` to all `validation` policies attached to the stack, stores the result, and fires a notification if the pass/fail status changed.
+
+### Configuring the interval
+
+Stack detail → **Settings** → **Continuous validation** → set interval in minutes. `0` disables validation for that stack. Minimum useful interval is around 15 minutes; most stacks use 60 minutes or more.
+
+### Writing validation policies
+
+Use policy type `validation` (not `post_plan`) — these policies receive state instead of a plan. The `input` document contains:
+
+| Key | Value |
+| --- | --- |
+| `input.state` | Full Terraform state JSON (same schema as `terraform.tfstate`) |
+| `input.stack_id` | Stack UUID |
+| `input.stack_slug` | Stack slug |
+
+Example — flag S3 buckets missing a required tag:
+
+```rego
+package crucible
+
+plan := result if {
+  result := {
+    "deny":    deny_msgs,
+    "warn":    warn_msgs,
+    "trigger": [],
+  }
+}
+
+deny_msgs contains msg if {
+  resource := input.state.resources[_]
+  resource.type == "aws_s3_bucket"
+  not resource.instances[_].attributes.tags["Environment"]
+  msg := sprintf("S3 bucket %q is missing the Environment tag", [resource.name])
+}
+
+warn_msgs := []
+```
+
+Validation results appear in the stack detail → **Validation** tab. Status changes (`pass → fail` or `fail → pass`) trigger webhook notifications.
+
+---
+
 ## Upgrading
 
 Crucible runs database migrations automatically on startup. Upgrading is:
@@ -483,7 +692,7 @@ By default every run executes inside an ephemeral Docker container on the same h
 - You want to isolate blast radius (e.g. production runs on a dedicated host).
 - You need more Docker capacity than the Crucible host can provide.
 
-### How it works
+### Agent claim loop
 
 1. You create a **worker pool** in the UI (Settings → Worker Pools) and receive a one-time bearer token.
 2. You run one or more `crucible-agent` processes on any host that has Docker access.
