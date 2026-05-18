@@ -32,6 +32,12 @@ All runs use `--terragrunt-non-interactive` to prevent Crucible from hanging on 
 
 ## 1. Create the repository
 
+### Option A — Use the template (recommended)
+
+Go to [github.com/ponack/crucible-quickstart-terragrunt](https://github.com/ponack/crucible-quickstart-terragrunt) and click **Use this template → Create a new repository**. The root `terragrunt.hcl` and both child modules are already in place — skip ahead to step 2.
+
+### Option B — Write the files yourself
+
 Create a new repository and add the following structure:
 
 ```text

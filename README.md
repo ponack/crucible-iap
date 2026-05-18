@@ -60,7 +60,12 @@ docker compose up -d
 
 Crucible IAP will be available at `https://localhost` (self-signed cert — accept the browser warning on first visit). Caddy provisions a real TLS certificate automatically when `CRUCIBLE_BASE_URL` is a public hostname and `CADDY_ACME_EMAIL` is set.
 
-After login, the dashboard greets you with a one-click path to your first stack. Click **Create your first stack** to connect a Git repo — or [**use the `crucible-quickstart` template**](https://github.com/ponack/crucible-quickstart/generate) for a ready-to-run OpenTofu stack you can point Crucible at in under a minute.
+After login, the dashboard greets you with a one-click path to your first stack. Click **Create your first stack** to connect a Git repo — or use one of the starter templates:
+
+| Template | Tool | Use this template |
+| --- | --- | --- |
+| `crucible-quickstart` | OpenTofu | [Use template →](https://github.com/ponack/crucible-quickstart/generate) |
+| `crucible-quickstart-terragrunt` | Terragrunt | [Use template →](https://github.com/ponack/crucible-quickstart-terragrunt/generate) |
 
 ## Deployment options
 
@@ -166,6 +171,7 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 | [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
 | [docs/guides/pulumi.md](docs/guides/pulumi.md) | End-to-end guide: running Pulumi programs with preview → confirm → up and built-in MinIO state backend |
+| [docs/guides/terragrunt.md](docs/guides/terragrunt.md) | End-to-end guide: Terragrunt multi-module stacks, `run-all` lifecycle, built-in state backend wiring, multi-environment layout |
 | [docs/guides/cloudflare.md](docs/guides/cloudflare.md) | Managing Cloudflare infrastructure as code — bootstrap with cf-terraforming, Crucible stack setup, OPA policies |
 | [docs/guides/spacelift-migration.md](docs/guides/spacelift-migration.md) | Migrating from Spacelift to Crucible — concept mapping, state migration paths, and a working Cloudflare example |
 
