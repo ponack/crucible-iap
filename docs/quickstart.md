@@ -256,6 +256,7 @@ The **Dashboard** (home page after login) shows all runs awaiting approval acros
 | --- | --- |
 | Manage Proxmox VMs | [docs/guides/proxmox.md](guides/proxmox.md) |
 | Run Ansible playbooks (including OS updates) | [docs/guides/ansible.md](guides/ansible.md) |
+| Use Terragrunt (multi-module repos) | [docs/guides/terragrunt.md](guides/terragrunt.md) |
 | Deploy to production with TLS | [docs/operator-guide.md](operator-guide.md) |
 | Write advanced policies | [docs/policies.md](policies.md) |
 | Add team members with OIDC | [docs/operator-guide.md](operator-guide.md#first-time-deployment) |
