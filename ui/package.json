@@ -34,7 +34,7 @@
     "prettier": "^3.4.1",
     "prettier-plugin-svelte": "^3.3.2",
     "prettier-plugin-tailwindcss": "^0.6.9",
-    "svelte": "^5.0.0",
+    "svelte": "^5.55.7",
     "svelte-check": "^4.1.0",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.7.2",
@@ -42,9 +42,15 @@
     "vitest": "^2.1.8"
   },
   "type": "module",
+  "overrides": {
+    "devalue": ">=5.8.1",
+    "postcss": ">=8.5.10"
+  },
   "pnpm": {
     "overrides": {
-      "cookie": "^0.7.0"
+      "cookie": "^0.7.0",
+      "devalue": ">=5.8.1",
+      "postcss": ">=8.5.10"
     }
   }
 }
