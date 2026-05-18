@@ -104,12 +104,11 @@ PKCE (`S256` challenge) is always used for the OIDC flow. Client secrets are nev
 
 ## Secrets handling
 
-Crucible does not currently store stack-level credentials. Cloud provider credentials (AWS keys, etc.) must be provided via:
+Stack environment variables and integration credentials (VCS tokens, SIEM configs, etc.) are stored encrypted in the internal vault. The vault derives its master key from `CRUCIBLE_SECRET_KEY` by default; BYOK replaces that derivation with a customer-managed KMS key — see [BYOK — customer-managed master key](#byok--customer-managed-master-key).
 
-1. Environment variables injected at runner container start (planned: built-in vault + external vault integrations)
-2. Instance IAM roles / workload identity (recommended for production)
+Cloud provider credentials for runner jobs are injected at container start and are never persisted in the queue or database. The recommended approach for production is keyless authentication via [Cloud OIDC workload identity federation](operator-guide.md#cloud-oidc-workload-identity-federation).
 
-**Do not** put cloud credentials in stack policies or Rego source — they are stored in the database.
+**Do not** put cloud credentials in stack policies or Rego source — policy bodies are stored in the database as plain text.
 
 ---
 
@@ -195,6 +194,8 @@ CREATE RULE no_delete_audit AS ON DELETE TO audit_events DO INSTEAD NOTHING;
 
 Failed login attempts (`auth.login.failed`) are also recorded including the source IP address.
 
+**SIEM streaming:** Audit events can be forwarded in near-real-time to Splunk, Datadog, Elasticsearch, GCP SecOps/Chronicle, Wazuh, Graylog, or a generic webhook. Configure destinations in **Settings → Audit → SIEM streaming**. See the [operator guide](operator-guide.md#siem-audit-log-streaming) for details.
+
 ---
 
 ## Hardening checklist
@@ -211,6 +212,7 @@ Before exposing Crucible to the internet:
 - [ ] Docker socket mount is reviewed — Crucible needs it to spawn runners; restrict with `--group-add` or a Docker socket proxy if required
 - [ ] `RUNNER_DEFAULT_IMAGE` is pinned to a specific digest for supply chain control
 - [ ] Egress from the `crucible-runner` network is firewalled to only necessary endpoints
+- [ ] (Optional) BYOK configured for regulated environments — Settings → BYOK; KMS auth env vars set before enabling
 
 ---
 
