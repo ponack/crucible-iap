@@ -5,21 +5,25 @@ go 1.25.0
 require (
 	github.com/anthropics/anthropic-sdk-go v1.38.0
 	github.com/coreos/go-oidc/v3 v3.11.0
-	github.com/docker/docker v27.4.1+incompatible
+	github.com/docker/docker v28.5.2+incompatible
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/golang-migrate/migrate/v4 v4.18.1
+	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/minio/minio-go/v7 v7.0.83
 	github.com/open-policy-agent/opa v1.4.0
+	github.com/openai/openai-go v1.12.0
 	github.com/prometheus/client_golang v1.21.1
 	github.com/riverqueue/river v0.14.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.14.2
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.20.1
 	golang.org/x/crypto v0.49.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/time v0.11.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -29,6 +33,8 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/containerd/errdefs v1.0.0 // indirect
+	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.5.0 // indirect
@@ -43,8 +49,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -62,8 +66,8 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
-	github.com/openai/openai-go v1.12.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
@@ -82,7 +86,6 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
@@ -115,7 +118,6 @@ require (
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
