@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "^5.2.9",
-    "@sveltejs/kit": "^2.15.0",
+    "@sveltejs/kit": "^2.60.1",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22.0.0",
