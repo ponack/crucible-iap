@@ -163,6 +163,9 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/guides/team-setup.md](docs/guides/team-setup.md) | Org roles, per-stack RBAC, approval policies, recommended starter policy set |
 | [docs/guides/projects.md](docs/guides/projects.md) | Hierarchical org → project → stack model with per-project RBAC for multi-team deployments |
 | [docs/guides/cli.md](docs/guides/cli.md) | The `crucible` command-line client — trigger runs, check status, approve, scripting patterns |
+| [docs/guides/variable-sets.md](docs/guides/variable-sets.md) | Reusable bundles of env vars attached to many stacks at once — credentials, monitoring tokens, shared tags |
+| [docs/guides/tags.md](docs/guides/tags.md) | Color-coded stack labels for filtering, grouping, and policy-driven approval gates |
+| [docs/guides/external-secrets.md](docs/guides/external-secrets.md) | Fetch secrets from AWS Secrets Manager, HashiCorp Vault, Bitwarden SM, or Vaultwarden at run time |
 | [docs/guides/stack-templates.md](docs/guides/stack-templates.md) | Reusable stack configurations — create templates, deploy from them, good design practices |
 | [docs/guides/blueprints.md](docs/guides/blueprints.md) | Self-service stack deployment — platform teams publish blueprints, app teams fill in a form and deploy |
 | [docs/guides/provider-registry.md](docs/guides/provider-registry.md) | Private Terraform provider registry — publish binaries, configure Terraform, GPG signing |
