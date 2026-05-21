@@ -20,6 +20,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/quotas"
 )
 
 type Handler struct {
@@ -156,6 +157,14 @@ func (h *Handler) dispatchEvent(
 	if event.runType == "tracked" && event.branch != repoBranch {
 		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "branch_mismatch", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "branch not tracked"})
+	}
+
+	if err := quotas.CheckConcurrentQuota(ctx, h.pool, orgID); err != nil {
+		if _, ok := quotas.IsQuotaExceeded(err); ok {
+			h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "org_quota_exceeded", nil)
+			return c.JSON(http.StatusTooManyRequests, map[string]string{"status": "ignored", "reason": "org concurrent-run quota exceeded"})
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
 	img := ""
@@ -355,6 +364,14 @@ func (h *Handler) Redeliver(c echo.Context) error {
 	}
 	if event == nil {
 		return echo.NewHTTPError(http.StatusUnprocessableEntity, "original event type cannot trigger a run")
+	}
+
+	if err := quotas.CheckConcurrentQuota(ctx, h.pool, orgID); err != nil {
+		if q, ok := quotas.IsQuotaExceeded(err); ok {
+			return echo.NewHTTPError(http.StatusTooManyRequests,
+				fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
 	img := ""

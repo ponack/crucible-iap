@@ -13,6 +13,7 @@
 		{ label: 'Tags', href: '/settings/tags' },
 		{ label: 'Export / Import', href: '/settings/export' },
 		{ label: 'SIEM Streaming', href: '/settings/siem' },
+		{ label: 'Resource Quotas', href: '/settings/quotas' },
 		{ label: 'BYOK', href: '/settings/byok' }
 	];
 
