@@ -824,6 +824,68 @@ func (h *Handler) ReportPolicyResults(c echo.Context) error {
 
 // ── IaC scan results ──────────────────────────────────────────────────────────
 
+// RunCostResource is a single Infracost-derived per-resource line item for a run.
+type RunCostResource struct {
+	ID                int64   `json:"id"`
+	ResourceAddress   string  `json:"resource_address"`
+	ResourceType      string  `json:"resource_type"`
+	MonthlyCost       float64 `json:"monthly_cost"`
+	MonthlyCostBefore float64 `json:"monthly_cost_before"`
+	MonthlyCostDelta  float64 `json:"monthly_cost_delta"`
+	HourlyCost        float64 `json:"hourly_cost"`
+	Currency          string  `json:"currency"`
+}
+
+// CostResources returns the per-resource cost breakdown for a run.
+// Empty list when Infracost wasn't run or produced no per-resource data.
+// GET /api/v1/runs/:id/cost-resources
+func (h *Handler) CostResources(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+
+	var exists bool
+	if err := h.pool.QueryRow(c.Request().Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM runs r JOIN stacks s ON s.id = r.stack_id
+			WHERE r.id = $1 AND s.org_id = $2
+		)
+	`, id, orgID).Scan(&exists); err != nil || !exists {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+
+	rows, err := h.pool.Query(c.Request().Context(), `
+		SELECT id,
+		       resource_address,
+		       COALESCE(resource_type, ''),
+		       COALESCE(monthly_cost, 0),
+		       COALESCE(monthly_cost_before, 0),
+		       COALESCE(monthly_cost_delta, 0),
+		       COALESCE(hourly_cost, 0),
+		       COALESCE(currency, '')
+		FROM run_cost_resources
+		WHERE run_id = $1
+		ORDER BY ABS(COALESCE(monthly_cost_delta, 0)) DESC, resource_address
+	`, id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer rows.Close()
+
+	out := []RunCostResource{}
+	for rows.Next() {
+		var r RunCostResource
+		if err := rows.Scan(
+			&r.ID, &r.ResourceAddress, &r.ResourceType,
+			&r.MonthlyCost, &r.MonthlyCostBefore, &r.MonthlyCostDelta,
+			&r.HourlyCost, &r.Currency,
+		); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		out = append(out, r)
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
 // RunScanResult is one finding from a Checkov or Trivy IaC security scan.
 type RunScanResult struct {
 	ID        string    `json:"id"`

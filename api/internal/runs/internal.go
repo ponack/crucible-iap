@@ -90,6 +90,67 @@ func (h *Handler) ReportCost(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// ReportCostResources stores the per-resource cost breakdown produced by
+// `infracost breakdown --format json` parsing on the runner. The full set of
+// resources for the run is replaced in a single transaction.
+func (h *Handler) ReportCostResources(c echo.Context) error {
+	id := c.Param("id")
+
+	tokenRunID, _ := c.Get("runID").(string)
+	if tokenRunID != id {
+		return echo.NewHTTPError(http.StatusForbidden, "token not valid for this run")
+	}
+
+	var req struct {
+		Currency  string `json:"currency"`
+		Resources []struct {
+			Address           string  `json:"address"`
+			ResourceType      string  `json:"resource_type"`
+			MonthlyCost       float64 `json:"monthly_cost"`
+			MonthlyCostBefore float64 `json:"monthly_cost_before"`
+			MonthlyCostDelta  float64 `json:"monthly_cost_delta"`
+			HourlyCost        float64 `json:"hourly_cost"`
+		} `json:"resources"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+
+	ctx := c.Request().Context()
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	if _, err := tx.Exec(ctx, `DELETE FROM run_cost_resources WHERE run_id = $1`, id); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	for _, r := range req.Resources {
+		if r.Address == "" {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO run_cost_resources
+			  (run_id, resource_address, resource_type,
+			   monthly_cost, monthly_cost_before, monthly_cost_delta,
+			   hourly_cost, currency)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`, id, r.Address, r.ResourceType,
+			r.MonthlyCost, r.MonthlyCostBefore, r.MonthlyCostDelta,
+			r.HourlyCost, req.Currency); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}
+
 // ReportPlanSummary stores the resource change counts reported by the runner
 // after running `tofu show -json`. Counts are used for PR comments.
 func (h *Handler) ReportPlanSummary(c echo.Context) error {
