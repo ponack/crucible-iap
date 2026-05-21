@@ -98,6 +98,7 @@ export interface Stack {
 	validation_interval: number;
 	validation_status: 'pass' | 'warn' | 'fail' | 'unknown';
 	last_validated_at?: string;
+	escalation_after_minutes?: number | null;
 	created_at: string;
 	updated_at: string;
 }

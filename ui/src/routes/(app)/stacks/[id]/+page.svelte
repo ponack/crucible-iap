@@ -67,7 +67,8 @@
 		plan_alert_destroy: undefined as number | undefined,
 		plan_block_on_alert: false,
 		budget_threshold_usd: undefined as number | undefined,
-		validation_interval: 0
+		validation_interval: 0,
+		escalation_after_minutes: 0
 	});
 
 	// Token creation
@@ -445,7 +446,8 @@
 			plan_alert_destroy: stack.plan_alert_destroy,
 			plan_block_on_alert: stack.plan_block_on_alert ?? false,
 			budget_threshold_usd: stack.budget_threshold_usd,
-			validation_interval: stack.validation_interval ?? 0
+			validation_interval: stack.validation_interval ?? 0,
+			escalation_after_minutes: stack.escalation_after_minutes ?? 0
 		};
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
@@ -1505,6 +1507,14 @@
 					bind:value={form.validation_interval}
 					placeholder="0" />
 				<p class="text-xs text-zinc-600">Set to 0 to disable. Requires at least one <em>validation</em>-type policy attached to the stack.</p>
+			</div>
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-escalation-after">Approval escalation after (minutes)</label>
+				<input id="edit-escalation-after" type="number" min="0" step="15"
+					class="field-input w-32"
+					bind:value={form.escalation_after_minutes}
+					placeholder="0" />
+				<p class="text-xs text-zinc-600">Fires a one-time notification through the stack's notification channels when a run sits in <em>unconfirmed</em> or <em>pending_approval</em> longer than this. 0 disables.</p>
 			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-destroy-at">Scheduled destroy (UTC)</label>

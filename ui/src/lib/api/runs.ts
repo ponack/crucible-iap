@@ -39,6 +39,7 @@ export interface Run {
 	approved_by_name?: string;
 	approved_by_email?: string;
 	approved_at?: string;
+	escalated_at?: string;
 	queued_at: string;
 	started_at?: string;
 	finished_at?: string;
