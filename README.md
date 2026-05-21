@@ -175,6 +175,9 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/guides/aws.md](docs/guides/aws.md) | AWS credentials, S3 remote state backend, minimal IAM role, recommended AWS policies |
 | [docs/guides/gcp.md](docs/guides/gcp.md) | GCP credentials, GCS remote state backend, Workload Identity Federation, minimal IAM roles |
 | [docs/guides/azure.md](docs/guides/azure.md) | Azure credentials, Blob Storage remote state, federated identity, minimal role assignments |
+| [docs/guides/digitalocean.md](docs/guides/digitalocean.md) | DigitalOcean Cloud — API token setup, Droplets, Spaces remote state, cost-control policies |
+| [docs/guides/hetzner.md](docs/guides/hetzner.md) | Hetzner Cloud — hcloud token, server provisioning, ARM vs x86, Hetzner Robot notes |
+| [docs/guides/kubernetes.md](docs/guides/kubernetes.md) | Kubernetes + Helm — cluster vs workload stack split, auth options, CRDs, Helm release patterns |
 | [docs/guides/aws-nuke.md](docs/guides/aws-nuke.md) | Automated AWS sandbox account cleanup with aws-nuke — three-stack setup, dry-run verification, and a self-resetting demo loop |
 | [docs/guides/proxmox.md](docs/guides/proxmox.md) | End-to-end guide: managing Proxmox VMs with GitOps and policy enforcement |
 | [docs/guides/ansible.md](docs/guides/ansible.md) | End-to-end guide: running Ansible playbooks with check → confirm → apply and policy enforcement |
@@ -182,6 +185,8 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/guides/terragrunt.md](docs/guides/terragrunt.md) | End-to-end guide: Terragrunt multi-module stacks, `run-all` lifecycle, built-in state backend wiring, multi-environment layout |
 | [docs/guides/cloudflare.md](docs/guides/cloudflare.md) | Managing Cloudflare infrastructure as code — bootstrap with cf-terraforming, Crucible stack setup, OPA policies |
 | [docs/guides/spacelift-migration.md](docs/guides/spacelift-migration.md) | Migrating from Spacelift to Crucible — concept mapping, state migration paths, and a working Cloudflare example |
+| [docs/guides/tfc-migration.md](docs/guides/tfc-migration.md) | Migrating from Terraform Cloud / Terraform Enterprise — concept mapping, state pull, Sentinel→Rego translation |
+| [docs/guides/github-actions.md](docs/guides/github-actions.md) | Triggering Crucible runs from GitHub Actions workflows — build/deploy chains, PR previews, scheduled cleanup, workflow_dispatch |
 
 ## Connecting a Git repository
 
