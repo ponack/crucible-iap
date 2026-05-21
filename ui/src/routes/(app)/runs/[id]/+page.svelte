@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
-	import { runs, type Run, type RunPolicyResult, type RunScanResult } from '$lib/api/client';
+	import {
+		runs,
+		type Run,
+		type RunPolicyResult,
+		type RunScanResult,
+		type RunCostResource
+	} from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import RunLifecycle from '$lib/components/RunLifecycle.svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
@@ -18,6 +24,8 @@
 	let policyResults = $state<RunPolicyResult[]>([]);
 	let scanResults = $state<RunScanResult[]>([]);
 	let scanExpanded = $state(false);
+	let costResources = $state<RunCostResource[]>([]);
+	let costExpanded = $state(false);
 	let explanation = $state<string | null>(null);
 	let explaining = $state(false);
 	let explainError = $state<string | null>(null);
@@ -47,6 +55,7 @@
 		error = null;
 		policyResults = [];
 		scanResults = [];
+		costResources = [];
 		sse?.close();
 		sse = null;
 
@@ -57,6 +66,7 @@
 			startSSE(id, () => token.cancelled);
 			runs.policyResults(id).then((r2) => { if (!token.cancelled) policyResults = r2; }).catch((e) => console.error('policyResults', e));
 			runs.scanResults(id).then((r2) => { if (!token.cancelled) scanResults = r2; }).catch((e) => console.error('scanResults', e));
+			runs.costResources(id).then((r2) => { if (!token.cancelled) costResources = r2; }).catch((e) => console.error('costResources', e));
 		}).catch((e) => {
 			if (token.cancelled) return;
 			error = (e as Error).message;
@@ -506,6 +516,60 @@
 					{#if failed.length === 0}
 						<p class="text-xs text-green-400 px-1">All {scanResults.length} checks passed.</p>
 					{/if}
+				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Per-resource cost breakdown -->
+	{#if costResources.length > 0}
+		{@const cur = costResources[0]?.currency || 'USD'}
+		{@const fmtMoney = (n: number) =>
+			n.toLocaleString('en-US', { style: 'currency', currency: cur, maximumFractionDigits: 2 })}
+		{@const totalDelta = costResources.reduce((acc, r) => acc + r.monthly_cost_delta, 0)}
+		{@const totalAfter = costResources.reduce((acc, r) => acc + r.monthly_cost, 0)}
+		<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-3 space-y-2">
+			<button class="w-full text-left" onclick={() => (costExpanded = !costExpanded)}>
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-3">
+						<p class="text-xs font-medium text-zinc-500 uppercase tracking-wide">Cost breakdown (Infracost)</p>
+						<span class="text-xs text-zinc-400 font-mono">{costResources.length} resources</span>
+						<span class="text-xs text-zinc-400 font-mono">total {fmtMoney(totalAfter)}/mo</span>
+						{#if totalDelta !== 0}
+							<span class="text-xs font-mono {totalDelta > 0 ? 'text-green-400' : 'text-red-400'}">
+								{totalDelta > 0 ? '+' : ''}{fmtMoney(totalDelta)} delta
+							</span>
+						{/if}
+					</div>
+					<span class="text-zinc-600 text-xs">{costExpanded ? '▲' : '▼'}</span>
+				</div>
+			</button>
+			{#if costExpanded}
+				<div class="overflow-x-auto pt-1">
+					<table class="w-full text-xs">
+						<thead>
+							<tr class="text-left text-zinc-500 border-b border-zinc-800">
+								<th class="font-medium py-1.5 pr-4">Resource</th>
+								<th class="font-medium py-1.5 pr-4">Type</th>
+								<th class="font-medium py-1.5 pr-4 text-right">Before / mo</th>
+								<th class="font-medium py-1.5 pr-4 text-right">After / mo</th>
+								<th class="font-medium py-1.5 text-right">Delta</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each costResources as r}
+								<tr class="border-b border-zinc-900 last:border-0">
+									<td class="font-mono text-zinc-300 py-1 pr-4">{r.resource_address}</td>
+									<td class="font-mono text-zinc-500 py-1 pr-4">{r.resource_type}</td>
+									<td class="font-mono text-zinc-500 py-1 pr-4 text-right">{fmtMoney(r.monthly_cost_before)}</td>
+									<td class="font-mono text-zinc-300 py-1 pr-4 text-right">{fmtMoney(r.monthly_cost)}</td>
+									<td class="font-mono py-1 text-right {r.monthly_cost_delta > 0 ? 'text-green-400' : r.monthly_cost_delta < 0 ? 'text-red-400' : 'text-zinc-600'}">
+										{r.monthly_cost_delta > 0 ? '+' : ''}{fmtMoney(r.monthly_cost_delta)}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
 				</div>
 			{/if}
 		</div>

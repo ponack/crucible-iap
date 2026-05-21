@@ -91,6 +91,35 @@ report_infracost() {
         "${API_HEADERS[@]}" \
         -d "{\"monthly_cost_add\":${cost_add},\"monthly_cost_change\":0,\"monthly_cost_remove\":${cost_remove},\"currency\":\"${currency}\"}" \
         || log "warn: failed to report infracost data"
+
+    # Per-resource breakdown — extract from .projects[].diff.resources[].
+    # Each entry: address, resource_type, monthlyCost (after), pastMonthlyCost
+    # (before), monthlyCost - pastMonthlyCost (delta), hourlyCost.
+    local resources_payload
+    resources_payload=$(printf '%s' "${cost_json}" | jq -c --arg currency "${currency}" '
+        {
+            currency: $currency,
+            resources: [
+                .projects[]?.diff?.resources[]?
+                | select(.name != null)
+                | {
+                    address: .name,
+                    resource_type: (.resourceType // ""),
+                    monthly_cost: ((.monthlyCost // "0") | tonumber),
+                    monthly_cost_before: ((.pastMonthlyCost // "0") | tonumber),
+                    monthly_cost_delta: (((.monthlyCost // "0") | tonumber) - ((.pastMonthlyCost // "0") | tonumber)),
+                    hourly_cost: ((.hourlyCost // "0") | tonumber)
+                  }
+            ]
+        }
+    ' 2>/dev/null)
+
+    if [[ -n "${resources_payload}" ]] && [[ "$(printf '%s' "${resources_payload}" | jq '.resources | length')" != "0" ]]; then
+        curl -sf -X POST "${CRUCIBLE_API_URL}/api/v1/internal/runs/${CRUCIBLE_RUN_ID}/cost-resources" \
+            "${API_HEADERS[@]}" \
+            -d "${resources_payload}" \
+            || log "warn: failed to report per-resource infracost data"
+    fi
 }
 
 # ── Provider cache (OpenTofu / Terraform) ────────────────────────────────────

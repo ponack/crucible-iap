@@ -61,6 +61,17 @@ export interface RunPolicyResult {
 	evaluated_at: string;
 }
 
+export interface RunCostResource {
+	id: number;
+	resource_address: string;
+	resource_type: string;
+	monthly_cost: number;
+	monthly_cost_before: number;
+	monthly_cost_delta: number;
+	hourly_cost: number;
+	currency: string;
+}
+
 export interface RunScanResult {
 	id: string;
 	run_id: string;
@@ -121,6 +132,7 @@ export const runs = {
 		}),
 	policyResults: (id: string) => request<RunPolicyResult[]>(`/runs/${id}/policy-results`),
 	scanResults: (id: string) => request<RunScanResult[]>(`/runs/${id}/scan-results`),
+	costResources: (id: string) => request<RunCostResource[]>(`/runs/${id}/cost-resources`),
 	explain: (id: string) => request<{ explanation: string }>(`/runs/${id}/explain`, { method: 'POST' }),
 	downloadPlan: async (id: string): Promise<Blob> => {
 		const headers: Record<string, string> = {};
