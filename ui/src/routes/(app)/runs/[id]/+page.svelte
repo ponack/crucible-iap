@@ -351,6 +351,11 @@
 					{#if run.approved_at}<span> · {fmtDate(run.approved_at)}</span>{/if}
 				</div>
 			{/if}
+			{#if run.escalated_at}
+				<div class="text-xs text-amber-400">
+					⏰ Escalated <span>· {fmtDate(run.escalated_at)}</span>
+				</div>
+			{/if}
 			{#if run.annotation || run.my_stack_role !== 'viewer'}
 				<div class="text-xs text-zinc-500 flex items-center gap-1.5">
 					<span>Note:</span>

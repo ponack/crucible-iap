@@ -722,6 +722,44 @@ func (n *Notifier) ValidationAlert(ctx context.Context, stackID, status string, 
 	}
 }
 
+// EscalationAlert fires once when a run has been waiting on confirmation
+// longer than its stack's escalation threshold. Re-uses the stack's existing
+// notification channels — the message is distinct from the initial alert
+// (intentional: many teams point the same webhook at an on-call channel).
+func (n *Notifier) EscalationAlert(ctx context.Context, runID string, waitedMinutes int) {
+	d, err := n.load(ctx, runID)
+	if err != nil {
+		slog.Warn("notify: escalation alert: failed to load run data", "run_id", runID, "err", err)
+		return
+	}
+
+	title := fmt.Sprintf("⏰ %s — run awaiting approval (%dm)", d.stackName, waitedMinutes)
+	runLink := n.runURL(runID)
+	detail := fmt.Sprintf("Run has been waiting %d minutes for confirmation. Status: %s.", waitedMinutes, d.status)
+
+	if slackURL := n.slackWebhook(d); slackURL != "" {
+		n.slackPost(ctx, slackURL, fmt.Sprintf("⏰ *%s* — %s <%s|View run>", d.stackName+" approval escalation", detail, runLink))
+	}
+	if discordURL := n.discordWebhook(d); discordURL != "" {
+		n.discordPost(ctx, discordURL, fmt.Sprintf("⏰ **%s** — %s %s", d.stackName+" approval escalation", detail, runLink))
+	}
+	if teamsURL := n.teamsWebhook(d); teamsURL != "" {
+		n.teamsPost(ctx, teamsURL, fmt.Sprintf("⏰ %s — %s %s", d.stackName+" approval escalation", detail, runLink))
+	}
+	if d.gotifyURL != "" {
+		if tok := n.gotifyToken(d); tok != "" {
+			n.gotifyPost(ctx, d.gotifyURL, tok, title, fmt.Sprintf("%s\n%s", detail, runLink))
+		}
+	}
+	if d.ntfyURL != "" {
+		n.ntfyPost(ctx, d.ntfyURL, n.ntfyToken(d), title, fmt.Sprintf("%s\n%s", detail, runLink), "high")
+	}
+	if d.notifyEmail != "" {
+		body := fmt.Sprintf("<p>%s</p><p><a href='%s'>View run</a></p>", detail, runLink)
+		n.sendEmailNotification(ctx, d.notifyEmail, title, body)
+	}
+}
+
 // ── VCS helpers ───────────────────────────────────────────────────────────────
 
 func (n *Notifier) setCommitStatus(ctx context.Context, provider, baseURL, owner, repo, sha, state, desc, token, username, runID string) {

@@ -77,6 +77,7 @@ type Run struct {
 	ApprovedByName   string     `json:"approved_by_name,omitempty"`
 	ApprovedByEmail  string     `json:"approved_by_email,omitempty"`
 	ApprovedAt       *time.Time `json:"approved_at,omitempty"`
+	EscalatedAt      *time.Time `json:"escalated_at,omitempty"`
 	QueuedAt         time.Time  `json:"queued_at"`
 	StartedAt        *time.Time `json:"started_at,omitempty"`
 	FinishedAt       *time.Time `json:"finished_at,omitempty"`
@@ -378,7 +379,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       r.plan_url IS NOT NULL,
 		       COALESCE(tb.name,''), COALESCE(tb.email,''),
 		       COALESCE(ab.name,''), COALESCE(ab.email,''),
-		       r.approved_at,
+		       r.approved_at, r.escalated_at,
 		       r.queued_at, r.started_at, r.finished_at,
 		       r.var_overrides, r.annotation,
 		       `+access.StackRoleSQL+` AS my_stack_role
@@ -397,7 +398,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&r.HasPlan,
 		&r.TriggeredByName, &r.TriggeredByEmail,
 		&r.ApprovedByName, &r.ApprovedByEmail,
-		&r.ApprovedAt,
+		&r.ApprovedAt, &r.EscalatedAt,
 		&r.QueuedAt, &r.StartedAt, &r.FinishedAt,
 		&r.VarOverrides, &r.Annotation, &r.MyStackRole)
 	if err != nil {

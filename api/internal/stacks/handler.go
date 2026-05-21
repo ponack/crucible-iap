@@ -180,6 +180,7 @@ type Stack struct {
 	ValidationInterval   int        `json:"validation_interval"`
 	ValidationStatus     string     `json:"validation_status"`
 	LastValidatedAt      *time.Time `json:"last_validated_at,omitempty"`
+	EscalationAfterMinutes *int     `json:"escalation_after_minutes"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -255,6 +256,7 @@ func (h *Handler) List(c echo.Context) error {
 		       s.is_preview, s.project_id,
 		       `+healthScoreSQL+` AS health_score,
 		       s.validation_interval, s.validation_status, s.last_validated_at,
+		       s.escalation_after_minutes,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -288,6 +290,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.IsPreview, &s.ProjectID,
 			&s.HealthScore,
 			&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
+			&s.EscalationAfterMinutes,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -504,7 +507,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       `+healthScoreSQL+` AS health_score,
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted,
-		       s.validation_interval, s.validation_status, s.last_validated_at
+		       s.validation_interval, s.validation_status, s.last_validated_at,
+		       s.escalation_after_minutes
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
 		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
@@ -534,7 +538,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.BudgetThresholdUSD,
 		&s.HealthScore,
 		&s.MyStackRole, &s.IsRestricted,
-		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt)
+		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
+		&s.EscalationAfterMinutes)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -589,6 +594,7 @@ type updateStackReq struct {
 	PlanBlockOnAlert    *bool    `json:"plan_block_on_alert"`
 	BudgetThresholdUSD  *float64 `json:"budget_threshold_usd"`   // null clears; ≤0 clears
 	ValidationInterval  *int     `json:"validation_interval"`    // minutes, 0 = disabled
+	EscalationAfterMinutes *int  `json:"escalation_after_minutes"` // null clears; 0 invalid (CHECK constraint)
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -647,6 +653,7 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	}{
 		{"max_concurrent_runs", r.MaxConcurrentRuns, -1},
 		{"validation_interval", r.ValidationInterval, 0},
+		{"escalation_after_minutes", r.EscalationAfterMinutes, -1},
 	} {
 		if f.v == nil {
 			continue

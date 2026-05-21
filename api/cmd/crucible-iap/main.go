@@ -194,6 +194,7 @@ func runWorker() {
 	worker.StartValidationScheduler(ctx, pool, q)
 	worker.StartRetentionScheduler(ctx, pool, cfg, store)
 	worker.StartApprovalExpiry(ctx, pool)
+	worker.StartApprovalEscalation(ctx, pool, n)
 
 	slog.Info("starting crucible-iap worker",
 		"max_concurrent", cfg.RunnerMaxConcurrent,
