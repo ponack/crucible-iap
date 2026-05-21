@@ -150,6 +150,9 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | Document | Description |
 | -------- | ----------- |
 | **[docs/quickstart.md](docs/quickstart.md)** | **Your first stack in 15 minutes — start here** |
+| [docs/iac-101.md](docs/iac-101.md) | **New to Infrastructure as Code?** Plan/apply/state explained, why Crucible vs raw Terraform |
+| [docs/glossary.md](docs/glossary.md) | All Crucible + Terraform / Pulumi / Ansible / OPA / VCS terminology in one place |
+| [docs/troubleshooting.md](docs/troubleshooting.md) | Common user-facing errors and fixes — plan failed, state locked, policy denied, webhook silent, etc. |
 | [docs/architecture.md](docs/architecture.md) | Component diagram, request flow, security model, DB schema |
 | [docs/operator-guide.md](docs/operator-guide.md) | Deployment, configuration reference, external worker agents, backup, monitoring, troubleshooting |
 | [docs/security.md](docs/security.md) | Threat model, hardening checklist, vulnerability reporting. GitHub Actions workflows audited with [zizmor](https://github.com/zizmorcore/zizmor) on every PR. |
@@ -158,6 +161,8 @@ See [docs/architecture.md](docs/architecture.md) for the full design including s
 | [docs/policies/README.md](docs/policies/README.md) | Ready-to-use policy templates (no-destroy, blast radius, tags, EC2 allowlist, public access, approval gates, and more) |
 | [docs/roadmap.md](docs/roadmap.md) | Expanded roadmap with implementation notes |
 | [docs/guides/team-setup.md](docs/guides/team-setup.md) | Org roles, per-stack RBAC, approval policies, recommended starter policy set |
+| [docs/guides/projects.md](docs/guides/projects.md) | Hierarchical org → project → stack model with per-project RBAC for multi-team deployments |
+| [docs/guides/cli.md](docs/guides/cli.md) | The `crucible` command-line client — trigger runs, check status, approve, scripting patterns |
 | [docs/guides/stack-templates.md](docs/guides/stack-templates.md) | Reusable stack configurations — create templates, deploy from them, good design practices |
 | [docs/guides/blueprints.md](docs/guides/blueprints.md) | Self-service stack deployment — platform teams publish blueprints, app teams fill in a form and deploy |
 | [docs/guides/provider-registry.md](docs/guides/provider-registry.md) | Private Terraform provider registry — publish binaries, configure Terraform, GPG signing |
