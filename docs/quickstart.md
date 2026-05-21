@@ -252,17 +252,52 @@ The **Dashboard** (home page after login) shows all runs awaiting approval acros
 
 ## What's next
 
+New to Infrastructure as Code? Read **[Infrastructure as Code with Crucible — A Beginner's Introduction](iac-101.md)** for the underlying concepts, and bookmark the **[Glossary](glossary.md)** for terminology.
+
+If something goes wrong during the walkthrough, check **[Troubleshooting](troubleshooting.md)** before opening an issue.
+
+### Pick your next step by role
+
+#### Infrastructure engineer — connect real infrastructure
+
 | Goal | Where to go |
 | --- | --- |
-| Manage Proxmox VMs | [docs/guides/proxmox.md](guides/proxmox.md) |
-| Run Ansible playbooks (including OS updates) | [docs/guides/ansible.md](guides/ansible.md) |
-| Use Terragrunt (multi-module repos) | [docs/guides/terragrunt.md](guides/terragrunt.md) |
-| Deploy to production with TLS | [docs/operator-guide.md](operator-guide.md) |
-| Write advanced policies | [docs/policies.md](policies.md) |
-| Add team members with OIDC | [docs/operator-guide.md](operator-guide.md#first-time-deployment) |
+| Manage AWS resources | [guides/aws.md](guides/aws.md) |
+| Manage GCP resources | [guides/gcp.md](guides/gcp.md) |
+| Manage Azure resources | [guides/azure.md](guides/azure.md) |
+| Manage Cloudflare DNS / WAF / Workers | [guides/cloudflare.md](guides/cloudflare.md) |
+| Manage Proxmox VMs | [guides/proxmox.md](guides/proxmox.md) |
+| Run Ansible playbooks | [guides/ansible.md](guides/ansible.md) |
+| Use Pulumi | [guides/pulumi.md](guides/pulumi.md) |
+| Use Terragrunt (multi-module repos) | [guides/terragrunt.md](guides/terragrunt.md) |
+
+#### Platform engineer — scale to a team
+
+| Goal | Where to go |
+| --- | --- |
+| Organize stacks for multiple teams | [guides/projects.md](guides/projects.md) |
+| Set up org roles, approval gates | [guides/team-setup.md](guides/team-setup.md) |
+| Publish reusable stack templates | [guides/stack-templates.md](guides/stack-templates.md) |
+| Self-service stack creation for app teams | [guides/blueprints.md](guides/blueprints.md) |
+| Deploy Crucible to production with TLS | [operator-guide.md](operator-guide.md) |
+
+#### Security / governance — add guardrails
+
+| Goal | Where to go |
+| --- | --- |
+| Write policies that block dangerous changes | [policies.md](policies.md) |
+| Use ready-made policy templates | [policies/README.md](policies/README.md) |
+| Sync policies from a git repo | [guides/policy-gitops.md](guides/policy-gitops.md) |
+| Enforce SOC 2 / CIS / HIPAA / PCI-DSS | [operator-guide.md#compliance-packs](operator-guide.md#compliance-packs) |
+| Stream audit events to Splunk / Datadog / etc. | [operator-guide.md#siem-audit-log-streaming](operator-guide.md#siem-audit-log-streaming) |
+| Detect drift periodically | [operator-guide.md#continuous-validation](operator-guide.md#continuous-validation) |
+
+#### Power user — automation
+
+| Goal | Where to go |
+| --- | --- |
+| Trigger and approve runs from the terminal | [guides/cli.md](guides/cli.md) |
+| Approve runs from Slack / Teams / Discord | [operator-guide.md#chatops-approvals](operator-guide.md#chatops-approvals) |
 | Reuse env vars across stacks | Settings → Variable Sets |
 | Enable Terraform cost estimates | Settings → Integrations → Infracost API key |
-| Enforce compliance controls (SOC 2, CIS, HIPAA, PCI-DSS) | [docs/operator-guide.md](operator-guide.md#compliance-packs) |
-| Get Slack/Teams approval links | [docs/operator-guide.md](operator-guide.md#chatops-approvals) |
-| Detect state drift without a push | [docs/operator-guide.md](operator-guide.md#continuous-validation) |
-| Connect Bitbucket or Azure DevOps | [docs/operator-guide.md](operator-guide.md#vcs-integrations) |
+| Connect Bitbucket or Azure DevOps | [operator-guide.md#vcs-integrations](operator-guide.md#vcs-integrations) |
