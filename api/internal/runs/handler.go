@@ -240,18 +240,42 @@ func lockedError(isLocked bool, reason *string) error {
 	return echo.NewHTTPError(http.StatusConflict, msg)
 }
 
+// requireStackWriteAccess returns nil when the caller can mutate the stack —
+// either a service-account token (which carries an org-level saRole) or a
+// member/admin stack role. Returns a 403 HTTPError otherwise.
+func requireStackWriteAccess(c echo.Context, pool *pgxpool.Pool, stackID, userID, orgID string) error {
+	if saRole, ok := c.Get("saRole").(string); ok && saRole != "" {
+		return nil
+	}
+	role, err := access.StackRole(c.Request().Context(), pool, stackID, userID, orgID)
+	if err != nil || role == "" || role == "viewer" {
+		return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
+	}
+	return nil
+}
+
+// checkRunQuota verifies the org is under its concurrent-run cap.
+// Returns nil on success, an *echo.HTTPError (429 or 500) on failure.
+func checkRunQuota(c echo.Context, pool *pgxpool.Pool, orgID string) error {
+	err := quotas.CheckConcurrentQuota(c.Request().Context(), pool, orgID)
+	if err == nil {
+		return nil
+	}
+	if q, ok := quotas.IsQuotaExceeded(err); ok {
+		return echo.NewHTTPError(http.StatusTooManyRequests,
+			fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
+	}
+	return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+}
+
 // Create enqueues a new manual run.
 func (h *Handler) Create(c echo.Context) error {
 	stackID := c.Param("stackID")
 	userID, _ := c.Get("userID").(string)
 	orgID := c.Get("orgID").(string)
 
-	// Service accounts bypass per-stack RBAC (they carry an org-level saRole).
-	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
-		role, err := access.StackRole(c.Request().Context(), h.pool, stackID, userID, orgID)
-		if err != nil || role == "" || role == "viewer" {
-			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
-		}
+	if err := requireStackWriteAccess(c, h.pool, stackID, userID, orgID); err != nil {
+		return err
 	}
 
 	var req struct {
@@ -294,12 +318,8 @@ func (h *Handler) Create(c echo.Context) error {
 		return err
 	}
 
-	if err := quotas.CheckConcurrentQuota(c.Request().Context(), h.pool, orgID); err != nil {
-		if q, ok := quotas.IsQuotaExceeded(err); ok {
-			return echo.NewHTTPError(http.StatusTooManyRequests,
-				fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	if err := checkRunQuota(c, h.pool, orgID); err != nil {
+		return err
 	}
 
 	var r Run
@@ -1036,12 +1056,8 @@ func (h *Handler) TriggerDrift(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
 
-	if err := quotas.CheckConcurrentQuota(c.Request().Context(), h.pool, orgID); err != nil {
-		if q, ok := quotas.IsQuotaExceeded(err); ok {
-			return echo.NewHTTPError(http.StatusTooManyRequests,
-				fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	if err := checkRunQuota(c, h.pool, orgID); err != nil {
+		return err
 	}
 
 	var r Run
@@ -1134,12 +1150,8 @@ func (h *Handler) Retrigger(c echo.Context) error {
 		return err
 	}
 
-	if err := quotas.CheckConcurrentQuota(c.Request().Context(), h.pool, orgID); err != nil {
-		if q, ok := quotas.IsQuotaExceeded(err); ok {
-			return echo.NewHTTPError(http.StatusTooManyRequests,
-				fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
-		}
-		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	if err := checkRunQuota(c, h.pool, orgID); err != nil {
+		return err
 	}
 
 	var r Run
