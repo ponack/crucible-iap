@@ -19,6 +19,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/quotas"
 	"github.com/ponack/crucible-iap/internal/settings"
 	"github.com/ponack/crucible-iap/internal/storage"
 )
@@ -291,6 +292,14 @@ func (h *Handler) Create(c echo.Context) error {
 	}
 	if err := lockedError(stack.IsLocked, stack.LockReason); err != nil {
 		return err
+	}
+
+	if err := quotas.CheckConcurrentQuota(c.Request().Context(), h.pool, orgID); err != nil {
+		if q, ok := quotas.IsQuotaExceeded(err); ok {
+			return echo.NewHTTPError(http.StatusTooManyRequests,
+				fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
 	var r Run
@@ -1009,6 +1018,7 @@ func (h *Handler) ReportScanResults(c echo.Context) error {
 // TriggerDrift creates a manual proposed+drift run for the given stack.
 func (h *Handler) TriggerDrift(c echo.Context) error {
 	stackID := c.Param("stackID")
+	orgID := c.Get("orgID").(string)
 
 	var stack struct {
 		Tool        string
@@ -1024,6 +1034,14 @@ func (h *Handler) TriggerDrift(c echo.Context) error {
 	`, stackID).Scan(&stack.Tool, &stack.ToolVersion, &stack.RunnerImage, &stack.RepoURL, &stack.RepoBranch, &stack.ProjectRoot)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
+	}
+
+	if err := quotas.CheckConcurrentQuota(c.Request().Context(), h.pool, orgID); err != nil {
+		if q, ok := quotas.IsQuotaExceeded(err); ok {
+			return echo.NewHTTPError(http.StatusTooManyRequests,
+				fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
 	var r Run
@@ -1114,6 +1132,14 @@ func (h *Handler) Retrigger(c echo.Context) error {
 	}
 	if err := lockedError(stack.isLocked, stack.lockReason); err != nil {
 		return err
+	}
+
+	if err := quotas.CheckConcurrentQuota(c.Request().Context(), h.pool, orgID); err != nil {
+		if q, ok := quotas.IsQuotaExceeded(err); ok {
+			return echo.NewHTTPError(http.StatusTooManyRequests,
+				fmt.Sprintf("org concurrent-run quota exceeded: %d active, cap %d", q.Current, q.Limit))
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
 
 	var r Run

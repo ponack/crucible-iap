@@ -12,3 +12,4 @@ export * from './compliance';
 export * from './siem';
 export * from './byok';
 export * from './admin';
+export * from './quotas';

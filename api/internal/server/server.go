@@ -26,6 +26,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/policies"
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/queue"
+	"github.com/ponack/crucible-iap/internal/quotas"
 	"github.com/ponack/crucible-iap/internal/registry"
 	"github.com/ponack/crucible-iap/internal/runs"
 	"github.com/ponack/crucible-iap/internal/serviceaccounts"
@@ -159,6 +160,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	siemHandler := siem.NewHandler(s.pool, v)
 	byokHandler := byok.NewHandler(s.pool, v, s.cfg.SecretKey)
 	adminHandler := admin.NewHandler(s.pool)
+	quotaHandler := quotas.NewHandler(s.pool)
 
 	// Wire audit → SIEM delivery: every audit.Record call will enqueue a fan-out job.
 	audit.SetSIEMQueue(q)
@@ -172,7 +174,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	}
 	s.registerPublicRoutes(e, authHandler, orgHandler, webhookHandler, policyGitHandler, stateHandler, githubAppHandler, runHandler)
 	api := s.registerAuthGroup(e)
-	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, githubAppHandler, member, adminRole)
+	s.registerOrgRoutes(api, orgHandler, authHandler, satHandler, integrationHandler, githubAppHandler, quotaHandler, member, adminRole)
 	s.registerPolicyRoutes(api, policyHandler, policyGitHandler, member, adminRole)
 	s.registerStackRoutes(api, stackHandler, tagHandler, envVarHandler, stateHandler,
 		webhookHandler, outgoingHandler, varSetHandler, stackMembersHandler,
@@ -259,6 +261,7 @@ func (s *Server) registerOrgRoutes(
 	satHandler *serviceaccounts.Handler,
 	integrationHandler *integrations.Handler,
 	githubAppHandler *githubapp.Handler,
+	quotaHandler *quotas.Handler,
 	member, admin echo.MiddlewareFunc,
 ) {
 	api.GET("/org/service-account-tokens", satHandler.List, admin)
@@ -276,6 +279,9 @@ func (s *Server) registerOrgRoutes(
 	api.GET("/orgs", orgHandler.ListMyOrgs)
 	api.GET("/org", orgHandler.GetOrg)
 	api.PATCH("/org", orgHandler.UpdateOrg, admin)
+	api.GET("/org/quotas", quotaHandler.Get, admin)
+	api.PUT("/org/quotas", quotaHandler.Update, admin)
+	api.GET("/org/quotas/status", quotaHandler.Status)
 	api.POST("/auth/switch-org", authHandler.SwitchOrg)
 
 	api.GET("/org/sso-group-maps", orgHandler.ListGroupMaps, admin)
