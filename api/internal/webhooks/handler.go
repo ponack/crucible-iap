@@ -111,29 +111,33 @@ func (h *Handler) dispatchEvent(
 	eventType, forge, deliveryID string,
 ) error {
 	var (
-		orgID           string
-		repoBranch      string
-		isDisabled      bool
-		tool            string
-		toolVersion     string
-		repoURL         string
-		projectRoot     string
-		runnerImage     *string
-		moduleNamespace *string
-		moduleName      *string
-		moduleProvider  *string
-		workerPoolID    *string
-		triggerPaths    []string
+		orgID                     string
+		repoBranch                string
+		isDisabled                bool
+		tool                      string
+		toolVersion               string
+		repoURL                   string
+		projectRoot               string
+		runnerImage               *string
+		moduleNamespace           *string
+		moduleName                *string
+		moduleProvider            *string
+		workerPoolID              *string
+		triggerPaths              []string
+		skipCommitMessagePatterns []string
+		skipActors                []string
 	)
 	err := h.pool.QueryRow(ctx, `
 		SELECT org_id, repo_branch, is_disabled,
 		       tool, COALESCE(tool_version,''), repo_url, project_root, runner_image,
 		       module_namespace, module_name, module_provider,
-		       worker_pool_id, trigger_paths
+		       worker_pool_id, trigger_paths,
+		       skip_commit_message_patterns, skip_actors
 		FROM stacks WHERE id = $1
 	`, stackID).Scan(&orgID, &repoBranch, &isDisabled,
 		&tool, &toolVersion, &repoURL, &projectRoot, &runnerImage,
-		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID, &triggerPaths)
+		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID, &triggerPaths,
+		&skipCommitMessagePatterns, &skipActors)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -167,6 +171,12 @@ func (h *Handler) dispatchEvent(
 	if !pathsMatchAnyGlob(triggerPaths, event.changedFiles) {
 		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "path_filter_no_match", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "no changed file matched trigger_paths"})
+	}
+
+	// Per-stack push policies — skip on commit-message substring or actor login.
+	if reason := pushPolicySkipReason(skipCommitMessagePatterns, skipActors, event.commitMessage, event.actor); reason != "" {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", reason, nil)
+		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": reason})
 	}
 
 	if err := quotas.CheckConcurrentQuota(ctx, h.pool, orgID); err != nil {
@@ -707,6 +717,10 @@ type webhookEvent struct {
 	// Empty when the forge does not include changed files in its payload
 	// (Bitbucket / ADO push, all PR events) — callers default-allow in that case.
 	changedFiles []string
+	// actor is the webhook sender's login / username. Used by the skip_actors
+	// push policy to filter out automated bots (dependabot, renovate, etc.).
+	// Empty when the forge does not include an actor identifier.
+	actor string
 }
 
 var reTagSemver = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
@@ -840,6 +854,9 @@ type ghPush struct {
 		Modified []string `json:"modified"`
 		Removed  []string `json:"removed"`
 	} `json:"commits"`
+	Sender struct {
+		Login string `json:"login"`
+	} `json:"sender"`
 }
 
 // collectChanges returns the de-duplicated union of added / modified / removed
@@ -888,7 +905,13 @@ type ghPR struct {
 			SHA string `json:"sha"`
 		} `json:"head"`
 		Title string `json:"title"`
+		User  struct {
+			Login string `json:"login"`
+		} `json:"user"`
 	} `json:"pull_request"`
+	Sender struct {
+		Login string `json:"login"`
+	} `json:"sender"`
 }
 
 func parseGitHub(event string, body []byte) (*webhookEvent, error) {
@@ -910,6 +933,7 @@ func parseGitHub(event string, body []byte) (*webhookEvent, error) {
 			commitSHA:     e.HeadCommit.ID,
 			commitMessage: firstLine(e.HeadCommit.Message),
 			changedFiles:  e.collectChanges(),
+			actor:         e.Sender.Login,
 		}, nil
 
 	case "pull_request":
@@ -936,11 +960,21 @@ func parseGitHub(event string, body []byte) (*webhookEvent, error) {
 			commitMessage: e.PullRequest.Title,
 			prNumber:      e.PullRequest.Number,
 			prURL:         e.PullRequest.HTMLURL,
+			actor:         firstNonEmpty(e.PullRequest.User.Login, e.Sender.Login),
 		}, nil
 
 	default:
 		return nil, nil // ping, star, etc.
 	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // ── GitLab event parsing ──────────────────────────────────────────────────────
@@ -954,6 +988,7 @@ type glPush struct {
 		Modified []string `json:"modified"`
 		Removed  []string `json:"removed"`
 	} `json:"commits"`
+	UserUsername string `json:"user_username"`
 }
 
 func (e *glPush) collectChanges() []string {
@@ -991,6 +1026,9 @@ type glMR struct {
 		} `json:"last_commit"`
 		Title string `json:"title"`
 	} `json:"object_attributes"`
+	User struct {
+		Username string `json:"username"`
+	} `json:"user"`
 }
 
 func parseGitLab(event string, body []byte) (*webhookEvent, error) {
@@ -1018,6 +1056,7 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 			trigger: "push", runType: "tracked",
 			branch: branch, commitSHA: sha, commitMessage: msg,
 			changedFiles: e.collectChanges(),
+			actor:        e.UserUsername,
 		}, nil
 
 	case "Merge Request Hook":
@@ -1045,6 +1084,7 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 			commitMessage: e.ObjectAttributes.Title,
 			prNumber:      e.ObjectAttributes.IID,
 			prURL:         e.ObjectAttributes.URL,
+			actor:         e.User.Username,
 		}, nil
 
 	default:
