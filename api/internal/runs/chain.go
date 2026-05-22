@@ -174,24 +174,3 @@ func loadChainStatus(ctx context.Context, pool *pgxpool.Pool, runID, stackID str
 	return out, nil
 }
 
-// validateChain checks that a chain JSON value is well-formed: each step has a
-// non-empty name and at least one approver_user_id. Caller must also verify
-// the IDs reference real org members.
-func validateChain(raw json.RawMessage) ([]ChainStep, error) {
-	if len(raw) == 0 || string(raw) == "null" {
-		return nil, nil
-	}
-	var chain []ChainStep
-	if err := json.Unmarshal(raw, &chain); err != nil {
-		return nil, fmt.Errorf("approval_chain must be an array of {name, approver_user_ids}")
-	}
-	for i, s := range chain {
-		if s.Name == "" {
-			return nil, fmt.Errorf("step %d: name is required", i)
-		}
-		if len(s.ApproverUserIDs) == 0 {
-			return nil, fmt.Errorf("step %d (%s): approver_user_ids must not be empty", i, s.Name)
-		}
-	}
-	return chain, nil
-}
