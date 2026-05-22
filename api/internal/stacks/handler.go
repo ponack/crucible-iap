@@ -184,6 +184,7 @@ type Stack struct {
 	TriggerPaths         []string   `json:"trigger_paths,omitempty"`
 	SkipCommitMessagePatterns []string `json:"skip_commit_message_patterns,omitempty"`
 	SkipActors           []string   `json:"skip_actors,omitempty"`
+	ApprovalChain        json.RawMessage `json:"approval_chain,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -261,6 +262,7 @@ func (h *Handler) List(c echo.Context) error {
 		       s.validation_interval, s.validation_status, s.last_validated_at,
 		       s.escalation_after_minutes,
 		       s.trigger_paths, s.skip_commit_message_patterns, s.skip_actors,
+		       s.approval_chain,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -296,6 +298,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
 			&s.EscalationAfterMinutes,
 			&s.TriggerPaths, &s.SkipCommitMessagePatterns, &s.SkipActors,
+			&s.ApprovalChain,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -514,7 +517,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       `+access.IsRestrictedSQL+` AS is_restricted,
 		       s.validation_interval, s.validation_status, s.last_validated_at,
 		       s.escalation_after_minutes,
-		       s.trigger_paths, s.skip_commit_message_patterns, s.skip_actors
+		       s.trigger_paths, s.skip_commit_message_patterns, s.skip_actors,
+		       s.approval_chain
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
 		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
@@ -546,7 +550,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.MyStackRole, &s.IsRestricted,
 		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
 		&s.EscalationAfterMinutes,
-		&s.TriggerPaths, &s.SkipCommitMessagePatterns, &s.SkipActors)
+		&s.TriggerPaths, &s.SkipCommitMessagePatterns, &s.SkipActors,
+		&s.ApprovalChain)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -605,6 +610,7 @@ type updateStackReq struct {
 	TriggerPaths        *[]string `json:"trigger_paths"`         // nil = unchanged, []/[nil] = clear, populated = set
 	SkipCommitMessagePatterns *[]string `json:"skip_commit_message_patterns"`
 	SkipActors          *[]string `json:"skip_actors"`
+	ApprovalChain       *json.RawMessage `json:"approval_chain"` // nil = unchanged; "null" or `[]` = clear
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -747,11 +753,26 @@ func addTextArrayUpdate(add func(string, any), col string, ptr *[]string) {
 
 // addTriggerPathsSet handles the monorepo path-filter glob list and the two
 // push-policy text[] columns (skip-on-commit-message and skip-actors) with the
-// shared addTextArrayUpdate semantics.
+// shared addTextArrayUpdate semantics. Also handles the approval_chain JSONB
+// column (nil = unchanged; "null" or empty array = clear).
 func (r *updateStackReq) addTriggerPathsSet(add func(string, any)) {
 	addTextArrayUpdate(add, "trigger_paths", r.TriggerPaths)
 	addTextArrayUpdate(add, "skip_commit_message_patterns", r.SkipCommitMessagePatterns)
 	addTextArrayUpdate(add, "skip_actors", r.SkipActors)
+	r.addApprovalChainUpdate(add)
+}
+
+func (r *updateStackReq) addApprovalChainUpdate(add func(string, any)) {
+	if r.ApprovalChain == nil {
+		return
+	}
+	raw := *r.ApprovalChain
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "null" || s == "[]" {
+		add("approval_chain", nil)
+		return
+	}
+	add("approval_chain", raw)
 }
 
 func (r *updateStackReq) addGitHubInstallationSet(add func(string, any)) {
@@ -857,6 +878,12 @@ func (h *Handler) Update(c echo.Context) error {
 			)
 		`, *req.GitHubInstallationUUID, orgID).Scan(&ok); err != nil || !ok {
 			return echo.NewHTTPError(http.StatusBadRequest, "github_installation_uuid does not belong to this org's app")
+		}
+	}
+
+	if req.ApprovalChain != nil {
+		if err := validateApprovalChain(c.Request().Context(), h.pool, orgID, *req.ApprovalChain); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 		}
 	}
 
@@ -1317,4 +1344,51 @@ func slugify(s string) string {
 		}
 	}
 	return strings.Trim(out.String(), "-")
+}
+
+// validateApprovalChain checks the shape of the incoming chain JSON and
+// confirms every referenced approver_user_id is an active member of the org.
+// A nil / "null" / `[]` payload is allowed (clears the chain).
+func validateApprovalChain(ctx context.Context, pool *pgxpool.Pool, orgID string, raw json.RawMessage) error {
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "null" || s == "[]" {
+		return nil
+	}
+	var chain []struct {
+		Name            string   `json:"name"`
+		ApproverUserIDs []string `json:"approver_user_ids"`
+	}
+	if err := json.Unmarshal(raw, &chain); err != nil {
+		return fmt.Errorf("approval_chain must be an array of {name, approver_user_ids}")
+	}
+	seen := make(map[string]bool)
+	for i, step := range chain {
+		if strings.TrimSpace(step.Name) == "" {
+			return fmt.Errorf("step %d: name is required", i)
+		}
+		if len(step.ApproverUserIDs) == 0 {
+			return fmt.Errorf("step %d (%s): approver_user_ids must not be empty", i, step.Name)
+		}
+		for _, uid := range step.ApproverUserIDs {
+			seen[uid] = true
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	var found int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM organization_members
+		WHERE org_id = $1 AND user_id = ANY($2::uuid[])
+	`, orgID, ids).Scan(&found); err != nil {
+		return fmt.Errorf("validate approvers: %w", err)
+	}
+	if found != len(ids) {
+		return fmt.Errorf("one or more approver_user_ids are not members of this org")
+	}
+	return nil
 }

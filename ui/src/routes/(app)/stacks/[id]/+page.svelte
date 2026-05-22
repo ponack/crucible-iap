@@ -75,6 +75,7 @@
 	let triggerPathsText = $state('');
 	let skipCommitMessagesText = $state('');
 	let skipActorsText = $state('');
+	let chainSteps = $state<{ name: string; approver_user_ids: string[] }[]>([]);
 
 	// Token creation
 	let newTokenName = $state('');
@@ -457,6 +458,10 @@
 		triggerPathsText = (stack.trigger_paths ?? []).join('\n');
 		skipCommitMessagesText = (stack.skip_commit_message_patterns ?? []).join('\n');
 		skipActorsText = (stack.skip_actors ?? []).join('\n');
+		chainSteps = (stack.approval_chain ?? []).map((s) => ({
+			name: s.name,
+			approver_user_ids: [...s.approver_user_ids]
+		}));
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
 		notifNtfyURL = stack.ntfy_url ?? '';
@@ -473,11 +478,15 @@
 			const trigger_paths = splitLines(triggerPathsText);
 			const skip_commit_message_patterns = splitLines(skipCommitMessagesText);
 			const skip_actors = splitLines(skipActorsText);
+			const approval_chain = chainSteps
+				.filter((s) => s.name.trim() !== '' && s.approver_user_ids.length > 0)
+				.map((s) => ({ name: s.name.trim(), approver_user_ids: s.approver_user_ids }));
 			stack = await stacks.update(stackID, {
 				...form,
 				trigger_paths,
 				skip_commit_message_patterns,
-				skip_actors
+				skip_actors,
+				approval_chain
 			});
 			editing = false;
 		} catch (e) {
@@ -1557,6 +1566,71 @@
 					bind:value={skipActorsText}
 					placeholder={"dependabot[bot]\nrenovate[bot]"}></textarea>
 				<p class="text-xs text-zinc-600">One webhook actor login per line (case-insensitive). Useful for filtering automated dependency-update PRs from Dependabot, Renovate, etc. Actor extraction works for GitHub, Gitea, Gogs, and GitLab; Bitbucket and Azure DevOps actors are not parsed yet.</p>
+			</div>
+			<div class="space-y-2">
+				<div class="flex items-center justify-between">
+					<span class="field-label">Sequential approver chain</span>
+					<button type="button"
+						onclick={() => (chainSteps = [...chainSteps, { name: '', approver_user_ids: [] }])}
+						class="text-xs text-amber-400 hover:text-amber-300">+ Add step</button>
+				</div>
+				<p class="text-xs text-zinc-600">Define an ordered series of approval steps. After a run enters <em>pending_approval</em>, an approver from step 1 must approve before step 2 is notified, and so on. The run advances to <em>unconfirmed</em> only when every step has at least one approval. Leave empty to use the existing single-approval behaviour.</p>
+				{#each chainSteps as step, i}
+					<div class="rounded-lg border border-zinc-800 p-3 space-y-2 bg-zinc-900/40">
+						<div class="flex items-center justify-between">
+							<span class="text-xs text-zinc-500 font-mono">Step {i + 1}</span>
+							<div class="flex items-center gap-2">
+								{#if i > 0}
+									<button type="button"
+										onclick={() => {
+											const t = chainSteps[i - 1];
+											chainSteps[i - 1] = chainSteps[i];
+											chainSteps[i] = t;
+											chainSteps = [...chainSteps];
+										}}
+										class="text-xs text-zinc-500 hover:text-zinc-300">▲</button>
+								{/if}
+								{#if i < chainSteps.length - 1}
+									<button type="button"
+										onclick={() => {
+											const t = chainSteps[i + 1];
+											chainSteps[i + 1] = chainSteps[i];
+											chainSteps[i] = t;
+											chainSteps = [...chainSteps];
+										}}
+										class="text-xs text-zinc-500 hover:text-zinc-300">▼</button>
+								{/if}
+								<button type="button"
+									onclick={() => (chainSteps = chainSteps.filter((_, idx) => idx !== i))}
+									class="text-xs text-red-400 hover:text-red-300">Remove</button>
+							</div>
+						</div>
+						<input type="text"
+							class="field-input text-sm"
+							placeholder="Step name (e.g. tech-lead)"
+							bind:value={step.name} />
+						<div>
+							<p class="text-xs text-zinc-600 mb-1">Eligible approvers (any one of these can satisfy the step):</p>
+							<div class="space-y-1 max-h-40 overflow-y-auto">
+								{#each orgUsers as u}
+									<label class="flex items-center gap-2 text-xs text-zinc-300">
+										<input type="checkbox"
+											checked={step.approver_user_ids.includes(u.user_id)}
+											onchange={(e) => {
+												if ((e.target as HTMLInputElement).checked) {
+													step.approver_user_ids = [...step.approver_user_ids, u.user_id];
+												} else {
+													step.approver_user_ids = step.approver_user_ids.filter((id) => id !== u.user_id);
+												}
+												chainSteps = [...chainSteps];
+											}} />
+										<span class="font-mono text-zinc-400">{u.email || u.user_id.slice(0, 8)}</span>
+									</label>
+								{/each}
+							</div>
+						</div>
+					</div>
+				{/each}
 			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-destroy-at">Scheduled destroy (UTC)</label>

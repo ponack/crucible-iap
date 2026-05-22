@@ -6,7 +6,8 @@
 		type Run,
 		type RunPolicyResult,
 		type RunScanResult,
-		type RunCostResource
+		type RunCostResource,
+		type ApprovalChainStepStatus
 	} from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import RunLifecycle from '$lib/components/RunLifecycle.svelte';
@@ -26,6 +27,7 @@
 	let scanExpanded = $state(false);
 	let costResources = $state<RunCostResource[]>([]);
 	let costExpanded = $state(false);
+	let chainStatus = $state<ApprovalChainStepStatus[]>([]);
 	let explanation = $state<string | null>(null);
 	let explaining = $state(false);
 	let explainError = $state<string | null>(null);
@@ -56,6 +58,7 @@
 		policyResults = [];
 		scanResults = [];
 		costResources = [];
+		chainStatus = [];
 		sse?.close();
 		sse = null;
 
@@ -67,6 +70,7 @@
 			runs.policyResults(id).then((r2) => { if (!token.cancelled) policyResults = r2; }).catch((e) => console.error('policyResults', e));
 			runs.scanResults(id).then((r2) => { if (!token.cancelled) scanResults = r2; }).catch((e) => console.error('scanResults', e));
 			runs.costResources(id).then((r2) => { if (!token.cancelled) costResources = r2; }).catch((e) => console.error('costResources', e));
+			runs.chainStatus(id).then((r2) => { if (!token.cancelled) chainStatus = r2; }).catch((e) => console.error('chainStatus', e));
 		}).catch((e) => {
 			if (token.cancelled) return;
 			error = (e as Error).message;
@@ -471,6 +475,39 @@
 					</div>
 				{/each}
 			</div>
+		</div>
+	{/if}
+
+	<!-- Sequential approver chain progress -->
+	{#if chainStatus.length > 0}
+		{@const currentIdx = chainStatus.findIndex((s) => !s.approved)}
+		<div class="flex-shrink-0 border-b border-zinc-800 px-6 py-3 space-y-2">
+			<p class="text-xs font-medium text-zinc-500 uppercase tracking-wide">Approval chain</p>
+			<ol class="space-y-1.5">
+				{#each chainStatus as step, i}
+					{@const isCurrent = i === currentIdx}
+					<li class="flex items-start gap-3 text-xs">
+						<span class="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-mono
+							{step.approved
+								? 'bg-green-900/60 text-green-300'
+								: isCurrent
+									? 'bg-amber-900/60 text-amber-300 animate-pulse'
+									: 'bg-zinc-800 text-zinc-500'}">
+							{step.approved ? '✓' : i + 1}
+						</span>
+						<div class="flex-1">
+							<span class="font-medium {step.approved ? 'text-green-300' : isCurrent ? 'text-amber-300' : 'text-zinc-400'}">{step.name}</span>
+							{#if step.approved && step.approved_by_id}
+								<span class="text-zinc-500"> — approved by <span class="font-mono">{step.approved_by_id.slice(0, 8)}</span></span>
+							{:else if isCurrent}
+								<span class="text-zinc-500"> — awaiting any of {step.approver_user_ids.length} approver{step.approver_user_ids.length === 1 ? '' : 's'}</span>
+							{:else}
+								<span class="text-zinc-600"> — pending earlier step</span>
+							{/if}
+						</div>
+					</li>
+				{/each}
+			</ol>
 		</div>
 	{/if}
 
