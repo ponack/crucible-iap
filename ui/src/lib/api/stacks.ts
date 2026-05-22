@@ -99,6 +99,7 @@ export interface Stack {
 	validation_status: 'pass' | 'warn' | 'fail' | 'unknown';
 	last_validated_at?: string;
 	escalation_after_minutes?: number | null;
+	trigger_paths?: string[];
 	created_at: string;
 	updated_at: string;
 }

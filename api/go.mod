@@ -6,6 +6,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.38.0
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/docker/docker v28.5.2+incompatible
+	github.com/gobwas/glob v0.2.3
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/golang-migrate/migrate/v4 v4.18.1
 	github.com/google/uuid v1.6.0
@@ -47,7 +48,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
-	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect

@@ -123,16 +123,17 @@ func (h *Handler) dispatchEvent(
 		moduleName      *string
 		moduleProvider  *string
 		workerPoolID    *string
+		triggerPaths    []string
 	)
 	err := h.pool.QueryRow(ctx, `
 		SELECT org_id, repo_branch, is_disabled,
 		       tool, COALESCE(tool_version,''), repo_url, project_root, runner_image,
 		       module_namespace, module_name, module_provider,
-		       worker_pool_id
+		       worker_pool_id, trigger_paths
 		FROM stacks WHERE id = $1
 	`, stackID).Scan(&orgID, &repoBranch, &isDisabled,
 		&tool, &toolVersion, &repoURL, &projectRoot, &runnerImage,
-		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID)
+		&moduleNamespace, &moduleName, &moduleProvider, &workerPoolID, &triggerPaths)
 	if err != nil {
 		return echo.ErrNotFound
 	}
@@ -157,6 +158,15 @@ func (h *Handler) dispatchEvent(
 	if event.runType == "tracked" && event.branch != repoBranch {
 		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "branch_mismatch", nil)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "branch not tracked"})
+	}
+
+	// Per-stack monorepo path filter. When configured, the run is only created
+	// if at least one changed file matches at least one glob. Forges that
+	// don't include changed files in the webhook payload (Bitbucket / ADO
+	// push, all PR events) fall through to the existing gating.
+	if !pathsMatchAnyGlob(triggerPaths, event.changedFiles) {
+		h.recordDelivery(orgID, stackID, forge, eventType, deliveryID, payload, "skipped", "path_filter_no_match", nil)
+		return c.JSON(http.StatusOK, map[string]string{"status": "ignored", "reason": "no changed file matched trigger_paths"})
 	}
 
 	if err := quotas.CheckConcurrentQuota(ctx, h.pool, orgID); err != nil {
@@ -692,6 +702,11 @@ type webhookEvent struct {
 	prURL         string // HTML URL of the PR/MR
 	tagName       string // set for tag pushes; mutually exclusive with branch/runType
 	prClosed      bool   // true when PR/MR is closed or merged
+	// changedFiles is the union of files added / modified / removed across all
+	// commits in the payload. Used by per-stack monorepo path filters.
+	// Empty when the forge does not include changed files in its payload
+	// (Bitbucket / ADO push, all PR events) — callers default-allow in that case.
+	changedFiles []string
 }
 
 var reTagSemver = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+`)
@@ -814,9 +829,53 @@ func verifyGitHubSig(body []byte, secret, sig string) bool {
 type ghPush struct {
 	Ref        string `json:"ref"`
 	HeadCommit struct {
-		ID      string `json:"id"`
-		Message string `json:"message"`
+		ID       string   `json:"id"`
+		Message  string   `json:"message"`
+		Added    []string `json:"added"`
+		Modified []string `json:"modified"`
+		Removed  []string `json:"removed"`
 	} `json:"head_commit"`
+	Commits []struct {
+		Added    []string `json:"added"`
+		Modified []string `json:"modified"`
+		Removed  []string `json:"removed"`
+	} `json:"commits"`
+}
+
+// collectChanges returns the de-duplicated union of added / modified / removed
+// paths across head_commit and all per-commit entries. GitHub, Gitea, and Gogs
+// payloads share this shape; GitLab is structurally identical at the commit
+// level (just no head_commit).
+func (e *ghPush) collectChanges() []string {
+	seen := make(map[string]struct{})
+	for _, p := range e.HeadCommit.Added {
+		seen[p] = struct{}{}
+	}
+	for _, p := range e.HeadCommit.Modified {
+		seen[p] = struct{}{}
+	}
+	for _, p := range e.HeadCommit.Removed {
+		seen[p] = struct{}{}
+	}
+	for _, c := range e.Commits {
+		for _, p := range c.Added {
+			seen[p] = struct{}{}
+		}
+		for _, p := range c.Modified {
+			seen[p] = struct{}{}
+		}
+		for _, p := range c.Removed {
+			seen[p] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	return out
 }
 
 type ghPR struct {
@@ -850,6 +909,7 @@ func parseGitHub(event string, body []byte) (*webhookEvent, error) {
 			branch:        branch,
 			commitSHA:     e.HeadCommit.ID,
 			commitMessage: firstLine(e.HeadCommit.Message),
+			changedFiles:  e.collectChanges(),
 		}, nil
 
 	case "pull_request":
@@ -888,9 +948,35 @@ func parseGitHub(event string, body []byte) (*webhookEvent, error) {
 type glPush struct {
 	Ref     string `json:"ref"`
 	Commits []struct {
-		ID      string `json:"id"`
-		Message string `json:"message"`
+		ID       string   `json:"id"`
+		Message  string   `json:"message"`
+		Added    []string `json:"added"`
+		Modified []string `json:"modified"`
+		Removed  []string `json:"removed"`
 	} `json:"commits"`
+}
+
+func (e *glPush) collectChanges() []string {
+	seen := make(map[string]struct{})
+	for _, c := range e.Commits {
+		for _, p := range c.Added {
+			seen[p] = struct{}{}
+		}
+		for _, p := range c.Modified {
+			seen[p] = struct{}{}
+		}
+		for _, p := range c.Removed {
+			seen[p] = struct{}{}
+		}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(seen))
+	for p := range seen {
+		out = append(out, p)
+	}
+	return out
 }
 
 type glMR struct {
@@ -931,6 +1017,7 @@ func parseGitLab(event string, body []byte) (*webhookEvent, error) {
 		return &webhookEvent{
 			trigger: "push", runType: "tracked",
 			branch: branch, commitSHA: sha, commitMessage: msg,
+			changedFiles: e.collectChanges(),
 		}, nil
 
 	case "Merge Request Hook":
