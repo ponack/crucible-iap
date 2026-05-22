@@ -181,6 +181,7 @@ type Stack struct {
 	ValidationStatus     string     `json:"validation_status"`
 	LastValidatedAt      *time.Time `json:"last_validated_at,omitempty"`
 	EscalationAfterMinutes *int     `json:"escalation_after_minutes"`
+	TriggerPaths         []string   `json:"trigger_paths,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -257,6 +258,7 @@ func (h *Handler) List(c echo.Context) error {
 		       `+healthScoreSQL+` AS health_score,
 		       s.validation_interval, s.validation_status, s.last_validated_at,
 		       s.escalation_after_minutes,
+		       s.trigger_paths,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -291,6 +293,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.HealthScore,
 			&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
 			&s.EscalationAfterMinutes,
+			&s.TriggerPaths,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -508,7 +511,8 @@ func (h *Handler) Get(c echo.Context) error {
 		       `+access.StackRoleSQL+` AS my_stack_role,
 		       `+access.IsRestrictedSQL+` AS is_restricted,
 		       s.validation_interval, s.validation_status, s.last_validated_at,
-		       s.escalation_after_minutes
+		       s.escalation_after_minutes,
+		       s.trigger_paths
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
 		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
@@ -539,7 +543,8 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.HealthScore,
 		&s.MyStackRole, &s.IsRestricted,
 		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
-		&s.EscalationAfterMinutes)
+		&s.EscalationAfterMinutes,
+		&s.TriggerPaths)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -595,6 +600,7 @@ type updateStackReq struct {
 	BudgetThresholdUSD  *float64 `json:"budget_threshold_usd"`   // null clears; ≤0 clears
 	ValidationInterval  *int     `json:"validation_interval"`    // minutes, 0 = disabled
 	EscalationAfterMinutes *int  `json:"escalation_after_minutes"` // null clears; 0 invalid (CHECK constraint)
+	TriggerPaths        *[]string `json:"trigger_paths"`         // nil = unchanged, []/[nil] = clear, populated = set
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -671,6 +677,20 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	r.addPlanAlertSets(add)
 	r.addPRPreviewSets(add)
 	r.addWorkerPoolSet(add)
+	if r.TriggerPaths != nil {
+		// Filter blanks and trim. Empty result → NULL (clear filter).
+		out := make([]string, 0, len(*r.TriggerPaths))
+		for _, p := range *r.TriggerPaths {
+			if s := strings.TrimSpace(p); s != "" {
+				out = append(out, s)
+			}
+		}
+		if len(out) == 0 {
+			add("trigger_paths", nil)
+		} else {
+			add("trigger_paths", out)
+		}
+	}
 	r.addGitHubInstallationSet(add)
 	r.addProjectIDSet(add)
 	if err := r.addScheduledDestroySet(add); err != nil {

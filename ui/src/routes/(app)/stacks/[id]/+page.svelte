@@ -71,6 +71,9 @@
 		escalation_after_minutes: 0
 	});
 
+	// trigger_paths is edited as multi-line text and split on newlines when saving
+	let triggerPathsText = $state('');
+
 	// Token creation
 	let newTokenName = $state('');
 	let creatingToken = $state(false);
@@ -449,6 +452,7 @@
 			validation_interval: stack.validation_interval ?? 0,
 			escalation_after_minutes: stack.escalation_after_minutes ?? 0
 		};
+		triggerPathsText = (stack.trigger_paths ?? []).join('\n');
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
 		notifNtfyURL = stack.ntfy_url ?? '';
@@ -460,7 +464,11 @@
 		saving = true;
 		editError = null;
 		try {
-			stack = await stacks.update(stackID, form);
+			const trigger_paths = triggerPathsText
+				.split('\n')
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0);
+			stack = await stacks.update(stackID, { ...form, trigger_paths });
 			editing = false;
 		} catch (e) {
 			editError = (e as Error).message;
@@ -1515,6 +1523,14 @@
 					bind:value={form.escalation_after_minutes}
 					placeholder="0" />
 				<p class="text-xs text-zinc-600">Fires a one-time notification through the stack's notification channels when a run sits in <em>unconfirmed</em> or <em>pending_approval</em> longer than this. 0 disables.</p>
+			</div>
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-trigger-paths">Trigger paths (monorepo filter)</label>
+				<textarea id="edit-trigger-paths"
+					class="field-input font-mono text-xs h-24"
+					bind:value={triggerPathsText}
+					placeholder={"apps/checkout/**\ninfra/**\n**/*.tf"}></textarea>
+				<p class="text-xs text-zinc-600">One glob pattern per line (gobwas/glob syntax: <code>**</code>, <code>*</code>, <code>?</code>). A push only triggers a run when at least one changed file matches at least one pattern. Leave blank to trigger on any change (current behaviour). PR events and Bitbucket / Azure DevOps push events always trigger (their payloads don't include changed files).</p>
 			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-destroy-at">Scheduled destroy (UTC)</label>
