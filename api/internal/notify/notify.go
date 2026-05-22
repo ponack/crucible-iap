@@ -722,6 +722,46 @@ func (n *Notifier) ValidationAlert(ctx context.Context, stackID, status string, 
 	}
 }
 
+// ChainStepReady fires when a sequential approver-chain step becomes the
+// current pending step (i.e. the previous step was just approved). Notifies
+// the stack's existing channels so the next approver knows it's their turn.
+// approverIDs is included in the message for traceability — Crucible doesn't
+// know how to DM individuals on every channel, so the broadcast is to the
+// stack-level channel.
+func (n *Notifier) ChainStepReady(ctx context.Context, runID string, stepIndex int, stepName string, approverIDs []string) {
+	d, err := n.load(ctx, runID)
+	if err != nil {
+		slog.Warn("notify: chain step ready: failed to load run data", "run_id", runID, "err", err)
+		return
+	}
+
+	title := fmt.Sprintf("⛓️ %s — approval step %d (%s) ready", d.stackName, stepIndex+1, stepName)
+	runLink := n.runURL(runID)
+	detail := fmt.Sprintf("Step %d (%s) is now awaiting approval. Eligible approvers (%d).", stepIndex+1, stepName, len(approverIDs))
+
+	if slackURL := n.slackWebhook(d); slackURL != "" {
+		n.slackPost(ctx, slackURL, fmt.Sprintf("⛓️ *%s* — %s <%s|View run>", d.stackName+" approval chain", detail, runLink))
+	}
+	if discordURL := n.discordWebhook(d); discordURL != "" {
+		n.discordPost(ctx, discordURL, fmt.Sprintf("⛓️ **%s** — %s %s", d.stackName+" approval chain", detail, runLink))
+	}
+	if teamsURL := n.teamsWebhook(d); teamsURL != "" {
+		n.teamsPost(ctx, teamsURL, fmt.Sprintf("⛓️ %s — %s %s", d.stackName+" approval chain", detail, runLink))
+	}
+	if d.gotifyURL != "" {
+		if tok := n.gotifyToken(d); tok != "" {
+			n.gotifyPost(ctx, d.gotifyURL, tok, title, fmt.Sprintf("%s\n%s", detail, runLink))
+		}
+	}
+	if d.ntfyURL != "" {
+		n.ntfyPost(ctx, d.ntfyURL, n.ntfyToken(d), title, fmt.Sprintf("%s\n%s", detail, runLink), "default")
+	}
+	if d.notifyEmail != "" {
+		body := fmt.Sprintf("<p>%s</p><p><a href='%s'>View run</a></p>", detail, runLink)
+		n.sendEmailNotification(ctx, d.notifyEmail, title, body)
+	}
+}
+
 // EscalationAlert fires once when a run has been waiting on confirmation
 // longer than its stack's escalation threshold. Re-uses the stack's existing
 // notification channels — the message is distinct from the initial alert

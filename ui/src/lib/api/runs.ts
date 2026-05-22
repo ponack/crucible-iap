@@ -134,6 +134,8 @@ export const runs = {
 	policyResults: (id: string) => request<RunPolicyResult[]>(`/runs/${id}/policy-results`),
 	scanResults: (id: string) => request<RunScanResult[]>(`/runs/${id}/scan-results`),
 	costResources: (id: string) => request<RunCostResource[]>(`/runs/${id}/cost-resources`),
+	chainStatus: (id: string) =>
+		request<import('./stacks').ApprovalChainStepStatus[]>(`/runs/${id}/chain`),
 	explain: (id: string) => request<{ explanation: string }>(`/runs/${id}/explain`, { method: 'POST' }),
 	downloadPlan: async (id: string): Promise<Blob> => {
 		const headers: Record<string, string> = {};

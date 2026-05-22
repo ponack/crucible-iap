@@ -16,6 +16,20 @@ export interface Tag {
 	created_at: string;
 }
 
+export interface ApprovalChainStep {
+	name: string;
+	approver_user_ids: string[];
+}
+
+export interface ApprovalChainStepStatus {
+	step_index: number;
+	name: string;
+	approved: boolean;
+	approver_user_ids: string[];
+	approved_by_id?: string;
+	approved_at?: string;
+}
+
 export interface Stack {
 	id: string;
 	org_id: string;
@@ -102,6 +116,7 @@ export interface Stack {
 	trigger_paths?: string[];
 	skip_commit_message_patterns?: string[];
 	skip_actors?: string[];
+	approval_chain?: ApprovalChainStep[];
 	created_at: string;
 	updated_at: string;
 }

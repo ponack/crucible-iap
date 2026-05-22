@@ -4,6 +4,7 @@ package runs
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/chatops"
 	"github.com/ponack/crucible-iap/internal/config"
+	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/pagination"
 	"github.com/ponack/crucible-iap/internal/queue"
 	"github.com/ponack/crucible-iap/internal/quotas"
@@ -25,14 +27,15 @@ import (
 )
 
 type Handler struct {
-	pool    *pgxpool.Pool
-	cfg     *config.Config
-	queue   *queue.Client
-	storage *storage.Client
+	pool     *pgxpool.Pool
+	cfg      *config.Config
+	queue    *queue.Client
+	storage  *storage.Client
+	notifier *notify.Notifier
 }
 
-func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, s *storage.Client) *Handler {
-	return &Handler{pool: pool, cfg: cfg, queue: q, storage: s}
+func NewHandler(pool *pgxpool.Pool, cfg *config.Config, q *queue.Client, s *storage.Client, n *notify.Notifier) *Handler {
+	return &Handler{pool: pool, cfg: cfg, queue: q, storage: s, notifier: n}
 }
 
 // runnerAPIURL returns the URL runner containers should use to reach the
@@ -494,17 +497,33 @@ func (h *Handler) Approve(c echo.Context) error {
 	id := c.Param("id")
 	userID, _ := c.Get("userID").(string)
 	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
 
 	if saRole, ok := c.Get("saRole").(string); !ok || saRole == "" {
-		role, err := access.StackRoleForRun(c.Request().Context(), h.pool, id, userID, orgID)
+		role, err := access.StackRoleForRun(ctx, h.pool, id, userID, orgID)
 		if err != nil || role == "" || role == "viewer" {
 			return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions for this stack")
 		}
 	}
 
+	// Resolve the stack to check for a configured approval chain. When set,
+	// dispatch to the chain-aware flow (one approval per step, fully
+	// satisfied chain transitions to unconfirmed).
+	var stackID string
+	if err := h.pool.QueryRow(ctx, `SELECT stack_id FROM runs WHERE id = $1`, id).Scan(&stackID); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+	chain, chainErr := loadStackChain(ctx, h.pool, stackID)
+	if chainErr != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, chainErr.Error())
+	}
+	if len(chain) > 0 {
+		return h.approveWithChain(c, id, userID, chain)
+	}
+
 	var r Run
 	var autoApply bool
-	err := h.pool.QueryRow(c.Request().Context(), `
+	err := h.pool.QueryRow(ctx, `
 		UPDATE runs SET status = 'unconfirmed', approved_by = $2, approved_at = now()
 		WHERE id = $1 AND status = 'pending_approval'
 		RETURNING id, stack_id, type, status, var_overrides,
@@ -542,6 +561,87 @@ func (h *Handler) Approve(c echo.Context) error {
 		ActorID: userID, Action: "run.approved", ResourceID: id, ResourceType: "run",
 	})
 	return c.NoContent(http.StatusNoContent)
+}
+
+// approveWithChain records an approval against the current pending step in a
+// stack's configured approval chain. When every step has at least one approval,
+// the run advances to `unconfirmed`. Otherwise it stays in `pending_approval`
+// and the next step's approvers are notified.
+func (h *Handler) approveWithChain(c echo.Context, runID, userID string, chain []ChainStep) error {
+	ctx := c.Request().Context()
+
+	// Confirm the run is still in pending_approval before recording.
+	var status string
+	if err := h.pool.QueryRow(ctx, `SELECT status FROM runs WHERE id = $1`, runID).Scan(&status); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+	if status != "pending_approval" {
+		return echo.NewHTTPError(http.StatusConflict, "run is not awaiting approval")
+	}
+
+	next, err := recordChainApproval(ctx, h.pool, runID, userID, chain)
+	if err != nil {
+		var notElig *ErrNotEligibleForStep
+		if errors.As(err, &notElig) {
+			return echo.NewHTTPError(http.StatusForbidden, notElig.Error())
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+
+	audit.Record(ctx, h.pool, audit.Event{
+		ActorID: userID, Action: "run.chain_step_approved",
+		ResourceID: runID, ResourceType: "run",
+	})
+
+	if next < len(chain) {
+		// Chain not yet satisfied — leave run in pending_approval and notify
+		// the next step's approvers so they know it's their turn.
+		if h.notifier != nil {
+			h.notifier.ChainStepReady(ctx, runID, next, chain[next].Name, chain[next].ApproverUserIDs)
+		}
+		return c.NoContent(http.StatusNoContent)
+	}
+
+	// Final step approved — transition to unconfirmed. The full chain is
+	// considered the approval; `approved_by` records the user who satisfied
+	// the last step, matching the single-approval semantics.
+	if _, err := h.pool.Exec(ctx, `
+		UPDATE runs SET status = 'unconfirmed', approved_by = $2, approved_at = now()
+		WHERE id = $1 AND status = 'pending_approval'
+	`, runID, userID); err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	audit.Record(ctx, h.pool, audit.Event{
+		ActorID: userID, Action: "run.approved",
+		ResourceID: runID, ResourceType: "run",
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ChainStatus returns the per-step approval chain progress for a run.
+// Returns an empty array when the stack has no chain configured.
+func (h *Handler) ChainStatus(c echo.Context) error {
+	id := c.Param("id")
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+
+	var stackID string
+	if err := h.pool.QueryRow(ctx, `
+		SELECT r.stack_id FROM runs r
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1 AND s.org_id = $2
+	`, id, orgID).Scan(&stackID); err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "run not found")
+	}
+
+	status, err := loadChainStatus(ctx, h.pool, id, stackID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	if status == nil {
+		status = []ChainStepStatus{}
+	}
+	return c.JSON(http.StatusOK, status)
 }
 
 // Discard rejects an unconfirmed run.
