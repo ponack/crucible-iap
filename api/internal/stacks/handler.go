@@ -182,6 +182,8 @@ type Stack struct {
 	LastValidatedAt      *time.Time `json:"last_validated_at,omitempty"`
 	EscalationAfterMinutes *int     `json:"escalation_after_minutes"`
 	TriggerPaths         []string   `json:"trigger_paths,omitempty"`
+	SkipCommitMessagePatterns []string `json:"skip_commit_message_patterns,omitempty"`
+	SkipActors           []string   `json:"skip_actors,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -258,7 +260,7 @@ func (h *Handler) List(c echo.Context) error {
 		       `+healthScoreSQL+` AS health_score,
 		       s.validation_interval, s.validation_status, s.last_validated_at,
 		       s.escalation_after_minutes,
-		       s.trigger_paths,
+		       s.trigger_paths, s.skip_commit_message_patterns, s.skip_actors,
 		       COUNT(*) OVER () AS total
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $2
@@ -293,7 +295,7 @@ func (h *Handler) List(c echo.Context) error {
 			&s.HealthScore,
 			&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
 			&s.EscalationAfterMinutes,
-			&s.TriggerPaths,
+			&s.TriggerPaths, &s.SkipCommitMessagePatterns, &s.SkipActors,
 			&total); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
@@ -512,7 +514,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       `+access.IsRestrictedSQL+` AS is_restricted,
 		       s.validation_interval, s.validation_status, s.last_validated_at,
 		       s.escalation_after_minutes,
-		       s.trigger_paths
+		       s.trigger_paths, s.skip_commit_message_patterns, s.skip_actors
 		FROM stacks s
 		LEFT JOIN organization_members om ON om.org_id = s.org_id AND om.user_id = $3
 		LEFT JOIN stack_members sm ON sm.stack_id = s.id AND sm.user_id = $3
@@ -544,7 +546,7 @@ func (h *Handler) Get(c echo.Context) error {
 		&s.MyStackRole, &s.IsRestricted,
 		&s.ValidationInterval, &s.ValidationStatus, &s.LastValidatedAt,
 		&s.EscalationAfterMinutes,
-		&s.TriggerPaths)
+		&s.TriggerPaths, &s.SkipCommitMessagePatterns, &s.SkipActors)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, "stack not found")
 	}
@@ -601,6 +603,8 @@ type updateStackReq struct {
 	ValidationInterval  *int     `json:"validation_interval"`    // minutes, 0 = disabled
 	EscalationAfterMinutes *int  `json:"escalation_after_minutes"` // null clears; 0 invalid (CHECK constraint)
 	TriggerPaths        *[]string `json:"trigger_paths"`         // nil = unchanged, []/[nil] = clear, populated = set
+	SkipCommitMessagePatterns *[]string `json:"skip_commit_message_patterns"`
+	SkipActors          *[]string `json:"skip_actors"`
 }
 
 // buildSets returns the SET column names and argument values for a PATCH query.
@@ -721,25 +725,33 @@ func (r *updateStackReq) addWorkerPoolSet(add func(string, any)) {
 	}
 }
 
-// addTriggerPathsSet adds the monorepo path-filter glob list to the SET clause.
-// nil pointer = no change; empty (or only-blank) slice = clear the filter
-// (stores NULL); populated slice = set after trimming whitespace and dropping
-// blank entries.
-func (r *updateStackReq) addTriggerPathsSet(add func(string, any)) {
-	if r.TriggerPaths == nil {
+// addTextArrayUpdate writes a TEXT[] column update with shared semantics:
+// nil pointer = no change; empty (or only-blank) slice = clear (stores NULL);
+// populated slice = set after trimming whitespace and dropping blank entries.
+func addTextArrayUpdate(add func(string, any), col string, ptr *[]string) {
+	if ptr == nil {
 		return
 	}
-	out := make([]string, 0, len(*r.TriggerPaths))
-	for _, p := range *r.TriggerPaths {
+	out := make([]string, 0, len(*ptr))
+	for _, p := range *ptr {
 		if s := strings.TrimSpace(p); s != "" {
 			out = append(out, s)
 		}
 	}
 	if len(out) == 0 {
-		add("trigger_paths", nil)
+		add(col, nil)
 		return
 	}
-	add("trigger_paths", out)
+	add(col, out)
+}
+
+// addTriggerPathsSet handles the monorepo path-filter glob list and the two
+// push-policy text[] columns (skip-on-commit-message and skip-actors) with the
+// shared addTextArrayUpdate semantics.
+func (r *updateStackReq) addTriggerPathsSet(add func(string, any)) {
+	addTextArrayUpdate(add, "trigger_paths", r.TriggerPaths)
+	addTextArrayUpdate(add, "skip_commit_message_patterns", r.SkipCommitMessagePatterns)
+	addTextArrayUpdate(add, "skip_actors", r.SkipActors)
 }
 
 func (r *updateStackReq) addGitHubInstallationSet(add func(string, any)) {

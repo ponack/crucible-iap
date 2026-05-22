@@ -73,6 +73,8 @@
 
 	// trigger_paths is edited as multi-line text and split on newlines when saving
 	let triggerPathsText = $state('');
+	let skipCommitMessagesText = $state('');
+	let skipActorsText = $state('');
 
 	// Token creation
 	let newTokenName = $state('');
@@ -453,6 +455,8 @@
 			escalation_after_minutes: stack.escalation_after_minutes ?? 0
 		};
 		triggerPathsText = (stack.trigger_paths ?? []).join('\n');
+		skipCommitMessagesText = (stack.skip_commit_message_patterns ?? []).join('\n');
+		skipActorsText = (stack.skip_actors ?? []).join('\n');
 		notifEvents = [...(stack.notify_events ?? [])];
 		notifGotifyURL = stack.gotify_url ?? '';
 		notifNtfyURL = stack.ntfy_url ?? '';
@@ -464,11 +468,17 @@
 		saving = true;
 		editError = null;
 		try {
-			const trigger_paths = triggerPathsText
-				.split('\n')
-				.map((s) => s.trim())
-				.filter((s) => s.length > 0);
-			stack = await stacks.update(stackID, { ...form, trigger_paths });
+			const splitLines = (t: string) =>
+				t.split('\n').map((s) => s.trim()).filter((s) => s.length > 0);
+			const trigger_paths = splitLines(triggerPathsText);
+			const skip_commit_message_patterns = splitLines(skipCommitMessagesText);
+			const skip_actors = splitLines(skipActorsText);
+			stack = await stacks.update(stackID, {
+				...form,
+				trigger_paths,
+				skip_commit_message_patterns,
+				skip_actors
+			});
 			editing = false;
 		} catch (e) {
 			editError = (e as Error).message;
@@ -1531,6 +1541,22 @@
 					bind:value={triggerPathsText}
 					placeholder={"apps/checkout/**\ninfra/**\n**/*.tf"}></textarea>
 				<p class="text-xs text-zinc-600">One glob pattern per line (gobwas/glob syntax: <code>**</code>, <code>*</code>, <code>?</code>). A push only triggers a run when at least one changed file matches at least one pattern. Leave blank to trigger on any change (current behaviour). PR events and Bitbucket / Azure DevOps push events always trigger (their payloads don't include changed files).</p>
+			</div>
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-skip-commit-messages">Skip commit-message patterns</label>
+				<textarea id="edit-skip-commit-messages"
+					class="field-input font-mono text-xs h-20"
+					bind:value={skipCommitMessagesText}
+					placeholder={"[skip ci]\n[skip crucible]\n[ci skip]"}></textarea>
+				<p class="text-xs text-zinc-600">One substring per line. If the incoming commit message contains any of them (case-sensitive), the run is not created. Use to opt out of CI on docs-only commits or work-in-progress pushes.</p>
+			</div>
+			<div class="space-y-1.5">
+				<label class="field-label" for="edit-skip-actors">Skip actors (bots)</label>
+				<textarea id="edit-skip-actors"
+					class="field-input font-mono text-xs h-20"
+					bind:value={skipActorsText}
+					placeholder={"dependabot[bot]\nrenovate[bot]"}></textarea>
+				<p class="text-xs text-zinc-600">One webhook actor login per line (case-insensitive). Useful for filtering automated dependency-update PRs from Dependabot, Renovate, etc. Actor extraction works for GitHub, Gitea, Gogs, and GitLab; Bitbucket and Azure DevOps actors are not parsed yet.</p>
 			</div>
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-destroy-at">Scheduled destroy (UTC)</label>

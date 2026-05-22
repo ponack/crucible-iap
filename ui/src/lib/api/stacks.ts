@@ -100,6 +100,8 @@ export interface Stack {
 	last_validated_at?: string;
 	escalation_after_minutes?: number | null;
 	trigger_paths?: string[];
+	skip_commit_message_patterns?: string[];
+	skip_actors?: string[];
 	created_at: string;
 	updated_at: string;
 }
