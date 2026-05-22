@@ -677,20 +677,7 @@ func (r *updateStackReq) buildSets() (sets []string, args []any, err error) {
 	r.addPlanAlertSets(add)
 	r.addPRPreviewSets(add)
 	r.addWorkerPoolSet(add)
-	if r.TriggerPaths != nil {
-		// Filter blanks and trim. Empty result → NULL (clear filter).
-		out := make([]string, 0, len(*r.TriggerPaths))
-		for _, p := range *r.TriggerPaths {
-			if s := strings.TrimSpace(p); s != "" {
-				out = append(out, s)
-			}
-		}
-		if len(out) == 0 {
-			add("trigger_paths", nil)
-		} else {
-			add("trigger_paths", out)
-		}
-	}
+	r.addTriggerPathsSet(add)
 	r.addGitHubInstallationSet(add)
 	r.addProjectIDSet(add)
 	if err := r.addScheduledDestroySet(add); err != nil {
@@ -732,6 +719,27 @@ func (r *updateStackReq) addWorkerPoolSet(add func(string, any)) {
 	} else {
 		add("worker_pool_id", *r.WorkerPoolID)
 	}
+}
+
+// addTriggerPathsSet adds the monorepo path-filter glob list to the SET clause.
+// nil pointer = no change; empty (or only-blank) slice = clear the filter
+// (stores NULL); populated slice = set after trimming whitespace and dropping
+// blank entries.
+func (r *updateStackReq) addTriggerPathsSet(add func(string, any)) {
+	if r.TriggerPaths == nil {
+		return
+	}
+	out := make([]string, 0, len(*r.TriggerPaths))
+	for _, p := range *r.TriggerPaths {
+		if s := strings.TrimSpace(p); s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		add("trigger_paths", nil)
+		return
+	}
+	add("trigger_paths", out)
 }
 
 func (r *updateStackReq) addGitHubInstallationSet(add func(string, any)) {
