@@ -33,6 +33,23 @@
 
 Crucible runs entirely inside Docker. No other runtime dependencies are needed on the host.
 
+### Do I need a DNS domain?
+
+Not for trying it out. Yes for most production scenarios. Specifically:
+
+| Scenario | Domain required? | Why |
+| --- | --- | --- |
+| Quickstart on your laptop | **No** | `https://localhost` with self-signed cert works fine; accept the browser warning |
+| Local-auth only, manual run triggers | **No** | Same as quickstart — no external systems need to reach Crucible |
+| Internal use behind a VPN with a private hostname | **No** | A `crucible.internal` or LAN IP works; provide your own TLS cert via the external-proxy profile, or run on HTTP if your network is trusted |
+| Let's Encrypt automatic TLS via bundled Caddy | **Yes (public DNS)** | Let's Encrypt needs to validate a real DNS-resolvable hostname |
+| VCS webhooks from cloud-hosted GitHub / GitLab / Bitbucket | **Yes (publicly reachable)** | The VCS POSTs to Crucible from the internet; the URL must resolve and connect from there |
+| OIDC SSO via Okta, Auth0, GitHub, etc. | **Usually yes** | Most IdPs require HTTPS with a trusted cert for the redirect URL |
+| Cloud OIDC workload identity federation (AWS / GCP / Azure) | **Yes** | AWS / GCP / Azure fetch the JWKS from `<CRUCIBLE_BASE_URL>/.well-known/jwks.json` — the URL must be publicly reachable |
+| ChatOps approvals from Slack / Teams / Discord | **Yes** | Approval links in the notification must be clickable from inside the chat client |
+
+A subdomain like `crucible.example.com` is the typical setup. Set `CRUCIBLE_BASE_URL` to that hostname and `CADDY_ACME_EMAIL` to your email — Caddy will provision a Let's Encrypt cert on first start.
+
 ---
 
 ## First-time deployment
