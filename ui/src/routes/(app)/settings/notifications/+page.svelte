@@ -197,12 +197,14 @@
 	<!-- Section tabs -->
 	<div class="border-b border-zinc-800 -mx-2 px-2 flex gap-1 overflow-x-auto">
 		{#each notifSections as s}
+			{@const active = notifSection === s.id}
 			<button type="button"
 				onclick={() => (notifSection = s.id)}
-				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap
-					{notifSection === s.id
-						? 'border-amber-400 text-amber-300'
-						: 'border-transparent text-zinc-400 hover:text-zinc-100'}">
+				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap"
+				style={active
+					? 'color: var(--accent); border-bottom-color: var(--accent);'
+					: 'color: var(--color-zinc-400); border-bottom-color: transparent;'}
+				class:hover:text-zinc-100={!active}>
 				{s.label}
 			</button>
 		{/each}

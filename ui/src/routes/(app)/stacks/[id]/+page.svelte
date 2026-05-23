@@ -1514,12 +1514,15 @@
 			<aside class="w-44 shrink-0 border-r border-zinc-800 pr-3">
 				<nav class="space-y-0.5 sticky top-2">
 					{#each editSections as s}
+						{@const active = editSection === s.id}
 						<button type="button"
 							onclick={() => (editSection = s.id)}
-							class="w-full text-left flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors
-								{editSection === s.id
-									? 'bg-zinc-800 text-white font-medium'
-									: 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50'}">
+							class="w-full text-left flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors relative"
+							style={active
+								? 'color: var(--accent); background: var(--accent-muted); border-left: 2px solid var(--accent); padding-left: calc(0.75rem - 2px); font-weight: 500;'
+								: 'color: var(--color-zinc-400);'}
+							class:hover:bg-zinc-800={!active}
+							class:hover:text-zinc-100={!active}>
 							{s.label}
 						</button>
 					{/each}
