@@ -6,6 +6,23 @@
 	let loading = $state(true);
 	let health = $state<HealthStatus | null>(null);
 
+	// Section tabs at the top of the page; the General settings page bundles
+	// eight distinct topics that previously scrolled in one long column.
+	type SettingsSection =
+		| 'account' | 'runner' | 'retention' | 'oidc'
+		| 'scanning' | 'infracost' | 'ai' | 'info';
+	let settingsSection = $state<SettingsSection>('account');
+	const settingsSections: { id: SettingsSection; label: string }[] = [
+		{ id: 'account',   label: 'Account' },
+		{ id: 'runner',    label: 'Runner' },
+		{ id: 'retention', label: 'Retention' },
+		{ id: 'oidc',      label: 'Cloud OIDC' },
+		{ id: 'scanning',  label: 'IaC scanning' },
+		{ id: 'infracost', label: 'Infracost' },
+		{ id: 'ai',        label: 'AI' },
+		{ id: 'info',      label: 'Instance info' }
+	];
+
 	// Runner settings
 	let runnerSettings = $state<SystemSettings | null>(null);
 	let runnerForm = $state({ runner_default_image: '', runner_max_concurrent: 5, runner_job_timeout_mins: 60, runner_memory_limit: '', runner_cpu_limit: '' });
@@ -231,6 +248,21 @@
 		</div>
 	{/if}
 
+	<!-- Section tabs -->
+	<div class="border-b border-zinc-800 -mx-2 px-2 flex gap-1 overflow-x-auto">
+		{#each settingsSections as s}
+			<button type="button"
+				onclick={() => (settingsSection = s.id)}
+				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap
+					{settingsSection === s.id
+						? 'border-amber-400 text-amber-300'
+						: 'border-transparent text-zinc-400 hover:text-zinc-100'}">
+				{s.label}
+			</button>
+		{/each}
+	</div>
+
+	{#if settingsSection === 'account'}
 	<!-- Account -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 		<div class="px-6 py-4">
@@ -241,9 +273,10 @@
 			</div>
 		</div>
 	</div>
+	{/if}
 
 	<!-- Runner settings -->
-	{#if runnerSettings}
+	{#if settingsSection === 'runner' && runnerSettings}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 			<div class="px-6 py-4 border-b border-zinc-800">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest">Runner</p>
@@ -294,8 +327,10 @@
 				</div>
 			</form>
 		</div>
+	{/if}
 
-		<!-- Retention -->
+	<!-- Retention -->
+	{#if settingsSection === 'retention' && runnerSettings}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 			<div class="px-6 py-4 border-b border-zinc-800">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest">Retention</p>
@@ -330,7 +365,7 @@
 	{/if}
 
 	<!-- Org OIDC default -->
-	{#if runnerSettings}
+	{#if settingsSection === 'oidc' && runnerSettings}
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800">
 			<p class="text-xs text-zinc-500 uppercase tracking-widest">Cloud OIDC default</p>
@@ -486,7 +521,7 @@
 	{/if}
 
 	<!-- IaC security scanning -->
-	{#if auth.isAdmin}
+	{#if settingsSection === 'scanning' && auth.isAdmin}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 			<div class="px-6 py-4 flex items-start justify-between gap-4">
 				<div>
@@ -535,7 +570,7 @@
 	{/if}
 
 	<!-- Infracost -->
-	{#if auth.isAdmin}
+	{#if settingsSection === 'infracost' && auth.isAdmin}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 			<div class="px-6 py-4 flex items-start justify-between gap-4">
 				<div>
@@ -580,7 +615,7 @@
 	{/if}
 
 	<!-- AI -->
-	{#if auth.isAdmin}
+	{#if settingsSection === 'ai' && auth.isAdmin}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 			<div class="px-6 py-4 flex items-center justify-between">
 				<div>
@@ -645,7 +680,7 @@
 	{/if}
 
 	<!-- Instance info -->
-	{#if health}
+	{#if settingsSection === 'info' && health}
 		<div class="bg-zinc-900 border border-zinc-800 rounded-xl divide-y divide-zinc-700">
 			<div class="px-6 py-4">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest mb-3">Instance</p>
