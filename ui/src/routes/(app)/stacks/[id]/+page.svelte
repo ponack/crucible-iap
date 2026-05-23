@@ -77,6 +77,32 @@
 	let skipActorsText = $state('');
 	let chainSteps = $state<{ name: string; approver_user_ids: string[] }[]>([]);
 
+	// Edit-form section navigation. The form holds 30+ fields; sidebar tabs
+	// surface logical groups one at a time. Default lands on 'general' which
+	// holds the must-have identity + repo fields most users edit first.
+	type EditSection =
+		| 'general'
+		| 'runtime'
+		| 'validation'
+		| 'approvals'
+		| 'webhooks'
+		| 'scheduling'
+		| 'hooks'
+		| 'pr_previews'
+		| 'budget';
+	let editSection = $state<EditSection>('general');
+	const editSections: { id: EditSection; label: string }[] = [
+		{ id: 'general',     label: 'General' },
+		{ id: 'runtime',     label: 'Runtime' },
+		{ id: 'validation',  label: 'Validation' },
+		{ id: 'approvals',   label: 'Approvals' },
+		{ id: 'webhooks',    label: 'Webhooks' },
+		{ id: 'scheduling',  label: 'Scheduling' },
+		{ id: 'hooks',       label: 'Lifecycle hooks' },
+		{ id: 'pr_previews', label: 'PR previews' },
+		{ id: 'budget',      label: 'Budget alerts' }
+	];
+
 	// Token creation
 	let newTokenName = $state('');
 	let creatingToken = $state(false);
@@ -422,6 +448,7 @@
 
 	function resetForm() {
 		if (!stack) return;
+		editSection = 'general';
 		form = {
 			name: stack.name,
 			description: stack.description ?? '',
@@ -1482,7 +1509,27 @@
 		{#if editError}
 			<div class="mb-4 bg-red-950 border border-red-800 rounded-lg px-4 py-3 text-red-300 text-sm">{editError}</div>
 		{/if}
-		<form onsubmit={saveEdit} class="space-y-4">
+		<form onsubmit={saveEdit} class="flex gap-6 min-h-[500px]">
+			<!-- Sidebar nav -->
+			<aside class="w-44 shrink-0 border-r border-zinc-800 pr-3">
+				<nav class="space-y-0.5 sticky top-2">
+					{#each editSections as s}
+						<button type="button"
+							onclick={() => (editSection = s.id)}
+							class="w-full text-left flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors
+								{editSection === s.id
+									? 'bg-zinc-800 text-white font-medium'
+									: 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50'}">
+							{s.label}
+						</button>
+					{/each}
+				</nav>
+			</aside>
+
+			<!-- Section content -->
+			<div class="flex-1 min-w-0 space-y-4">
+
+			{#if editSection === 'general'}
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-1.5">
 					<label class="field-label" for="edit-name">Name</label>
@@ -1505,6 +1552,9 @@
 				<label class="field-label" for="edit-root">Project root</label>
 				<input id="edit-root" class="field-input font-mono text-sm" bind:value={form.project_root} />
 			</div>
+			{/if}
+
+			{#if editSection === 'runtime'}
 			<div class="flex gap-6 flex-wrap">
 				<label class="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
 					<input type="checkbox" bind:checked={form.auto_apply} /> Auto-apply
@@ -1527,6 +1577,9 @@
 					Auto-remediate drift — automatically apply when drift is detected
 				</label>
 			{/if}
+			{/if}
+
+			{#if editSection === 'validation'}
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-validation-interval">Continuous validation interval (minutes)</label>
 				<input id="edit-validation-interval" type="number" min="0" step="5"
@@ -1535,6 +1588,9 @@
 					placeholder="0" />
 				<p class="text-xs text-zinc-600">Set to 0 to disable. Requires at least one <em>validation</em>-type policy attached to the stack.</p>
 			</div>
+			{/if}
+
+			{#if editSection === 'approvals'}
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-escalation-after">Approval escalation after (minutes)</label>
 				<input id="edit-escalation-after" type="number" min="0" step="15"
@@ -1543,6 +1599,9 @@
 					placeholder="0" />
 				<p class="text-xs text-zinc-600">Fires a one-time notification through the stack's notification channels when a run sits in <em>unconfirmed</em> or <em>pending_approval</em> longer than this. 0 disables.</p>
 			</div>
+			{/if}
+
+			{#if editSection === 'webhooks'}
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-trigger-paths">Trigger paths (monorepo filter)</label>
 				<textarea id="edit-trigger-paths"
@@ -1567,6 +1626,9 @@
 					placeholder={"dependabot[bot]\nrenovate[bot]"}></textarea>
 				<p class="text-xs text-zinc-600">One webhook actor login per line (case-insensitive). Useful for filtering automated dependency-update PRs from Dependabot, Renovate, etc. Actor extraction works for GitHub, Gitea, Gogs, and GitLab; Bitbucket and Azure DevOps actors are not parsed yet.</p>
 			</div>
+			{/if}
+
+			{#if editSection === 'approvals'}
 			<div class="space-y-2">
 				<div class="flex items-center justify-between">
 					<span class="field-label">Sequential approver chain</span>
@@ -1632,6 +1694,9 @@
 					</div>
 				{/each}
 			</div>
+			{/if}
+
+			{#if editSection === 'scheduling'}
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-destroy-at">Scheduled destroy (UTC)</label>
 				<div class="flex items-center gap-2">
@@ -1679,6 +1744,9 @@
 					</div>
 				</div>
 			</div>
+			{/if}
+
+			{#if editSection === 'hooks'}
 			<div class="space-y-3">
 				<p class="field-label">Lifecycle hooks <span class="font-normal text-zinc-500">(bash scripts — leave blank to skip)</span></p>
 				<div class="grid grid-cols-2 gap-4">
@@ -1705,12 +1773,18 @@
 				</div>
 				<p class="text-xs text-zinc-600">Hooks run inside the runner container with full access to stack env vars. A non-zero exit fails the run.</p>
 			</div>
+			{/if}
+
+			{#if editSection === 'runtime'}
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-max-concurrent">Max concurrent runs <span class="font-normal text-zinc-500">(0 = unlimited)</span></label>
 				<input id="edit-max-concurrent" type="number" min="0" max="99" class="field-input w-32"
 					bind:value={form.max_concurrent_runs} placeholder="0" />
 				<p class="text-xs text-zinc-600">Set to 1 to ensure this stack only runs one job at a time (recommended for production).</p>
 			</div>
+			{/if}
+
+			{#if editSection === 'pr_previews'}
 			<div class="space-y-3 rounded-lg border border-zinc-800 p-4">
 				<div class="flex items-center gap-3">
 					<input id="edit-pr-preview" type="checkbox" class="h-4 w-4 rounded border-zinc-600 bg-zinc-800 text-teal-500"
@@ -1730,6 +1804,9 @@
 					</div>
 				{/if}
 			</div>
+			{/if}
+
+			{#if editSection === 'runtime'}
 			<div class="space-y-1.5">
 				<label class="field-label" for="edit-worker-pool">Worker pool</label>
 				<select id="edit-worker-pool" class="field-input" bind:value={form.worker_pool_id}>
@@ -1751,6 +1828,9 @@
 					</select>
 				</div>
 			{/if}
+			{/if}
+
+			{#if editSection === 'budget'}
 			<!-- Budget alerts -->
 			<div class="space-y-3 rounded-lg border border-zinc-800 p-4">
 				<p class="field-label uppercase tracking-wide">Budget alerts</p>
@@ -1791,13 +1871,20 @@
 					<p class="text-xs text-zinc-600">Alert (and optionally block) when Infracost estimated monthly cost add exceeds this amount. Leave blank to disable.</p>
 				</div>
 			</div>
+			{/if}
 
-			<div class="flex gap-3 pt-1">
+			<div class="flex gap-3 pt-3 mt-2 border-t border-zinc-800">
 				<button type="submit" disabled={saving}
 					class="bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white text-sm px-4 py-1.5 rounded-lg transition-colors">
 					{saving ? 'Saving…' : 'Save changes'}
 				</button>
+				<button type="button" onclick={() => { editing = false; resetForm(); }}
+					class="border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 text-sm px-4 py-1.5 rounded-lg transition-colors">
+					Cancel
+				</button>
 			</div>
+
+			</div> <!-- /Section content -->
 		</form>
 	</div>
 	{/if}
