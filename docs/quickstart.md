@@ -20,6 +20,8 @@ When you're ready to manage real infrastructure, see the tool guides:
 - Git
 - A GitHub, GitLab, or Gitea account (for webhook auto-triggering — or use manual runs, which need no webhook at all)
 
+You **do not** need a DNS domain for the quickstart — it runs on `https://localhost` with a self-signed cert. A real domain is only needed when you move to production with Let's Encrypt, OIDC SSO, cloud OIDC federation, or webhooks from cloud-hosted VCS providers. See the [operator guide's "Do I need a DNS domain?" table](operator-guide.md#do-i-need-a-dns-domain) for the per-scenario breakdown.
+
 ---
 
 ## Step 1 — Deploy Crucible
