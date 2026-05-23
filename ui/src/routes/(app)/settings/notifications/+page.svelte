@@ -7,6 +7,23 @@
 	let saved = $state(false);
 	let error = $state<string | null>(null);
 
+	// Section tabs at the top of the page; the Notifications page previously
+	// stacked eight channels + two settings into one long scroll.
+	type NotifSection =
+		| 'slack' | 'discord' | 'teams' | 'gotify' | 'ntfy' | 'email'
+		| 'approval' | 'vcs';
+	let notifSection = $state<NotifSection>('slack');
+	const notifSections: { id: NotifSection; label: string }[] = [
+		{ id: 'slack',    label: 'Slack' },
+		{ id: 'discord',  label: 'Discord' },
+		{ id: 'teams',    label: 'Teams' },
+		{ id: 'gotify',   label: 'Gotify' },
+		{ id: 'ntfy',     label: 'ntfy' },
+		{ id: 'email',    label: 'Email' },
+		{ id: 'approval', label: 'Approval timeout' },
+		{ id: 'vcs',      label: 'VCS defaults' }
+	];
+
 	// Per-section form slices
 	let slack = $state({ default_slack_webhook: '' });
 	let discord = $state({ default_discord_webhook: '' });
@@ -177,6 +194,21 @@
 		<div class="bg-green-950 border border-green-800 rounded-lg px-4 py-3 text-green-300 text-sm">Saved.</div>
 	{/if}
 
+	<!-- Section tabs -->
+	<div class="border-b border-zinc-800 -mx-2 px-2 flex gap-1 overflow-x-auto">
+		{#each notifSections as s}
+			<button type="button"
+				onclick={() => (notifSection = s.id)}
+				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap
+					{notifSection === s.id
+						? 'border-amber-400 text-amber-300'
+						: 'border-transparent text-zinc-400 hover:text-zinc-100'}">
+				{s.label}
+			</button>
+		{/each}
+	</div>
+
+	{#if notifSection === 'slack'}
 	<!-- Slack -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -216,6 +248,9 @@
 		</form>
 	</div>
 
+	{/if}
+
+	{#if notifSection === 'discord'}
 	<!-- Discord -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -255,6 +290,9 @@
 		</form>
 	</div>
 
+	{/if}
+
+	{#if notifSection === 'teams'}
 	<!-- Microsoft Teams -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -294,6 +332,9 @@
 		</form>
 	</div>
 
+	{/if}
+
+	{#if notifSection === 'gotify'}
 	<!-- Gotify -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -364,6 +405,9 @@
 		</form>
 	</div>
 
+	{/if}
+
+	{#if notifSection === 'ntfy'}
 	<!-- ntfy -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -414,6 +458,9 @@
 		</form>
 	</div>
 
+	{/if}
+
+	{#if notifSection === 'email'}
 	<!-- Email / SMTP -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -503,6 +550,9 @@
 		</div>
 	</div>
 
+	{/if}
+
+	{#if notifSection === 'approval'}
 	<!-- Approval timeout -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -532,6 +582,9 @@
 		</form>
 	</div>
 
+	{/if}
+
+	{#if notifSection === 'vcs'}
 	<!-- VCS defaults -->
 	<div class="bg-zinc-900 border border-zinc-800 rounded-xl">
 		<div class="px-6 py-4 border-b border-zinc-800 flex items-center gap-3">
@@ -573,4 +626,5 @@
 			</button>
 		</form>
 	</div>
+	{/if}
 </div>
