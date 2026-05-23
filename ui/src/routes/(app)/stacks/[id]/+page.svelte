@@ -103,6 +103,20 @@
 		{ id: 'budget',      label: 'Budget alerts' }
 	];
 
+	// Stack detail page section tabs. Groups the 25+ read-only sections
+	// into six logical tabs so the detail page no longer requires a 20-screen
+	// scroll. The user's last selection is not persisted across navigations.
+	type DetailSection = 'overview' | 'state' | 'config' | 'policies' | 'integrations' | 'access';
+	let detailSection = $state<DetailSection>('overview');
+	const detailSections: { id: DetailSection; label: string }[] = [
+		{ id: 'overview',     label: 'Overview' },
+		{ id: 'state',        label: 'State' },
+		{ id: 'config',       label: 'Config' },
+		{ id: 'policies',     label: 'Policies' },
+		{ id: 'integrations', label: 'Notifications & integrations' },
+		{ id: 'access',       label: 'Webhooks & access' }
+	];
+
 	// Token creation
 	let newTokenName = $state('');
 	let creatingToken = $state(false);
@@ -1892,6 +1906,25 @@
 	</div>
 	{/if}
 
+	<!-- Detail page section tabs -->
+	{#if !editing}
+	<div class="border-b border-zinc-800 -mx-2 px-2 flex gap-1 overflow-x-auto">
+		{#each detailSections as s}
+			{@const active = detailSection === s.id}
+			<button type="button"
+				onclick={() => (detailSection = s.id)}
+				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap"
+				style={active
+					? 'color: var(--accent); border-bottom-color: var(--accent);'
+					: 'color: var(--color-zinc-400); border-bottom-color: transparent;'}
+				class:hover:text-zinc-100={!active}>
+				{s.label}
+			</button>
+		{/each}
+	</div>
+	{/if}
+
+	{#if detailSection === 'overview'}
 	<!-- Stack details -->
 	<div class="border border-zinc-800 rounded-xl divide-y divide-zinc-700 text-sm">
 		{#each [
@@ -1915,6 +1948,9 @@
 		{/each}
 	</div>
 
+	{/if}
+
+	{#if detailSection === 'overview'}
 	<!-- Lifecycle hooks (read-only — edit via the edit form above) -->
 	{#if stack.pre_plan_hook || stack.post_plan_hook || stack.pre_apply_hook || stack.post_apply_hook}
 	<div class="border border-zinc-800 rounded-xl overflow-hidden">
@@ -1935,6 +1971,9 @@
 	</div>
 	{/if}
 
+	{/if}
+
+	{#if detailSection === 'overview'}
 	<!-- Continuous validation -->
 	{#if stack.validation_interval > 0}
 	{@const vs = stack.validation_status}
@@ -1990,6 +2029,9 @@
 	</section>
 	{/if}
 
+	{/if}
+
+	{#if detailSection === 'state'}
 	<!-- Resource explorer -->
 	<section class="space-y-3">
 		<div class="flex items-center justify-between">
@@ -2049,6 +2091,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'state'}
 	<!-- State version history -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">State History</h2>
@@ -2151,6 +2196,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'state'}
 	<!-- Plan comparison -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Plan Comparison</h2>
@@ -2243,6 +2291,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'overview'}
 	<!-- Cost history sparkline -->
 	{#if costHistory.length > 0}
 	<section class="space-y-3">
@@ -2278,6 +2329,9 @@
 	</section>
 	{/if}
 
+	{/if}
+
+	{#if detailSection === 'config'}
 	<!-- Tags -->
 	{#if stack.my_stack_role !== 'viewer'}
 	<section class="space-y-3">
@@ -2341,6 +2395,9 @@
 	</section>
 	{/if}
 
+	{/if}
+
+	{#if detailSection === 'policies'}
 	<!-- Policies -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Policies</h2>
@@ -2396,6 +2453,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'policies'}
 	<!-- Policy Packs -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Compliance Policy Packs</h2>
@@ -2449,6 +2509,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'state'}
 	<!-- Remote state sources -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Remote state sources</h2>
@@ -2510,6 +2573,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'config'}
 	<!-- Environment variables -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Environment variables</h2>
@@ -2586,6 +2652,9 @@
 		</form>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'config'}
 	<!-- Variable sets -->
 	<section class="space-y-3">
 		<div class="flex items-center justify-between">
@@ -2646,6 +2715,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'config'}
 	<!-- Dependencies -->
 	<section class="space-y-4">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Dependencies</h2>
@@ -2722,6 +2794,9 @@
 		</div>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'integrations'}
 	<!-- Notifications -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Notifications</h2>
@@ -2958,6 +3033,9 @@
 		</form>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'integrations'}
 	<!-- Integrations -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Integrations</h2>
@@ -3005,6 +3083,9 @@
 		</div>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'integrations'}
 	<!-- GitHub App authentication -->
 	<section id="github-app-auth" class="space-y-3">
 		<div class="flex items-center justify-between">
@@ -3063,6 +3144,9 @@
 		</div>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'state'}
 	<!-- External state backend -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">External state backend</h2>
@@ -3172,6 +3256,9 @@
 		</form>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'access'}
 	<!-- Access -->
 	{#if auth.isAdmin}
 	<section class="space-y-3">
@@ -3248,6 +3335,9 @@
 	</section>
 	{/if}
 
+	{/if}
+
+	{#if detailSection === 'access'}
 	<!-- Webhooks -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Webhooks</h2>
@@ -3297,6 +3387,9 @@
 		</button>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'access'}
 	<!-- Webhook deliveries -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Webhook deliveries</h2>
@@ -3379,6 +3472,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'access'}
 	<!-- Outgoing webhooks -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">Outgoing webhooks</h2>
@@ -3511,6 +3607,9 @@
 		</div>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'overview'}
 	<!-- Recent runs -->
 	<section class="space-y-3">
 		<div class="flex items-center justify-between">
@@ -3575,6 +3674,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'access'}
 	<!-- Module publishing -->
 	<section class="space-y-3">
 		<div class="flex items-center justify-between">
@@ -3623,6 +3725,9 @@
 		{/if}
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'integrations'}
 	<!-- Cloud OIDC workload identity federation -->
 	<section class="space-y-3">
 		<div class="flex items-center justify-between">
@@ -3768,6 +3873,9 @@
 		</form>
 	</section>
 
+	{/if}
+
+	{#if detailSection === 'state'}
 	<!-- State backend / tokens -->
 	<section class="space-y-3">
 		<h2 class="text-sm font-medium text-zinc-400 uppercase tracking-wide">State backend</h2>
@@ -3825,6 +3933,7 @@
 			</button>
 		</form>
 	</section>
+	{/if}
 
 </div>
 {/if}
