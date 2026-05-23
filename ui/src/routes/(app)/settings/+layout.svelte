@@ -31,12 +31,15 @@
 		<p class="text-xs text-zinc-500 uppercase tracking-widest px-3 mb-3">Settings</p>
 		<nav class="space-y-0.5">
 			{#each navItems as item}
+				{@const active = isActive(item.href)}
 				<a
 					href={item.href}
-					class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors
-						{isActive(item.href)
-							? 'bg-zinc-800 text-white font-medium'
-							: 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50'}"
+					class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors relative"
+					style={active
+						? 'color: var(--accent); background: var(--accent-muted); border-left: 2px solid var(--accent); padding-left: calc(0.75rem - 2px); font-weight: 500;'
+						: 'color: var(--color-zinc-400);'}
+					class:hover:bg-zinc-800={!active}
+					class:hover:text-zinc-100={!active}
 				>
 					{item.label}
 				</a>
