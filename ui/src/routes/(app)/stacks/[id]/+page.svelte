@@ -1353,15 +1353,15 @@
 	{/if}
 
 	<!-- Header -->
-	<div class="flex items-start justify-between">
-		<div>
+	<div class="flex items-start justify-between gap-4">
+		<div class="min-w-0 flex-1">
 			<div class="flex items-center gap-2 text-sm text-zinc-500 mb-1">
 				<a href="/stacks" class="hover:text-zinc-300">Stacks</a>
 				<span>/</span>
 				<span class="text-white font-medium">{stack.name}</span>
 			</div>
-			<div class="flex items-center gap-2">
-				<span class="text-xs px-1.5 py-0.5 rounded font-medium
+			<div class="flex items-center gap-2 flex-wrap">
+				<span class="text-xs px-1.5 py-0.5 rounded font-medium flex-shrink-0
 					{stack.tool === 'opentofu' ? 'bg-violet-900 text-violet-300' :
 					 stack.tool === 'terraform' ? 'bg-purple-900 text-purple-300' :
 					 stack.tool === 'ansible' ? 'bg-red-900 text-red-300' :
@@ -1369,22 +1369,20 @@
 					 'bg-sky-900 text-sky-300'}">
 					{stack.tool}
 				</span>
-				{#if stack.description}
-					<span class="text-zinc-400 text-sm">{stack.description}</span>
-				{/if}
 				<!-- Tag pills in header -->
 				{#if stack.tags?.length > 0}
-					<div class="flex items-center gap-1.5 mt-1 flex-wrap">
-						{#each stack.tags as tag (tag.id)}
-							<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
-								style="border-color: {tag.color}33; background: {tag.color}18; color: var(--color-zinc-300);">
-								<span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {tag.color};"></span>
-								{tag.name}
-							</span>
-						{/each}
-					</div>
+					{#each stack.tags as tag (tag.id)}
+						<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border flex-shrink-0"
+							style="border-color: {tag.color}33; background: {tag.color}18; color: var(--color-zinc-300);">
+							<span class="w-1.5 h-1.5 rounded-full flex-shrink-0" style="background: {tag.color};"></span>
+							{tag.name}
+						</span>
+					{/each}
 				{/if}
 			</div>
+			{#if stack.description}
+				<p class="text-zinc-400 text-sm mt-2 break-words">{stack.description}</p>
+			{/if}
 		</div>
 		<div class="flex items-center gap-2">
 			<!-- Primary run actions -->
