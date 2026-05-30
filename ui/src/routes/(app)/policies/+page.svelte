@@ -13,6 +13,19 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
+	// Client-side filter — substring match on name, description, and type.
+	let searchQuery = $state('');
+	const filteredItems = $derived.by(() => {
+		const q = searchQuery.trim().toLowerCase();
+		if (!q) return items;
+		return items.filter(
+			(p) =>
+				p.name.toLowerCase().includes(q) ||
+				(p.description ?? '').toLowerCase().includes(q) ||
+				p.type.toLowerCase().includes(q)
+		);
+	});
+
 	// New policy form
 	let creating = $state(false);
 	let saving = $state(false);
@@ -252,6 +265,28 @@
 			</div>
 		</EmptyState>
 	{:else}
+		<div class="flex items-center gap-3">
+			<div class="relative flex-1 max-w-md">
+				<input
+					type="search"
+					class="field-input pl-9"
+					placeholder="Search policies by name, description, or type…"
+					bind:value={searchQuery}
+				/>
+				<svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+				</svg>
+			</div>
+			{#if searchQuery && filteredItems.length !== items.length}
+				<span class="text-xs text-zinc-500">{filteredItems.length} of {items.length}</span>
+			{/if}
+		</div>
+		{#if filteredItems.length === 0}
+			<div class="border border-zinc-800 rounded-xl px-12 py-10 text-center">
+				<p class="text-sm text-zinc-400">No policies match "{searchQuery}".</p>
+				<button onclick={() => (searchQuery = '')} class="mt-2 text-xs text-zinc-500 hover:text-zinc-300 underline">Clear filter</button>
+			</div>
+		{:else}
 		<div class="overflow-hidden rounded-xl border border-zinc-800">
 			<table class="w-full text-sm">
 				<thead class="bg-zinc-900 text-xs uppercase tracking-wide text-zinc-500">
@@ -263,7 +298,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-zinc-700">
-					{#each items as p (p.id)}
+					{#each filteredItems as p (p.id)}
 						<tr
 							class="cursor-pointer transition-colors hover:bg-zinc-900/50"
 							onclick={() => goto(`/policies/${p.id}`)}
@@ -297,6 +332,7 @@
 				</tbody>
 			</table>
 		</div>
+		{/if}
 	{/if}
 </div>
 
