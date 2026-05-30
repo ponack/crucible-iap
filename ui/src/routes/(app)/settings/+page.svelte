@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { system, type HealthStatus, type SystemSettings } from '$lib/api/client';
 
@@ -18,7 +19,6 @@
 	type SettingsSection =
 		| 'account' | 'runner' | 'retention' | 'oidc'
 		| 'scanning' | 'infracost' | 'ai' | 'info';
-	let settingsSection = $state<SettingsSection>('account');
 	const settingsSections: { id: SettingsSection; label: string }[] = [
 		{ id: 'account',   label: 'Account' },
 		{ id: 'runner',    label: 'Runner' },
@@ -29,6 +29,23 @@
 		{ id: 'ai',        label: 'AI' },
 		{ id: 'info',      label: 'Instance info' }
 	];
+	const settingsIds = settingsSections.map((s) => s.id);
+
+	// Initialise from URL on first load so bookmarks / shared links land on the
+	// right tab. ?tab=foo with an unknown value falls back to the default.
+	function initSection(): SettingsSection {
+		const t = page.url.searchParams.get('tab');
+		return t && (settingsIds as string[]).includes(t) ? (t as SettingsSection) : 'account';
+	}
+	let settingsSection = $state<SettingsSection>(initSection());
+
+	function selectSection(id: SettingsSection) {
+		settingsSection = id;
+		const url = new URL(page.url);
+		if (id === 'account') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', id);
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 
 	// Runner settings
 	let runnerSettings = $state<SystemSettings | null>(null);
@@ -260,7 +277,7 @@
 		{#each settingsSections as s}
 			{@const active = settingsSection === s.id}
 			<button type="button"
-				onclick={() => (settingsSection = s.id)}
+				onclick={() => selectSection(s.id)}
 				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap"
 				style={active
 					? 'color: var(--accent); border-bottom-color: var(--accent);'

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { system, type SystemSettings } from '$lib/api/client';
 
 	let settings = $state<SystemSettings | null>(null);
@@ -12,7 +14,6 @@
 	type NotifSection =
 		| 'slack' | 'discord' | 'teams' | 'gotify' | 'ntfy' | 'email'
 		| 'approval' | 'vcs';
-	let notifSection = $state<NotifSection>('slack');
 	const notifSections: { id: NotifSection; label: string }[] = [
 		{ id: 'slack',    label: 'Slack' },
 		{ id: 'discord',  label: 'Discord' },
@@ -23,6 +24,21 @@
 		{ id: 'approval', label: 'Approval timeout' },
 		{ id: 'vcs',      label: 'VCS defaults' }
 	];
+	const notifIds = notifSections.map((s) => s.id);
+
+	function initNotifSection(): NotifSection {
+		const t = page.url.searchParams.get('tab');
+		return t && (notifIds as string[]).includes(t) ? (t as NotifSection) : 'slack';
+	}
+	let notifSection = $state<NotifSection>(initNotifSection());
+
+	function selectNotifSection(id: NotifSection) {
+		notifSection = id;
+		const url = new URL(page.url);
+		if (id === 'slack') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', id);
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 
 	// Per-section form slices
 	let slack = $state({ default_slack_webhook: '' });
@@ -199,7 +215,7 @@
 		{#each notifSections as s}
 			{@const active = notifSection === s.id}
 			<button type="button"
-				onclick={() => (notifSection = s.id)}
+				onclick={() => selectNotifSection(s.id)}
 				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap"
 				style={active
 					? 'color: var(--accent); border-bottom-color: var(--accent);'
