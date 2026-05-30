@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import {
 		siemApi,
 		type SIEMDestination,
@@ -184,7 +185,7 @@
 	</div>
 
 	{#if loading}
-		<p class="text-sm text-zinc-500">Loading…</p>
+		<Skeleton variant="card" rows={3} />
 	{:else if destinations.length === 0}
 		<div class="rounded-xl border border-zinc-800 bg-zinc-900 p-10 text-center">
 			<p class="text-sm text-zinc-400">No SIEM destinations configured.</p>

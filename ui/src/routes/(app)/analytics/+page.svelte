@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { analyticsApi, type RunAnalytics, type CostAnalytics } from '$lib/api/client';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let tab = $state<'runs' | 'costs'>('runs');
 	let days = $state(30);
@@ -82,7 +83,7 @@
 	</div>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<Skeleton variant="card" rows={3} />
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
 	{:else if tab === 'runs' && runsData}

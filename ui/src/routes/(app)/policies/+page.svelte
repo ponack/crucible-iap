@@ -7,6 +7,7 @@
 	import PolicyInputSchema from '$lib/components/PolicyInputSchema.svelte';
 	import { policyTemplates, type PolicyType } from '$lib/policy-data';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let items = $state<Policy[]>([]);
 	let loading = $state(true);
@@ -227,7 +228,9 @@
 	{/if}
 
 	{#if loading}
-		<p class="text-sm text-zinc-500">Loading…</p>
+		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<Skeleton variant="table-row" rows={5} columns={4} />
+		</div>
 	{:else if error}
 		<p class="text-sm text-red-400">{error}</p>
 	{:else if items.length === 0}

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { stacks, runs, audit, system, type Stack, type Run, type AuditEvent, type HealthStatus } from '$lib/api/client';
 	import { toast } from '$lib/stores/toasts.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let loading = $state(true);
 
@@ -255,7 +256,7 @@
 	</div>
 
 	{#if loading}
-		<div class="text-zinc-500 text-sm py-12 text-center">Loading…</div>
+		<Skeleton variant="card" rows={3} />
 	{:else if totalStacks === 0}
 
 	<!-- ── First-run welcome (no stacks yet) ───────────────────────────────── -->

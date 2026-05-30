@@ -4,6 +4,7 @@
 	import { org, type OrgMember, type OrgInvite, type OrgDetail, type OrgGroupMap } from '$lib/api/client';
 	import { orgListStore } from '$lib/stores/orgs.svelte';
 	import { decodeJWTPayload } from '$lib/jwt';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let orgDetail = $state<OrgDetail | null>(null);
 	let orgNameDraft = $state('');
@@ -204,7 +205,9 @@
 			<p class="px-6 py-4 text-sm text-red-400">{actionError}</p>
 		{/if}
 		{#if loading}
-			<p class="px-6 py-4 text-sm text-zinc-500">Loading…</p>
+			<div class="px-6 py-4">
+				<Skeleton variant="line" lines={3} />
+			</div>
 		{:else if error}
 			<p class="px-6 py-4 text-sm text-red-400">{error}</p>
 		{:else}

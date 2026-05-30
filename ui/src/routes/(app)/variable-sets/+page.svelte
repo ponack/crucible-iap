@@ -4,6 +4,7 @@
 	import { varSets, type VarSet } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let items = $state<VarSet[]>([]);
 	let loading = $state(true);
@@ -81,7 +82,7 @@
 	{/if}
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<Skeleton variant="card" rows={4} />
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
 	{:else if items.length === 0}

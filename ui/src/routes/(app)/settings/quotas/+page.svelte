@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
 	import { auth } from '$lib/stores/auth.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let quota = $state<OrgQuota | null>(null);
 	let status = $state<OrgQuotaStatus | null>(null);
@@ -61,7 +62,7 @@
 	</header>
 
 	{#if loading}
-		<p class="text-sm text-zinc-500">Loading…</p>
+		<Skeleton variant="card" rows={2} />
 	{:else}
 		<!-- Current usage card -->
 		<section class="border border-zinc-800 rounded-lg p-4 bg-zinc-950/50">

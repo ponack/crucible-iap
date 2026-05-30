@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { adminApi, type AdminOrg } from '$lib/api/admin';
 	import { toast } from '$lib/stores/toasts.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let orgs = $state<AdminOrg[]>([]);
 	let loading = $state(true);
@@ -116,7 +117,9 @@
 	</div>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<Skeleton variant="table-row" rows={4} columns={4} />
+		</div>
 	{:else if orgs.length === 0}
 		<p class="text-zinc-500 text-sm">{tab === 'active' ? 'No organizations yet.' : 'No archived organizations.'}</p>
 	{:else}
