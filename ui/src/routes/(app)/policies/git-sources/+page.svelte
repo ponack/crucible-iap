@@ -3,6 +3,7 @@
 	import { policyGit, type PolicyGitSource, type Integration } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { integrations } from '$lib/api/client';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let items = $state<PolicyGitSource[]>([]);
 	let intgs = $state<Integration[]>([]);
@@ -226,7 +227,7 @@
 	{/if}
 
 	{#if loading}
-		<p class="text-sm text-zinc-500">Loading…</p>
+		<Skeleton variant="card" rows={3} />
 	{:else if error}
 		<p class="text-sm text-red-400">{error}</p>
 	{:else if items.length === 0}

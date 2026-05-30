@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let items = $state<WorkerPool[]>([]);
 	let loading = $state(true);
@@ -152,7 +153,9 @@
 	{/if}
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<Skeleton variant="table-row" rows={4} columns={4} />
+		</div>
 	{:else if error}
 		<div class="border border-zinc-800 rounded-xl p-12 text-center">
 			<p class="text-zinc-400 text-sm">Could not load worker pools.</p>

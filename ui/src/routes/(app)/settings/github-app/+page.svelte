@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { githubApp, type GitHubAppView } from '$lib/api/client';
 	import { toast } from '$lib/stores/toasts.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let app = $state<GitHubAppView | null>(null);
 	let loading = $state(true);
@@ -168,7 +169,7 @@
 	</div>
 
 	{#if loading}
-		<p class="text-sm text-zinc-500">Loading…</p>
+		<Skeleton variant="card" rows={2} />
 	{:else if !app && !showForm}
 		<!-- Setup guide -->
 		<div class="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 space-y-6">

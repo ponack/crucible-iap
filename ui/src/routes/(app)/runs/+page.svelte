@@ -4,6 +4,7 @@
 	import { runs, orgTags, type Run, type Tag, type PageMeta } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -145,7 +146,9 @@
 	</div>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<Skeleton variant="table-row" rows={6} columns={5} />
+		</div>
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else if allRuns.length === 0}

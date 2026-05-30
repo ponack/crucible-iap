@@ -2,6 +2,7 @@
 	import { orgTags, type Tag } from '$lib/api/client';
 	import { onMount } from 'svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let tags = $state<Tag[]>([]);
 	let loading = $state(true);
@@ -155,7 +156,7 @@
 
 	<!-- Existing tags -->
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<Skeleton variant="card" rows={3} />
 	{:else if tags.length === 0}
 		<p class="text-zinc-600 text-sm">No tags yet. Create your first tag above.</p>
 	{:else}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import {
 		integrations,
 		type Integration,
@@ -170,7 +171,7 @@
 	</div>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<Skeleton variant="card" rows={3} />
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else}

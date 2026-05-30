@@ -4,6 +4,7 @@
 	import { projects, type Project } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let items = $state<Project[]>([]);
 	let loading = $state(true);
@@ -91,9 +92,7 @@
 	{/if}
 
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<span class="text-zinc-500 text-sm">Loading…</span>
-		</div>
+		<Skeleton variant="card" rows={4} />
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
 	{:else if items.length === 0}

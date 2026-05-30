@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { adminApi, type AdminOrg, type AdminOrgMember } from '$lib/api/admin';
 	import { toast } from '$lib/stores/toasts.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	const orgID = $derived(page.params['id']!);
 
@@ -95,7 +96,7 @@
 	</a>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<Skeleton variant="card" rows={2} />
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else if org}

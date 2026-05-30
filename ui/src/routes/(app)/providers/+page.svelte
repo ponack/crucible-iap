@@ -4,6 +4,7 @@
 	import { providers, type RegistryProvider, type ProviderGPGKey } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let providerList = $state<RegistryProvider[]>([]);
 	let gpgKeys = $state<ProviderGPGKey[]>([]);
@@ -283,7 +284,9 @@
 	</details>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<Skeleton variant="table-row" rows={4} columns={4} />
+		</div>
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else if grouped().length === 0}

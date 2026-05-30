@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { byok, type BYOKStatus, type KMSProvider } from '$lib/api/client';
 	import { toast } from '$lib/stores/toasts.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let status = $state<BYOKStatus | null>(null);
 	let loading = $state(true);
@@ -132,7 +133,7 @@
 	</div>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<Skeleton variant="card" rows={2} />
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else if status}

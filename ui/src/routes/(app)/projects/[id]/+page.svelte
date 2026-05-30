@@ -5,6 +5,7 @@
 	import { projects, org, type ProjectDetail, type ProjectMember, type OrgMember } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import TypedConfirmModal from '$lib/components/TypedConfirmModal.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
 
 	const id = $derived(page.params.id!);
@@ -155,9 +156,7 @@
 
 <div class="p-6 space-y-6">
 	{#if loading}
-		<div class="flex items-center justify-center py-20">
-			<span class="text-zinc-500 text-sm">Loading…</span>
-		</div>
+		<Skeleton variant="card" rows={3} />
 	{:else if error}
 		<div class="rounded-lg border border-red-800 bg-red-950 px-4 py-3 text-sm text-red-300">{error}</div>
 	{:else if detail}

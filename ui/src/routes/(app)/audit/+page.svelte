@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { audit, type AuditEvent, type PageMeta } from '$lib/api/client';
 	import EmptyState from '$lib/components/EmptyState.svelte';
+	import Skeleton from '$lib/components/Skeleton.svelte';
 
 	let events = $state<AuditEvent[]>([]);
 	let pagination = $state<PageMeta | null>(null);
@@ -154,7 +155,9 @@
 	</div>
 
 	{#if loading}
-		<p class="text-zinc-500 text-sm">Loading…</p>
+		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<Skeleton variant="table-row" rows={6} columns={4} />
+		</div>
 	{:else if error}
 		<p class="text-red-400 text-sm">{error}</p>
 	{:else if events.length === 0}
