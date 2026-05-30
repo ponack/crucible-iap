@@ -1,7 +1,14 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { auth } from '$lib/stores/auth.svelte';
 	import { system, type HealthStatus, type SystemSettings } from '$lib/api/client';
+
+	async function signOut() {
+		try { await fetch('/auth/logout', { method: 'POST' }); } catch { /* noop */ }
+		auth.clear();
+		goto('/login', { replaceState: true });
+	}
 
 	let loading = $state(true);
 	let health = $state<HealthStatus | null>(null);
@@ -272,7 +279,24 @@
 			<div class="space-y-1">
 				<p class="text-sm text-zinc-100">{auth.user?.name || auth.user?.email}</p>
 				<p class="text-xs text-zinc-500">{auth.user?.email}</p>
+				{#if auth.user?.is_instance_admin}
+					<p class="text-xs text-amber-400 mt-1">Instance admin</p>
+				{/if}
 			</div>
+		</div>
+		<div class="px-6 py-4 space-y-2">
+			<a href="/settings/api-tokens" class="text-sm hover:underline block" style="color: var(--accent);">
+				Personal API tokens →
+			</a>
+			<a href="/settings/organization" class="text-sm hover:underline block" style="color: var(--accent);">
+				Organization &amp; members →
+			</a>
+		</div>
+		<div class="px-6 py-4">
+			<button onclick={signOut}
+				class="text-sm border border-zinc-700 hover:border-red-700 hover:text-red-400 text-zinc-300 px-3 py-1.5 rounded-lg transition-colors">
+				Sign out
+			</button>
 		</div>
 	</div>
 	{/if}
