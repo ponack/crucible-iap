@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import Toasts from '$lib/components/Toasts.svelte';
+	import KeyboardShortcuts from '$lib/components/KeyboardShortcuts.svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { auth, type OrgRole } from '$lib/stores/auth.svelte';
@@ -345,6 +346,11 @@
 			<!-- Footer -->
 			<div class="px-4 py-3 flex items-center gap-2" style="border-top: 1px solid var(--color-zinc-800);">
 				<span class="text-xs text-zinc-500 truncate flex-1" title={auth.user?.email}>{auth.user?.email}</span>
+				<button
+					onclick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))}
+					title="Keyboard shortcuts (?)"
+					aria-label="Show keyboard shortcuts"
+					class="text-xs text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">?</button>
 				<button onclick={logout} class="text-xs text-zinc-500 hover:text-zinc-300 flex-shrink-0 transition-colors">Sign out</button>
 			</div>
 		</aside>
@@ -355,4 +361,5 @@
 		</main>
 	</div>
 	<Toasts />
+	<KeyboardShortcuts />
 {/if}
