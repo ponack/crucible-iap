@@ -4,8 +4,12 @@
 	import { goto } from '$app/navigation';
 	import { runs, orgTags, type Run, type Tag, type PageMeta } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
+	import { toast } from '$lib/stores/toasts.svelte';
 	import EmptyState from '$lib/components/EmptyState.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
+	import TypedConfirmModal from '$lib/components/TypedConfirmModal.svelte';
+
+	const TERMINAL_STATUSES = new Set(['finished', 'failed', 'canceled', 'discarded']);
 
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -14,6 +18,61 @@
 	let offset = $state(0);
 	let allTags = $state<Tag[]>([]);
 	let tagDropdownOpen = $state(false);
+
+	let selected = $state<Set<string>>(new Set());
+	let confirmOpen = $state(false);
+	let deleting = $state(false);
+	let bulkProgress = $state<{ done: number; total: number; failed: number } | null>(null);
+
+	const deletableRuns = $derived(allRuns.filter((r) => TERMINAL_STATUSES.has(r.status)));
+	const allDeletableSelected = $derived(
+		deletableRuns.length > 0 && deletableRuns.every((r) => selected.has(r.id))
+	);
+	const someSelected = $derived(selected.size > 0);
+
+	function toggleRun(id: string, checked: boolean) {
+		const next = new Set(selected);
+		if (checked) next.add(id);
+		else next.delete(id);
+		selected = next;
+	}
+
+	function toggleAll(checked: boolean) {
+		if (checked) {
+			selected = new Set(deletableRuns.map((r) => r.id));
+		} else {
+			selected = new Set();
+		}
+	}
+
+	function clearSelection() {
+		selected = new Set();
+	}
+
+	async function bulkDelete() {
+		deleting = true;
+		const ids = Array.from(selected);
+		bulkProgress = { done: 0, total: ids.length, failed: 0 };
+		for (const id of ids) {
+			try {
+				await runs.remove(id);
+			} catch {
+				bulkProgress.failed += 1;
+			}
+			bulkProgress.done += 1;
+		}
+		const { failed, total } = bulkProgress;
+		const ok = total - failed;
+		if (failed === 0) toast.success(`Deleted ${ok} run${ok === 1 ? '' : 's'}.`);
+		else if (ok === 0) toast.error(`Failed to delete ${failed} run${failed === 1 ? '' : 's'}.`);
+		else toast.error(`Deleted ${ok}, failed to delete ${failed}.`);
+
+		deleting = false;
+		confirmOpen = false;
+		bulkProgress = null;
+		selected = new Set();
+		await load();
+	}
 
 	// Filter state — initialised from URL query params so reload / bookmark /
 	// shared link preserves the user's filter selection.
@@ -184,10 +243,37 @@
 			sub="Runs appear here when a stack is triggered manually, by a webhook push, or on a schedule."
 		/>
 	{:else}
+		{#if someSelected}
+			<div class="flex items-center justify-between rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2.5 text-sm">
+				<span class="text-zinc-300">
+					{selected.size} selected
+				</span>
+				<div class="flex items-center gap-3">
+					<button onclick={clearSelection} class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+						Clear
+					</button>
+					<button
+						onclick={() => (confirmOpen = true)}
+						class="text-xs px-3 py-1.5 rounded-lg bg-red-900/40 border border-red-800 text-red-300 hover:bg-red-900/60 transition-colors">
+						Delete {selected.size} run{selected.size === 1 ? '' : 's'}
+					</button>
+				</div>
+			</div>
+		{/if}
+
 		<div class="border border-zinc-800 rounded-xl overflow-hidden">
 			<table class="w-full text-sm">
 				<thead class="bg-zinc-900 text-zinc-400 text-xs uppercase tracking-wide">
 					<tr>
+						<th class="px-4 py-3 w-8">
+							<input
+								type="checkbox"
+								aria-label="Select all deletable runs on this page"
+								checked={allDeletableSelected}
+								disabled={deletableRuns.length === 0}
+								onchange={(e) => toggleAll((e.target as HTMLInputElement).checked)}
+								class="rounded border-zinc-600 bg-zinc-800" />
+						</th>
 						<th class="text-left px-4 py-3">Status</th>
 						<th class="text-left px-4 py-3">Stack</th>
 						<th class="text-left px-4 py-3">Type</th>
@@ -198,7 +284,17 @@
 				<tbody class="divide-y divide-zinc-700">
 					{#each allRuns as run (run.id)}
 						{@const tb = triggerBadge(run.trigger)}
+						{@const canDelete = TERMINAL_STATUSES.has(run.status)}
 						<tr class="hover:bg-zinc-900/50 transition-colors">
+							<td class="px-4 py-3">
+								<input
+									type="checkbox"
+									aria-label={canDelete ? `Select run ${run.id}` : 'Only terminal runs can be deleted'}
+									checked={selected.has(run.id)}
+									disabled={!canDelete}
+									onchange={(e) => toggleRun(run.id, (e.target as HTMLInputElement).checked)}
+									class="rounded border-zinc-600 bg-zinc-800 disabled:opacity-30" />
+							</td>
 							<td class="px-4 py-3">
 								<a href="/runs/{run.id}" class="font-medium {statusColour[run.status] ?? 'text-zinc-400'}">
 									{run.status}
@@ -246,3 +342,18 @@
 		{/if}
 	{/if}
 </div>
+
+<TypedConfirmModal
+	open={confirmOpen}
+	title="Delete runs"
+	message={`Permanently delete ${selected.size} run${selected.size === 1 ? '' : 's'}? Plans, logs and policy results will be removed.`}
+	warning={bulkProgress
+		? `Deleting ${bulkProgress.done} / ${bulkProgress.total}${bulkProgress.failed ? ` — ${bulkProgress.failed} failed` : ''}`
+		: 'This cannot be undone.'}
+	expected="DELETE"
+	confirmLabel={`Delete ${selected.size} run${selected.size === 1 ? '' : 's'}`}
+	confirmingLabel="Deleting…"
+	confirming={deleting}
+	onConfirm={bulkDelete}
+	onCancel={() => { if (!deleting) confirmOpen = false; }}
+/>
