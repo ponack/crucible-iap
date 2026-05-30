@@ -6,6 +6,7 @@
 	import { triggerBadge } from '$lib/trigger';
 	import { auth } from '$lib/stores/auth.svelte';
 	import DepGraph from '$lib/components/DepGraph.svelte';
+	import TypedConfirmModal from '$lib/components/TypedConfirmModal.svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
 
 	const stackID = $derived(page.params.id as string);
@@ -552,13 +553,22 @@
 		}
 	}
 
-	async function deleteStack() {
-		if (!confirm(`Delete stack "${stack?.name}"? This cannot be undone.`)) return;
+	let showDeleteStackModal = $state(false);
+	let deletingStack = $state(false);
+
+	function deleteStack() {
+		showDeleteStackModal = true;
+	}
+	async function confirmDeleteStack() {
+		deletingStack = true;
 		try {
 			await stacks.delete(stackID);
+			showDeleteStackModal = false;
 			goto('/stacks');
 		} catch (e) {
 			toast.error((e as Error).message);
+		} finally {
+			deletingStack = false;
 		}
 	}
 
@@ -4024,6 +4034,19 @@
 	</div>
 </div>
 {/if}
+
+<TypedConfirmModal
+	open={showDeleteStackModal}
+	title="Delete this stack?"
+	message="This removes the stack record from Crucible: configuration, policies, env vars, run history. Infrastructure managed by this stack is NOT destroyed — that's a separate Destroy action."
+	warning="To destroy the managed infrastructure first, click Cancel and use the Destroy button instead."
+	expected={stack?.name ?? ''}
+	confirmLabel="Delete stack"
+	confirmingLabel="Deleting…"
+	confirming={deletingStack}
+	onConfirm={confirmDeleteStack}
+	onCancel={() => (showDeleteStackModal = false)}
+/>
 
 <style>
 	:global(.field-label) {

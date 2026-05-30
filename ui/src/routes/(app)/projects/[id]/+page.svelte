@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { projects, org, type ProjectDetail, type ProjectMember, type OrgMember } from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
+	import TypedConfirmModal from '$lib/components/TypedConfirmModal.svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
 
 	const id = $derived(page.params.id!);
@@ -56,13 +57,23 @@
 		}
 	}
 
-	async function deleteProject() {
-		if (!detail || !confirm(`Delete project "${detail.name}"? This cannot be undone.`)) return;
+	let showDeleteProjectModal = $state(false);
+	let deletingProject = $state(false);
+
+	function deleteProject() {
+		showDeleteProjectModal = true;
+	}
+	async function confirmDeleteProject() {
+		if (!detail) return;
+		deletingProject = true;
 		try {
 			await projects.delete(id);
+			showDeleteProjectModal = false;
 			goto('/projects');
 		} catch (e) {
 			toast.error((e as Error).message);
+		} finally {
+			deletingProject = false;
 		}
 	}
 
@@ -362,3 +373,16 @@
 		{/if}
 	{/if}
 </div>
+
+<TypedConfirmModal
+	open={showDeleteProjectModal}
+	title="Delete this project?"
+	message="Stacks currently assigned to this project will revert to the org root (project_id is set to NULL). Stacks themselves are not deleted."
+	warning="Member assignments and per-project RBAC roles are removed."
+	expected={detail?.name ?? ''}
+	confirmLabel="Delete project"
+	confirmingLabel="Deleting…"
+	confirming={deletingProject}
+	onConfirm={confirmDeleteProject}
+	onCancel={() => (showDeleteProjectModal = false)}
+/>

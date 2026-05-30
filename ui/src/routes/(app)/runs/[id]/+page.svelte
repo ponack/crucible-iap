@@ -11,6 +11,7 @@
 	} from '$lib/api/client';
 	import { auth } from '$lib/stores/auth.svelte';
 	import RunLifecycle from '$lib/components/RunLifecycle.svelte';
+	import TypedConfirmModal from '$lib/components/TypedConfirmModal.svelte';
 	import { toast } from '$lib/stores/toasts.svelte';
 
 	const runID = $derived(page.params.id as string);
@@ -217,14 +218,23 @@
 		URL.revokeObjectURL(url);
 	}
 
-	async function deleteRun() {
-		if (!window.confirm('Delete this run and its artifacts? This cannot be undone.')) return;
+	let showDeleteModal = $state(false);
+	let deleting = $state(false);
+
+	async function confirmDeleteRun() {
+		deleting = true;
 		try {
 			await runs.remove(runID);
+			showDeleteModal = false;
 			goto('/runs');
 		} catch (e) {
 			toast.error((e as Error).message);
+		} finally {
+			deleting = false;
 		}
+	}
+	function deleteRun() {
+		showDeleteModal = true;
 	}
 
 	async function downloadPlan() {
@@ -672,3 +682,16 @@
 
 </div>
 {/if}
+
+<TypedConfirmModal
+	open={showDeleteModal}
+	title="Delete this run?"
+	message="This permanently removes the run record, plan artifacts, and log output. The infrastructure managed by the stack is not affected."
+	warning="Audit history for this run is preserved separately and will not be deleted."
+	expected="DELETE"
+	confirmLabel="Delete run"
+	confirmingLabel="Deleting…"
+	confirming={deleting}
+	onConfirm={confirmDeleteRun}
+	onCancel={() => (showDeleteModal = false)}
+/>

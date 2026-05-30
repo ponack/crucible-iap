@@ -101,11 +101,11 @@
 
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-1.5">
-					<label class="field-label" for="name">Name</label>
+					<label class="field-label" for="name">Name <span class="text-red-400">*</span></label>
 					<input id="name" class="field-input" bind:value={form.name} required placeholder="my-stack" />
 				</div>
 				<div class="space-y-1.5">
-					<label class="field-label" for="tool">Tool</label>
+					<label class="field-label" for="tool">Tool <span class="text-red-400">*</span></label>
 					<select id="tool" class="field-input" bind:value={form.tool}>
 						<option value="opentofu">OpenTofu</option>
 						<option value="terraform">Terraform</option>
@@ -144,7 +144,7 @@
 			<legend class="text-xs text-zinc-500 uppercase tracking-widest px-1">Repository</legend>
 
 			<div class="space-y-1.5">
-				<label class="field-label" for="repo_url">Repo URL</label>
+				<label class="field-label" for="repo_url">Repo URL <span class="text-red-400">*</span></label>
 				<input id="repo_url" class="field-input font-mono text-sm" bind:value={form.repo_url} required
 					placeholder="https://github.com/org/infra" />
 			</div>

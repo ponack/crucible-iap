@@ -7,9 +7,19 @@
 	let error = $state<string | null>(null);
 
 	onMount(() => {
-		const params = new URLSearchParams(window.location.hash.slice(1));
-		const accessToken = params.get('access_token');
+		// OAuth / OIDC providers return errors either in the URL hash (implicit
+		// flow, what we use) or as query parameters. Surface them so the user
+		// sees the IdP-reported reason instead of a generic "Failed".
+		const hashParams = new URLSearchParams(window.location.hash.slice(1));
+		const queryParams = new URLSearchParams(window.location.search);
+		const oauthError = hashParams.get('error') || queryParams.get('error');
+		if (oauthError) {
+			const desc = hashParams.get('error_description') || queryParams.get('error_description') || '';
+			error = desc ? `${oauthError}: ${decodeURIComponent(desc.replace(/\+/g, ' '))}` : oauthError;
+			return;
+		}
 
+		const accessToken = hashParams.get('access_token');
 		if (!accessToken) {
 			error = 'No access token received. Please try signing in again.';
 			return;
@@ -25,8 +35,8 @@
 				is_instance_admin: payload.iadm ?? false
 			});
 			goto('/stacks', { replaceState: true });
-		} catch {
-			error = 'Failed to parse auth token. Please try again.';
+		} catch (e) {
+			error = `Failed to parse auth token: ${(e as Error).message}. Please try again.`;
 		}
 	});
 </script>
