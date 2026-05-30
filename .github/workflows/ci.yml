@@ -310,6 +310,33 @@ jobs:
           cosign sign --yes \
             ghcr.io/ponack/crucible-iap-runner@$RUNNER_DIGEST
 
+      - name: Generate runner image SBOM (CycloneDX)
+        uses: anchore/sbom-action@55dc4ee22412511ee8c3142cbea40418e6cec693  # v0.17.8
+        with:
+          image: ghcr.io/ponack/crucible-iap-runner@${{ needs.docker.outputs.runner-digest }}
+          format: cyclonedx-json
+          output-file: crucible-iap-runner-sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest SBOM to runner image
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+          RUNNER_DIGEST: ${{ needs.docker.outputs.runner-digest }}
+        run: |
+          cosign attest --yes \
+            --predicate crucible-iap-runner-sbom.cdx.json \
+            --type cyclonedx \
+            ghcr.io/ponack/crucible-iap-runner@$RUNNER_DIGEST
+
+      - name: Upload SBOM as workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: runner-sbom
+          path: crucible-iap-runner-sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 90
+
   release:
     name: GitHub Release
     runs-on: ubuntu-latest
@@ -323,18 +350,26 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: runner-sbom
+          path: .
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           if gh release view "$REF_NAME" > /dev/null 2>&1; then
-            echo "Release $REF_NAME already exists — skipping creation."
+            echo "Release $REF_NAME already exists — uploading SBOM only."
+            gh release upload "$REF_NAME" crucible-iap-runner-sbom.cdx.json --clobber
           else
             gh release create "$REF_NAME" \
               --title "Crucible IAP $REF_NAME" \
               --generate-notes \
-              --verify-tag
+              --verify-tag \
+              crucible-iap-runner-sbom.cdx.json
           fi
 
   zizmor:
