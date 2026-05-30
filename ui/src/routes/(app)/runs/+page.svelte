@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { goto } from '$app/navigation';
 	import { runs, orgTags, type Run, type Tag, type PageMeta } from '$lib/api/client';
 	import { triggerBadge } from '$lib/trigger';
 	import EmptyState from '$lib/components/EmptyState.svelte';
@@ -14,10 +15,26 @@
 	let allTags = $state<Tag[]>([]);
 	let tagDropdownOpen = $state(false);
 
-	let filterStatus = $state('');
-	let filterType = $state('');
+	// Filter state — initialised from URL query params so reload / bookmark /
+	// shared link preserves the user's filter selection.
+	const urlTags = (page.url.searchParams.get('tags') ?? '').split(',').filter(Boolean);
+	let filterStatus = $state(page.url.searchParams.get('status') ?? '');
+	let filterType = $state(page.url.searchParams.get('type') ?? '');
 	let filterStack = $state(page.url.searchParams.get('stack') ?? '');
-	let filterTags = $state<string[]>([]);
+	let filterTags = $state<string[]>(urlTags);
+
+	function syncFiltersToURL() {
+		const url = new URL(page.url);
+		const setOrDel = (key: string, value: string) => {
+			if (value) url.searchParams.set(key, value);
+			else url.searchParams.delete(key);
+		};
+		setOrDel('status', filterStatus);
+		setOrDel('type', filterType);
+		setOrDel('stack', filterStack);
+		setOrDel('tags', filterTags.join(','));
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 
 	async function load() {
 		loading = true;
@@ -48,14 +65,23 @@
 	function prev() { offset = Math.max(0, offset - (pagination?.limit ?? 50)); load(); }
 	function next() { offset += pagination?.limit ?? 50; load(); }
 
-	function applyFilters() { offset = 0; load(); }
-	function clearFilters() { filterStatus = ''; filterType = ''; filterStack = ''; filterTags = []; offset = 0; load(); }
+	function applyFilters() { offset = 0; syncFiltersToURL(); load(); }
+	function clearFilters() {
+		filterStatus = '';
+		filterType = '';
+		filterStack = '';
+		filterTags = [];
+		offset = 0;
+		syncFiltersToURL();
+		load();
+	}
 
 	function toggleTagFilter(name: string) {
 		filterTags = filterTags.includes(name)
 			? filterTags.filter((t) => t !== name)
 			: [...filterTags, name];
 		offset = 0;
+		syncFiltersToURL();
 		load();
 	}
 
