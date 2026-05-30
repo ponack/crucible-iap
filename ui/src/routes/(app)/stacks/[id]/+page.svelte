@@ -91,7 +91,6 @@
 		| 'hooks'
 		| 'pr_previews'
 		| 'budget';
-	let editSection = $state<EditSection>('general');
 	const editSections: { id: EditSection; label: string }[] = [
 		{ id: 'general',     label: 'General' },
 		{ id: 'runtime',     label: 'Runtime' },
@@ -103,12 +102,12 @@
 		{ id: 'pr_previews', label: 'PR previews' },
 		{ id: 'budget',      label: 'Budget alerts' }
 	];
+	const editIds = editSections.map((s) => s.id);
 
 	// Stack detail page section tabs. Groups the 25+ read-only sections
 	// into six logical tabs so the detail page no longer requires a 20-screen
-	// scroll. The user's last selection is not persisted across navigations.
+	// scroll.
 	type DetailSection = 'overview' | 'state' | 'config' | 'policies' | 'integrations' | 'access';
-	let detailSection = $state<DetailSection>('overview');
 	const detailSections: { id: DetailSection; label: string }[] = [
 		{ id: 'overview',     label: 'Overview' },
 		{ id: 'state',        label: 'State' },
@@ -117,6 +116,36 @@
 		{ id: 'integrations', label: 'Notifications & integrations' },
 		{ id: 'access',       label: 'Webhooks & access' }
 	];
+	const detailIds = detailSections.map((s) => s.id);
+
+	// Initialise from URL so bookmarks land on the right tab.
+	// detailSection → ?tab=, editSection → ?edittab= (deep-link to a specific
+	// edit-form section even when not currently in edit mode).
+	function initDetail(): DetailSection {
+		const t = page.url.searchParams.get('tab');
+		return t && (detailIds as string[]).includes(t) ? (t as DetailSection) : 'overview';
+	}
+	function initEdit(): EditSection {
+		const t = page.url.searchParams.get('edittab');
+		return t && (editIds as string[]).includes(t) ? (t as EditSection) : 'general';
+	}
+	let detailSection = $state<DetailSection>(initDetail());
+	let editSection = $state<EditSection>(initEdit());
+
+	function selectDetailSection(id: DetailSection) {
+		detailSection = id;
+		const url = new URL(page.url);
+		if (id === 'overview') url.searchParams.delete('tab');
+		else url.searchParams.set('tab', id);
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
+	function selectEditSection(id: EditSection) {
+		editSection = id;
+		const url = new URL(page.url);
+		if (id === 'general') url.searchParams.delete('edittab');
+		else url.searchParams.set('edittab', id);
+		goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+	}
 
 	// Token creation
 	let newTokenName = $state('');
@@ -463,7 +492,7 @@
 
 	function resetForm() {
 		if (!stack) return;
-		editSection = 'general';
+		editSection = initEdit();
 		form = {
 			name: stack.name,
 			description: stack.description ?? '',
@@ -1538,7 +1567,7 @@
 					{#each editSections as s}
 						{@const active = editSection === s.id}
 						<button type="button"
-							onclick={() => (editSection = s.id)}
+							onclick={() => selectEditSection(s.id)}
 							class="w-full text-left flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors relative"
 							style={active
 								? 'color: var(--accent); background: var(--accent-muted); border-left: 2px solid var(--accent); padding-left: calc(0.75rem - 2px); font-weight: 500;'
@@ -1920,7 +1949,7 @@
 		{#each detailSections as s}
 			{@const active = detailSection === s.id}
 			<button type="button"
-				onclick={() => (detailSection = s.id)}
+				onclick={() => selectDetailSection(s.id)}
 				class="text-sm px-3 py-2 rounded-t-lg border-b-2 transition-colors whitespace-nowrap"
 				style={active
 					? 'color: var(--accent); border-bottom-color: var(--accent);'
