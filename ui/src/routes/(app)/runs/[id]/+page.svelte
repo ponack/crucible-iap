@@ -38,6 +38,12 @@
 	let sse: EventSource | null = null;
 	let autoScroll = $state(true);
 
+	// True when the SSE log stream dropped mid-run (network blip, proxy
+	// timeout, server restart). Surfaces a banner + Reconnect button so the
+	// user doesn't sit staring at a stale log thinking the run is hung.
+	let sseDisconnected = $state(false);
+	let sseIdRef = $state<string | null>(null);
+
 	const terminalStatuses = new Set(['finished', 'failed', 'canceled', 'discarded']);
 
 	// Mutable token replaced on each effect run. confirm() captures it at
@@ -88,6 +94,8 @@
 	function startSSE(id: string, isCancelled: () => boolean) {
 		sse?.close();
 		sse = null;
+		sseDisconnected = false;
+		sseIdRef = id;
 		if (!run) return;
 
 		const token = auth.accessToken;
@@ -123,8 +131,22 @@
 			sse?.close();
 			sse = null;
 			if (isCancelled()) return;
-			runs.get(id).then((r) => (run = r)).catch((e) => console.error('run refresh on SSE error', e));
+			// Refresh the run; if it's still in a non-terminal status the stream
+			// died early — flag it so the UI can offer a reconnect.
+			runs.get(id).then((r) => {
+				if (isCancelled()) return;
+				run = r;
+				if (!terminalStatuses.has(r.status)) {
+					sseDisconnected = true;
+				}
+			}).catch((e) => console.error('run refresh on SSE error', e));
 		};
+	}
+
+	function reconnectSSE() {
+		if (!sseIdRef) return;
+		const id = sseIdRef;
+		startSSE(id, () => false);
 	}
 
 	async function approve() {
@@ -649,6 +671,16 @@
 					<span class="h-2.5 w-2.5 rounded-full" style="background: var(--color-zinc-700);"></span>
 				</div>
 				<span class="text-xs text-zinc-600 font-mono ml-2">run output</span>
+				{#if sseDisconnected}
+					<span class="ml-3 inline-flex items-center gap-2 text-xs px-2 py-0.5 rounded-full bg-amber-950/60 border border-amber-900 text-amber-300">
+						<span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>
+						Stream disconnected
+						<button type="button" onclick={reconnectSSE}
+							class="underline hover:text-amber-200">
+							Reconnect
+						</button>
+					</span>
+				{/if}
 			</div>
 			<div class="flex items-center gap-3">
 				{#if logLines.length > 0}
