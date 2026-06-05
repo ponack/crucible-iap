@@ -114,7 +114,7 @@
 	};
 </script>
 
-<div class="p-6 space-y-4">
+<div class="p-4 md:p-6 space-y-4">
 	<div class="flex items-center justify-between flex-wrap gap-2">
 		<h1 class="text-lg font-semibold text-white">Audit log</h1>
 		<div class="flex items-center gap-2 flex-wrap">
@@ -155,7 +155,7 @@
 	</div>
 
 	{#if loading}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<Skeleton variant="table-row" rows={6} columns={4} />
 		</div>
 	{:else if error}
@@ -167,7 +167,7 @@
 			sub="Actions taken by members — stack creates, run triggers, policy changes, setting updates — will appear here."
 		/>
 	{:else}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<table class="w-full text-sm">
 				<thead class="bg-zinc-900 text-zinc-400 text-xs uppercase tracking-wide">
 					<tr>

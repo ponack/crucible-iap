@@ -1929,7 +1929,7 @@
 	{#if detailSection === 'overview'}
 	<!-- Lifecycle hooks (read-only — edit via the edit form above) -->
 	{#if stack.pre_plan_hook || stack.post_plan_hook || stack.pre_apply_hook || stack.post_apply_hook}
-	<div class="border border-zinc-800 rounded-xl overflow-hidden">
+	<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 		<div class="bg-zinc-900 px-4 py-2 text-xs text-zinc-500 uppercase tracking-wide font-medium">Lifecycle hooks</div>
 		{#each [
 			['Pre-plan', stack.pre_plan_hook],
@@ -1970,7 +1970,7 @@
 		{#if validationResults.length === 0}
 			<p class="text-zinc-600 text-sm">No validation runs yet — click Validate or wait for the next scheduled check.</p>
 		{:else}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				{#each validationResults.slice(0, 5) as result (result.id)}
 					<div class="border-b border-zinc-800 last:border-b-0 px-4 py-3 space-y-2">
 						<div class="flex items-center justify-between">
@@ -2033,7 +2033,7 @@
 				r.type.includes(resourceFilter) ||
 				r.address.includes(resourceFilter)
 			)}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -2076,7 +2076,7 @@
 		{#if stateVersions.length === 0}
 			<p class="text-zinc-600 text-sm">No state versions recorded yet — versions are captured on each successful apply.</p>
 		{:else}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -2389,7 +2389,7 @@
 		</p>
 
 		{#if remoteSources.length > 0}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -2448,7 +2448,7 @@
 		<p class="text-xs text-zinc-500">Values are encrypted at rest and injected into runner containers. Secret values are write-only and cannot be read back; plain values are visible here.</p>
 
 		{#if envVars.length > 0}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -2530,7 +2530,7 @@
 		<p class="text-xs text-zinc-500">Attach variable sets to inject shared environment variables into every run on this stack.</p>
 
 		{#if stackVarSets.length > 0}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -2606,7 +2606,7 @@
 
 		<!-- Management controls -->
 		{#if auth.isMemberOrAbove && (upstreamDeps.length > 0 || downstreamDeps.length > 0)}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<tbody class="divide-y divide-zinc-700">
 						{#each upstreamDeps as dep (dep.id)}
@@ -3142,7 +3142,7 @@
 		</div>
 
 		{#if members.length > 0}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -3267,7 +3267,7 @@
 				<p class="text-zinc-600 text-xs mt-1">Every inbound webhook request will be logged here.</p>
 			</div>
 		{:else}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -3360,7 +3360,7 @@
 		{/if}
 
 		{#if outgoingWebhooks.length > 0}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<tbody class="divide-y divide-zinc-700">
 						{#each outgoingWebhooks as wh (wh.id)}
@@ -3492,7 +3492,7 @@
 				<p class="text-zinc-600 text-xs">Trigger a run to deploy or plan this stack's infrastructure.</p>
 			</div>
 		{:else}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>
@@ -3764,7 +3764,7 @@
 		{/if}
 
 		{#if tokens.length > 0}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>

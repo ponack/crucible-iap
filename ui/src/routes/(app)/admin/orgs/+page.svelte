@@ -117,13 +117,13 @@
 	</div>
 
 	{#if loading}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<Skeleton variant="table-row" rows={4} columns={4} />
 		</div>
 	{:else if orgs.length === 0}
 		<p class="text-zinc-500 text-sm">{tab === 'active' ? 'No organizations yet.' : 'No archived organizations.'}</p>
 	{:else}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<table class="w-full text-sm">
 				<thead>
 					<tr class="border-b border-zinc-800">

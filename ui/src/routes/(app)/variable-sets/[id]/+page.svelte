@@ -177,7 +177,7 @@
 		</p>
 
 		{#if vs.vars.length > 0}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead class="bg-zinc-900 text-zinc-500 text-xs uppercase tracking-wide">
 						<tr>

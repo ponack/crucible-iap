@@ -51,7 +51,7 @@
 	}
 </script>
 
-<div class="p-6 space-y-6 max-w-5xl">
+<div class="p-4 md:p-6 space-y-6 max-w-5xl">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-lg font-semibold text-white">Analytics</h1>

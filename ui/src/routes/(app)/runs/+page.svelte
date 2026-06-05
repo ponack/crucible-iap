@@ -165,10 +165,10 @@
 	};
 </script>
 
-<div class="p-6 space-y-4">
-	<div class="flex items-center justify-between">
+<div class="p-4 md:p-6 space-y-4">
+	<div class="flex items-center justify-between flex-wrap gap-3">
 		<h1 class="text-lg font-semibold text-white">Runs</h1>
-		<div class="flex items-center gap-2">
+		<div class="flex items-center gap-2 flex-wrap">
 			<div class="w-44">
 				<select bind:value={filterStatus} onchange={applyFilters} class="field-input py-1.5">
 					<option value="">Any status</option>
@@ -231,7 +231,7 @@
 	</div>
 
 	{#if loading}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<Skeleton variant="table-row" rows={6} columns={5} />
 		</div>
 	{:else if error}
@@ -261,7 +261,7 @@
 			</div>
 		{/if}
 
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<table class="w-full text-sm">
 				<thead class="bg-zinc-900 text-zinc-400 text-xs uppercase tracking-wide">
 					<tr>

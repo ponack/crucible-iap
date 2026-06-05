@@ -87,7 +87,7 @@
 	}
 </script>
 
-<div class="p-6 space-y-6">
+<div class="p-4 md:p-6 space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-lg font-semibold text-white">Worker Pools</h1>
@@ -153,7 +153,7 @@
 	{/if}
 
 	{#if loading}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<Skeleton variant="table-row" rows={4} columns={4} />
 		</div>
 	{:else if error}
@@ -173,7 +173,7 @@
 			</button>
 		</EmptyState>
 	{:else if items.length > 0}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<table class="w-full text-sm">
 				<thead class="bg-zinc-900 text-zinc-400 text-xs uppercase tracking-wide">
 					<tr>

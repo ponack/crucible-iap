@@ -157,7 +157,7 @@
 
 	<!-- Org name -->
 	{#if isAdmin}
-		<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<div class="px-6 py-4 border-b border-zinc-800">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest">Details</p>
 			</div>
@@ -196,7 +196,7 @@
 	{/if}
 
 	<!-- Members list -->
-	<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+	<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 		<div class="px-6 py-4 border-b border-zinc-800">
 			<p class="text-xs text-zinc-500 uppercase tracking-widest">Members</p>
 		</div>
@@ -251,7 +251,7 @@
 
 	<!-- Invites (admins only) -->
 	{#if isAdmin}
-		<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<div class="px-6 py-4 border-b border-zinc-800">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest">Invite member</p>
 			</div>
@@ -323,7 +323,7 @@
 
 	<!-- SSO Group Mapping (admins only, only meaningful when OIDC is configured) -->
 	{#if isAdmin}
-		<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="bg-zinc-900 border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<div class="px-6 py-4 border-b border-zinc-800">
 				<p class="text-xs text-zinc-500 uppercase tracking-widest">SSO Group Mapping</p>
 				<p class="text-xs text-zinc-600 mt-1">Map IdP group claims to org roles. Applied automatically on each login.</p>
