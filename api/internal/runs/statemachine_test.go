@@ -3,106 +3,18 @@ package runs_test
 
 import (
 	"context"
-	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/testutil"
 )
 
-// TestMain ensures audit_events partitions exist for the current month before
-// any test runs — the production server does this at startup via
-// audit.StartPartitionMaintainer, but tests hit the DB directly.
-func TestMain(m *testing.M) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn != "" {
-		pool, err := pgxpool.New(context.Background(), dsn)
-		if err == nil {
-			_ = audit.EnsurePartitions(context.Background(), pool, 2)
-			pool.Close()
-		}
-	}
-	os.Exit(m.Run())
-}
-
-// testDB returns a pool connected to the test database.
-// Tests using this are skipped if TEST_DATABASE_URL is not set.
-func testDB(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set — skipping DB integration test")
-	}
-	pool, err := pgxpool.New(context.Background(), dsn)
-	if err != nil {
-		t.Fatalf("connect to test DB: %v", err)
-	}
-	t.Cleanup(pool.Close)
-	return pool
-}
-
-// insertTestRun creates a minimal run row and returns its ID.
-func insertTestRun(t *testing.T, pool *pgxpool.Pool, stackID, status, runType string) string {
-	t.Helper()
-	var id string
-	err := pool.QueryRow(context.Background(), `
-		INSERT INTO runs (stack_id, status, type, trigger)
-		VALUES ($1, $2::run_status, $3::run_type, 'manual')
-		RETURNING id
-	`, stackID, status, runType).Scan(&id)
-	if err != nil {
-		t.Fatalf("insertTestRun: %v", err)
-	}
-	t.Cleanup(func() {
-		pool.Exec(context.Background(), `DELETE FROM runs WHERE id = $1`, id)
-	})
-	return id
-}
-
-// insertTestStack creates a minimal stack row and returns its ID.
-func insertTestStack(t *testing.T, pool *pgxpool.Pool, orgID string) string {
-	t.Helper()
-	var id string
-	err := pool.QueryRow(context.Background(), `
-		INSERT INTO stacks (org_id, slug, name, tool, repo_url, repo_branch, project_root)
-		VALUES ($1, gen_random_uuid()::text, 'test-stack', 'opentofu',
-		        'https://example.com/repo.git', 'main', '.')
-		RETURNING id
-	`, orgID).Scan(&id)
-	if err != nil {
-		t.Fatalf("insertTestStack: %v", err)
-	}
-	t.Cleanup(func() {
-		pool.Exec(context.Background(), `DELETE FROM stacks WHERE id = $1`, id)
-	})
-	return id
-}
-
-// insertTestOrg creates a minimal org and returns its ID.
-func insertTestOrg(t *testing.T, pool *pgxpool.Pool) string {
-	t.Helper()
-	var id string
-	err := pool.QueryRow(context.Background(), `
-		INSERT INTO organizations (slug, name)
-		VALUES (gen_random_uuid()::text, 'test-org')
-		RETURNING id
-	`).Scan(&id)
-	if err != nil {
-		t.Fatalf("insertTestOrg: %v", err)
-	}
-	t.Cleanup(func() {
-		pool.Exec(context.Background(), `DELETE FROM organizations WHERE id = $1`, id)
-	})
-	return id
-}
-
 func TestRunTransition_ConfirmFromUnconfirmed(t *testing.T) {
-	pool := testDB(t)
+	pool := testutil.Pool(t)
 	ctx := context.Background()
 
-	orgID := insertTestOrg(t, pool)
-	stackID := insertTestStack(t, pool, orgID)
-	runID := insertTestRun(t, pool, stackID, "unconfirmed", "tracked")
+	orgID := testutil.InsertOrg(t, pool)
+	stackID := testutil.InsertStack(t, pool, orgID)
+	runID := testutil.InsertRun(t, pool, stackID, "unconfirmed", "tracked")
 
 	// Confirm the run (mirrors handler logic)
 	tag, err := pool.Exec(ctx, `
@@ -124,12 +36,12 @@ func TestRunTransition_ConfirmFromUnconfirmed(t *testing.T) {
 }
 
 func TestRunTransition_ConfirmFromWrongState(t *testing.T) {
-	pool := testDB(t)
+	pool := testutil.Pool(t)
 	ctx := context.Background()
 
-	orgID := insertTestOrg(t, pool)
-	stackID := insertTestStack(t, pool, orgID)
-	runID := insertTestRun(t, pool, stackID, "planning", "tracked")
+	orgID := testutil.InsertOrg(t, pool)
+	stackID := testutil.InsertStack(t, pool, orgID)
+	runID := testutil.InsertRun(t, pool, stackID, "planning", "tracked")
 
 	tag, err := pool.Exec(ctx, `
 		UPDATE runs SET status = 'confirmed'
@@ -144,12 +56,12 @@ func TestRunTransition_ConfirmFromWrongState(t *testing.T) {
 }
 
 func TestRunTransition_DiscardFromUnconfirmed(t *testing.T) {
-	pool := testDB(t)
+	pool := testutil.Pool(t)
 	ctx := context.Background()
 
-	orgID := insertTestOrg(t, pool)
-	stackID := insertTestStack(t, pool, orgID)
-	runID := insertTestRun(t, pool, stackID, "unconfirmed", "tracked")
+	orgID := testutil.InsertOrg(t, pool)
+	stackID := testutil.InsertStack(t, pool, orgID)
+	runID := testutil.InsertRun(t, pool, stackID, "unconfirmed", "tracked")
 
 	tag, err := pool.Exec(ctx, `
 		UPDATE runs SET status = 'discarded'
@@ -164,17 +76,17 @@ func TestRunTransition_DiscardFromUnconfirmed(t *testing.T) {
 }
 
 func TestRunTransition_CancelFromActiveStates(t *testing.T) {
-	pool := testDB(t)
+	pool := testutil.Pool(t)
 	ctx := context.Background()
 
 	cancelable := []string{"queued", "preparing", "planning", "unconfirmed", "applying"}
 	nonCancelable := []string{"finished", "failed", "canceled", "discarded"}
 
-	orgID := insertTestOrg(t, pool)
-	stackID := insertTestStack(t, pool, orgID)
+	orgID := testutil.InsertOrg(t, pool)
+	stackID := testutil.InsertStack(t, pool, orgID)
 
 	for _, s := range cancelable {
-		runID := insertTestRun(t, pool, stackID, s, "tracked")
+		runID := testutil.InsertRun(t, pool, stackID, s, "tracked")
 		tag, err := pool.Exec(ctx, `
 			UPDATE runs SET status = 'canceled'
 			WHERE id = $1 AND status IN ('queued','preparing','planning','unconfirmed','applying')
@@ -189,7 +101,7 @@ func TestRunTransition_CancelFromActiveStates(t *testing.T) {
 	}
 
 	for _, s := range nonCancelable {
-		runID := insertTestRun(t, pool, stackID, s, "tracked")
+		runID := testutil.InsertRun(t, pool, stackID, s, "tracked")
 		tag, err := pool.Exec(ctx, `
 			UPDATE runs SET status = 'canceled'
 			WHERE id = $1 AND status IN ('queued','preparing','planning','unconfirmed','applying')
@@ -205,11 +117,11 @@ func TestRunTransition_CancelFromActiveStates(t *testing.T) {
 }
 
 func TestStateLock_AcquireAndRelease(t *testing.T) {
-	pool := testDB(t)
+	pool := testutil.Pool(t)
 	ctx := context.Background()
 
-	orgID := insertTestOrg(t, pool)
-	stackID := insertTestStack(t, pool, orgID)
+	orgID := testutil.InsertOrg(t, pool)
+	stackID := testutil.InsertStack(t, pool, orgID)
 
 	lockID := "test-lock-123"
 
@@ -253,10 +165,10 @@ func TestStateLock_AcquireAndRelease(t *testing.T) {
 }
 
 func TestAuditLog_AppendOnly(t *testing.T) {
-	pool := testDB(t)
+	pool := testutil.Pool(t)
 	ctx := context.Background()
 
-	orgID := insertTestOrg(t, pool)
+	orgID := testutil.InsertOrg(t, pool)
 
 	// Insert an audit event
 	var eventID int64
