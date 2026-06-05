@@ -32,16 +32,11 @@
 		if (!(el instanceof HTMLElement)) return false;
 		const tag = el.tagName;
 		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-		if (el.isContentEditable) return true;
-		// Code editor surface (Monaco / textarea-backed) marks its container.
-		if (el.closest('[data-no-shortcuts]')) return true;
-		return false;
+		return el.isContentEditable;
 	}
 
 	function focusSearch(): boolean {
-		const input = document.querySelector<HTMLInputElement>(
-			'input[type="search"], input[data-shortcut="search"]'
-		);
+		const input = document.querySelector<HTMLInputElement>('input[type="search"]');
 		if (!input) return false;
 		input.focus();
 		input.select();
