@@ -80,6 +80,25 @@ func InsertStack(t *testing.T, pool *pgxpool.Pool, orgID string) string {
 	return id
 }
 
+// InsertUser creates a user with a unique email and registers cleanup.
+// Returns the new user's UUID.
+func InsertUser(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	var id string
+	err := pool.QueryRow(context.Background(), `
+		INSERT INTO users (email, name)
+		VALUES (gen_random_uuid()::text || '@test.local', 'test-user')
+		RETURNING id
+	`).Scan(&id)
+	if err != nil {
+		t.Fatalf("InsertUser: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, id)
+	})
+	return id
+}
+
 // InsertRun creates a run on the given stack with the requested status and
 // type, and registers cleanup. Use to seed state-machine and quota fixtures.
 func InsertRun(t *testing.T, pool *pgxpool.Pool, stackID, status, runType string) string {
