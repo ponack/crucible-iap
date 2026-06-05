@@ -109,7 +109,7 @@
 	};
 </script>
 
-<div class="p-6 space-y-6">
+<div class="p-4 md:p-6 space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-lg font-semibold text-white">Policies</h1>
 		<div class="flex items-center gap-2">
@@ -241,7 +241,7 @@
 	{/if}
 
 	{#if loading}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<Skeleton variant="table-row" rows={5} columns={4} />
 		</div>
 	{:else if error}

@@ -114,8 +114,8 @@
 	};
 </script>
 
-<div class="p-6 space-y-4">
-	<div class="flex items-center justify-between">
+<div class="p-4 md:p-6 space-y-4">
+	<div class="flex items-center justify-between flex-wrap gap-3">
 		<h1 class="text-lg font-semibold text-white">Stacks</h1>
 		<a href="/stacks/new"
 			class="text-sm font-medium px-3 py-1.5 rounded-lg transition-colors"
@@ -229,7 +229,7 @@
 	{/if}
 
 	{#if loading}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<Skeleton variant="table-row" rows={6} columns={5} />
 		</div>
 	{:else if error}
@@ -257,7 +257,7 @@
 			{/if}
 		</EmptyState>
 	{:else}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<table class="w-full text-sm">
 				<thead class="text-zinc-400 text-xs uppercase tracking-wide" style="background: var(--color-zinc-900); border-bottom: 1px solid var(--color-zinc-800);">
 					<tr>

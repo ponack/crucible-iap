@@ -108,7 +108,7 @@
 	}
 </script>
 
-<div class="p-6 space-y-6">
+<div class="p-4 md:p-6 space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-xl font-semibold text-white">Provider Registry</h1>
@@ -284,7 +284,7 @@
 	</details>
 
 	{#if loading}
-		<div class="border border-zinc-800 rounded-xl overflow-hidden">
+		<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 			<Skeleton variant="table-row" rows={4} columns={4} />
 		</div>
 	{:else if error}

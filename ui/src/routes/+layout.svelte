@@ -18,6 +18,14 @@
 	let theme = $state<'dark' | 'light'>('dark');
 	let forge = $state<'cold' | 'hot' | 'neutral' | 'ember' | 'frost' | 'gold'>('cold');
 	let appVersion = $state('');
+	let mobileNavOpen = $state(false);
+
+	// Close the mobile nav drawer whenever the route changes — otherwise it
+	// stays open over the new page after a navigation.
+	$effect(() => {
+		page.url.pathname;
+		mobileNavOpen = false;
+	});
 
 	function applyTheme(t: 'dark' | 'light') {
 		theme = t;
@@ -211,8 +219,16 @@
 	</div>
 {:else}
 	<div class="flex h-screen overflow-hidden">
+		<!-- Mobile backdrop -->
+		{#if mobileNavOpen}
+			<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+			<div class="md:hidden fixed inset-0 z-30 bg-black/60" onclick={() => (mobileNavOpen = false)}></div>
+		{/if}
+
 		<!-- Sidebar -->
-		<aside class="w-56 flex-shrink-0 flex flex-col" style="background: var(--color-zinc-900); border-right: 1px solid var(--color-zinc-800);">
+		<aside
+			class="w-56 flex-shrink-0 flex-col fixed inset-y-0 left-0 z-40 transition-transform md:static md:flex md:translate-x-0 {mobileNavOpen ? 'flex translate-x-0' : '-translate-x-full md:translate-x-0'}"
+			style="background: var(--color-zinc-900); border-right: 1px solid var(--color-zinc-800);">
 
 			<!-- Logo + controls -->
 			<div class="px-4 py-4 flex items-center gap-3" style="border-bottom: 1px solid var(--color-zinc-800);">
@@ -357,6 +373,23 @@
 
 		<!-- Main content -->
 		<main class="flex-1 overflow-auto">
+			<!-- Mobile top bar: hamburger + wordmark; desktop renders nothing -->
+			<div class="md:hidden sticky top-0 z-20 flex items-center gap-3 px-3 py-2.5"
+				style="background: var(--color-zinc-900); border-bottom: 1px solid var(--color-zinc-800);">
+				<button
+					onclick={() => (mobileNavOpen = true)}
+					aria-label="Open navigation"
+					class="flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-700 text-zinc-300 transition-colors hover:text-white">
+					<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+						<path d="M3 6h18M3 12h18M3 18h18"/>
+					</svg>
+				</button>
+				<div class="flex items-center gap-2">
+					<img src="/mark.png" alt="" class="h-6 w-6" />
+					<span class="font-semibold text-white tracking-tight text-sm">Crucible</span>
+					<span class="text-[10px] text-zinc-500 uppercase tracking-widest">IAP</span>
+				</div>
+			</div>
 			{@render children()}
 		</main>
 	</div>

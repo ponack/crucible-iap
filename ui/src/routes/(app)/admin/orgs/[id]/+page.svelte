@@ -140,7 +140,7 @@
 		{#if members.length === 0}
 			<p class="text-zinc-500 text-sm">No members yet.</p>
 		{:else}
-			<div class="border border-zinc-800 rounded-xl overflow-hidden">
+			<div class="border border-zinc-800 rounded-xl overflow-x-auto overflow-y-hidden">
 				<table class="w-full text-sm">
 					<thead>
 						<tr class="border-b border-zinc-800">
