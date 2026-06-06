@@ -10,6 +10,8 @@ export interface Project {
 	updated_at: string;
 	stack_count: number;
 	member_count: number;
+	monthly_budget_usd?: number | null;
+	budget_enforcement: 'warn' | 'block';
 }
 
 export interface ProjectStack {
@@ -33,6 +35,7 @@ export interface ProjectMember {
 export interface ProjectDetail extends Project {
 	stacks: ProjectStack[];
 	members: ProjectMember[];
+	month_to_date_spend_usd: number;
 }
 
 export const projects = {
@@ -40,8 +43,15 @@ export const projects = {
 	create: (data: { name: string; description?: string; slug?: string }) =>
 		request<Project>('/projects', { method: 'POST', body: JSON.stringify(data) }),
 	get: (id: string) => request<ProjectDetail>(`/projects/${id}`),
-	update: (id: string, data: { name: string; description?: string }) =>
-		request<Project>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+	update: (
+		id: string,
+		data: {
+			name: string;
+			description?: string;
+			monthly_budget_usd?: number | null;
+			budget_enforcement?: 'warn' | 'block';
+		}
+	) => request<Project>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 	delete: (id: string) => request<null>(`/projects/${id}`, { method: 'DELETE' }),
 	listMembers: (id: string) => request<ProjectMember[]>(`/projects/${id}/members`),
 	upsertMember: (id: string, userID: string, role: 'admin' | 'member' | 'viewer') =>

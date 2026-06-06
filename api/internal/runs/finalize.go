@@ -13,6 +13,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/policy"
+	"github.com/ponack/crucible-iap/internal/projects"
 	"github.com/ponack/crucible-iap/internal/queue"
 )
 
@@ -71,6 +72,18 @@ func (f *Finalizer) completePlanPhase(ctx context.Context, log *slog.Logger, org
 	if exceeded := f.checkBudgetThresholds(ctx, args.RunID); len(exceeded) > 0 {
 		go f.notifier.BudgetAlert(context.Background(), args.RunID, exceeded)
 		blockedByBudget = f.stackBlocksOnAlert(ctx, args.StackID)
+	}
+
+	// Per-project monthly cost quota — orthogonal to the stack-level budget
+	// threshold above. A 'block' enforcement inhibits auto-apply just like
+	// the stack's plan_block_on_alert; 'warn' notifies only.
+	if quota, err := projects.CheckCostQuota(ctx, f.pool, args.RunID); err == nil && quota.HasQuota && quota.Exceeded {
+		breach := fmt.Sprintf("project '%s' monthly cost: $%.2f projected (budget $%.2f, this run +$%.2f)",
+			quota.ProjectName, quota.Projected, quota.Budget, quota.RunCostChange)
+		go f.notifier.BudgetAlert(context.Background(), args.RunID, []string{breach})
+		if quota.Enforcement == "block" {
+			blockedByBudget = true
+		}
 	}
 
 	if args.AutoApply && args.RunType == "tracked" && !requiresApproval && !blockedByBudget {
