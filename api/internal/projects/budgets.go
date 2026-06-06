@@ -9,12 +9,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// MonthToDateSpend returns the SUM(cost_change) across all runs in this
+// MonthToDateSpend returns the SUM(cost_change) of finished runs in this
 // project's stacks since the start of the current calendar month (UTC).
-// Only runs whose `cost_change` is populated count — runs that haven't
-// produced an Infracost number yet contribute zero.
 //
-// Returns 0 (not an error) when the project has no runs this month.
+// Only runs whose status is 'finished' count — that's actual realised cost.
+// In-flight runs (queued / planning / applying) are deliberately excluded:
+// their plan-time cost_change is a forecast, not a fact, and counting them
+// would also double-include the run being checked at the post-plan gate.
+//
+// Returns 0 (not an error) when the project has no qualifying runs.
 func MonthToDateSpend(ctx context.Context, pool *pgxpool.Pool, projectID string) (float64, error) {
 	var spend float64
 	err := pool.QueryRow(ctx, `
@@ -22,6 +25,7 @@ func MonthToDateSpend(ctx context.Context, pool *pgxpool.Pool, projectID string)
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		WHERE s.project_id = $1
+		  AND r.status = 'finished'
 		  AND r.cost_change IS NOT NULL
 		  AND r.queued_at >= date_trunc('month', now() AT TIME ZONE 'utc')
 	`, projectID).Scan(&spend)
@@ -70,8 +74,8 @@ func CheckCostQuota(ctx context.Context, pool *pgxpool.Pool, runID string) (Cost
 		res         CostQuotaResult
 		projectID   *string
 		budget      *float64
-		enforcement string
-		projectName string
+		enforcement *string // LEFT JOIN: NULL when stack has no project
+		projectName *string
 		costChange  *float64
 	)
 	err := pool.QueryRow(ctx, `
@@ -99,12 +103,16 @@ func CheckCostQuota(ctx context.Context, pool *pgxpool.Pool, runID string) (Cost
 	}
 
 	res.HasQuota = true
-	res.Enforcement = enforcement
+	if enforcement != nil {
+		res.Enforcement = *enforcement
+	}
 	res.Spend = spend
 	res.RunCostChange = *costChange
 	res.Projected = spend + *costChange
 	res.Budget = *budget
-	res.ProjectName = projectName
+	if projectName != nil {
+		res.ProjectName = *projectName
+	}
 	res.Exceeded = res.Projected > res.Budget
 	return res, nil
 }

@@ -77,19 +77,27 @@ func TestMonthToDateSpend_SumsAcrossStacksInProject(t *testing.T) {
 	assignStackToProject(t, pool, stackA, projectID)
 	assignStackToProject(t, pool, stackB, projectID)
 
-	// Three runs in the project (sum: 12.5 + 8.0 + 1.0 = 21.5)
+	// Three finished runs in the project (sum: 12.5 + 8.0 + 1.0 = 21.5)
 	r1 := testutil.InsertRun(t, pool, stackA, "finished", "tracked")
-	r2 := testutil.InsertRun(t, pool, stackB, "applying", "tracked")
+	r2 := testutil.InsertRun(t, pool, stackB, "finished", "tracked")
 	r3 := testutil.InsertRun(t, pool, stackB, "finished", "tracked")
 	setRunCost(t, pool, r1, 12.5)
 	setRunCost(t, pool, r2, 8.0)
 	setRunCost(t, pool, r3, 1.0)
 
+	// In-flight run with cost — must NOT be counted (cost not realised yet).
+	rApplying := testutil.InsertRun(t, pool, stackA, "applying", "tracked")
+	setRunCost(t, pool, rApplying, 999)
+
+	// Failed run with cost — must NOT be counted (apply didn't happen).
+	rFailed := testutil.InsertRun(t, pool, stackB, "failed", "tracked")
+	setRunCost(t, pool, rFailed, 999)
+
 	// A run on the outside stack with cost — must NOT be counted.
 	rOut := testutil.InsertRun(t, pool, stackOutside, "finished", "tracked")
 	setRunCost(t, pool, rOut, 999)
 
-	// A run in the project with NULL cost_change — must NOT be counted.
+	// A finished run in the project with NULL cost_change — must NOT be counted.
 	rNull := testutil.InsertRun(t, pool, stackA, "finished", "tracked")
 	_ = rNull // cost_change stays NULL by default
 
