@@ -20,7 +20,12 @@
 	let editing = $state(false);
 	let saving = $state(false);
 	let editError = $state<string | null>(null);
-	let form = $state({ name: '', description: '' });
+	let form = $state({
+		name: '',
+		description: '',
+		monthly_budget_usd: null as number | null,
+		budget_enforcement: 'warn' as 'warn' | 'block'
+	});
 
 	// Add member
 	let orgMembers = $state<OrgMember[]>([]);
@@ -32,10 +37,19 @@
 
 	const isAdmin = $derived(auth.orgRole === 'admin');
 
+	function formFromDetail(d: NonNullable<typeof detail>) {
+		return {
+			name: d.name,
+			description: d.description,
+			monthly_budget_usd: d.monthly_budget_usd ?? null,
+			budget_enforcement: d.budget_enforcement
+		};
+	}
+
 	onMount(async () => {
 		try {
 			detail = await projects.get(id);
-			form = { name: detail.name, description: detail.description };
+			form = formFromDetail(detail);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -48,8 +62,19 @@
 		saving = true;
 		editError = null;
 		try {
-			const updated = await projects.update(id, form);
-			detail = { ...detail!, name: updated.name, description: updated.description };
+			const updated = await projects.update(id, {
+				name: form.name,
+				description: form.description,
+				monthly_budget_usd: form.monthly_budget_usd,
+				budget_enforcement: form.budget_enforcement
+			});
+			detail = {
+				...detail!,
+				name: updated.name,
+				description: updated.description,
+				monthly_budget_usd: updated.monthly_budget_usd,
+				budget_enforcement: updated.budget_enforcement
+			};
 			editing = false;
 		} catch (e) {
 			editError = (e as Error).message;
@@ -172,11 +197,31 @@
 				{#if detail.description}
 					<p class="text-sm text-zinc-500 mt-1">{detail.description}</p>
 				{/if}
+				{#if detail.monthly_budget_usd}
+					{@const ratio = detail.month_to_date_spend_usd / detail.monthly_budget_usd}
+					{@const pct = Math.min(100, Math.max(0, ratio * 100))}
+					{@const over = ratio >= 1}
+					{@const near = !over && ratio >= 0.8}
+					<div class="mt-2 max-w-md">
+						<div class="flex items-center justify-between text-xs">
+							<span class="text-zinc-400">
+								${detail.month_to_date_spend_usd.toFixed(2)} of ${detail.monthly_budget_usd.toFixed(2)} this month
+							</span>
+							<span class="text-[10px] uppercase tracking-wide {over ? 'text-red-400' : near ? 'text-amber-400' : 'text-zinc-500'}">
+								{detail.budget_enforcement === 'block' ? 'block' : 'warn'}
+							</span>
+						</div>
+						<div class="mt-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+							<div class="h-full transition-all {over ? 'bg-red-500' : near ? 'bg-amber-500' : 'bg-teal-500'}"
+								style="width: {pct}%"></div>
+						</div>
+					</div>
+				{/if}
 			</div>
 			{#if isAdmin}
 				<div class="flex gap-2 flex-shrink-0">
 					<button
-						onclick={() => { editing = !editing; if (!editing) { form = { name: detail!.name, description: detail!.description }; editError = null; } }}
+						onclick={() => { editing = !editing; if (!editing) { form = formFromDetail(detail!); editError = null; } }}
 						class="rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors">
 						{editing ? 'Cancel' : 'Edit'}
 					</button>
@@ -207,8 +252,32 @@
 							<input id="edit-desc" class="field-input" bind:value={form.description} />
 						</div>
 					</div>
+					<div class="space-y-1.5">
+						<label class="field-label" for="edit-budget">Monthly cost budget (USD)</label>
+						<div class="flex items-center gap-2">
+							<input
+								id="edit-budget"
+								type="number"
+								min="0"
+								step="0.01"
+								placeholder="No budget"
+								class="field-input"
+								value={form.monthly_budget_usd ?? ''}
+								oninput={(e) => {
+									const v = (e.target as HTMLInputElement).value;
+									form.monthly_budget_usd = v === '' ? null : Number(v);
+								}} />
+							<select bind:value={form.budget_enforcement} class="field-input w-32" disabled={form.monthly_budget_usd === null}>
+								<option value="warn">Warn only</option>
+								<option value="block">Block apply</option>
+							</select>
+						</div>
+						<p class="text-xs text-zinc-500">
+							When set, the post-plan gate checks the month-to-date cost_change across this project's stacks plus the current run's projected change. Leave empty for no quota.
+						</p>
+					</div>
 					<div class="flex justify-end gap-3">
-						<button type="button" onclick={() => { editing = false; editError = null; form = { name: detail!.name, description: detail!.description }; }} class="rounded-lg border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800">Cancel</button>
+						<button type="button" onclick={() => { editing = false; editError = null; form = formFromDetail(detail!); }} class="rounded-lg border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800">Cancel</button>
 						<button type="submit" disabled={saving} class="rounded-lg bg-teal-600 px-4 py-1.5 text-sm text-white hover:bg-teal-500 disabled:opacity-50">
 							{saving ? 'Saving…' : 'Save changes'}
 						</button>

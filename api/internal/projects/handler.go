@@ -23,14 +23,17 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 
 // Project is the API view of a projects row.
 type Project struct {
-	ID          string    `json:"id"`
-	Slug        string    `json:"slug"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	StackCount  int       `json:"stack_count"`
-	MemberCount int       `json:"member_count"`
+	ID                string    `json:"id"`
+	Slug              string    `json:"slug"`
+	Name              string    `json:"name"`
+	Description       string    `json:"description"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	StackCount        int       `json:"stack_count"`
+	MemberCount       int       `json:"member_count"`
+	// Monthly cost quota — see migration 079. NULL = unlimited.
+	MonthlyBudgetUSD   *float64 `json:"monthly_budget_usd,omitempty"`
+	BudgetEnforcement  string   `json:"budget_enforcement"` // 'warn' | 'block' (only meaningful with a budget)
 }
 
 // ProjectStack is a slim stack summary embedded in project detail responses.
@@ -58,6 +61,11 @@ type ProjectDetail struct {
 	Project
 	Stacks  []ProjectStack  `json:"stacks"`
 	Members []ProjectMember `json:"members"`
+	// MonthToDateSpendUSD is the SUM(cost_change) across runs in this
+	// project's stacks since the start of the current calendar month (UTC).
+	// Always present; 0 when there are no qualifying runs. Drives the UI's
+	// "$X of $Y this month" budget meter and feeds the post-plan gate.
+	MonthToDateSpendUSD float64 `json:"month_to_date_spend_usd"`
 }
 
 // List returns all projects for the caller's org with stack and member counts.
@@ -68,7 +76,8 @@ func (h *Handler) List(c echo.Context) error {
 		SELECT p.id, p.slug, p.name, COALESCE(p.description,''),
 		       p.created_at, p.updated_at,
 		       COUNT(DISTINCT s.id)  AS stack_count,
-		       COUNT(DISTINCT pm.user_id) AS member_count
+		       COUNT(DISTINCT pm.user_id) AS member_count,
+		       p.monthly_budget_usd, p.budget_enforcement
 		FROM projects p
 		LEFT JOIN stacks        s  ON s.project_id = p.id
 		LEFT JOIN project_members pm ON pm.project_id = p.id
@@ -85,7 +94,8 @@ func (h *Handler) List(c echo.Context) error {
 	for rows.Next() {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Description,
-			&p.CreatedAt, &p.UpdatedAt, &p.StackCount, &p.MemberCount); err != nil {
+			&p.CreatedAt, &p.UpdatedAt, &p.StackCount, &p.MemberCount,
+			&p.MonthlyBudgetUSD, &p.BudgetEnforcement); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "scan error")
 		}
 		out = append(out, p)
@@ -148,7 +158,8 @@ func (h *Handler) Get(c echo.Context) error {
 		SELECT p.id, p.slug, p.name, COALESCE(p.description,''),
 		       p.created_at, p.updated_at,
 		       COUNT(DISTINCT s.id),
-		       COUNT(DISTINCT pm.user_id)
+		       COUNT(DISTINCT pm.user_id),
+		       p.monthly_budget_usd, p.budget_enforcement
 		FROM projects p
 		LEFT JOIN stacks          s  ON s.project_id = p.id
 		LEFT JOIN project_members pm ON pm.project_id = p.id
@@ -157,12 +168,18 @@ func (h *Handler) Get(c echo.Context) error {
 	`, projectID, orgID).Scan(
 		&d.ID, &d.Slug, &d.Name, &d.Description,
 		&d.CreatedAt, &d.UpdatedAt, &d.StackCount, &d.MemberCount,
+		&d.MonthlyBudgetUSD, &d.BudgetEnforcement,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return echo.ErrNotFound
 	}
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load project")
+	}
+
+	spend, err := MonthToDateSpend(ctx, h.pool, projectID)
+	if err == nil {
+		d.MonthToDateSpendUSD = spend
 	}
 
 	// Stacks
@@ -210,14 +227,23 @@ func (h *Handler) Get(c echo.Context) error {
 	return c.JSON(http.StatusOK, d)
 }
 
-// Update changes the name and/or description of a project.
+// Update changes the name, description, and/or monthly cost budget of a
+// project.
+//
+// MonthlyBudgetUSD is a pointer-to-pointer in the request shape so the caller
+// can distinguish "field omitted" (no change) from "field set to null" (clear
+// the quota): nil → unchanged, &(nil) → clear, &(&x) → set to x. Most clients
+// just send the budget value or null and don't care about omit semantics —
+// the JSON tag drives parsing.
 func (h *Handler) Update(c echo.Context) error {
 	projectID := c.Param("id")
 	orgID := c.Get("orgID").(string)
 
 	var req struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
+		Name              string   `json:"name"`
+		Description       string   `json:"description"`
+		MonthlyBudgetUSD  *float64 `json:"monthly_budget_usd"`
+		BudgetEnforcement *string  `json:"budget_enforcement"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -225,15 +251,31 @@ func (h *Handler) Update(c echo.Context) error {
 	if req.Name == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "name is required")
 	}
+	if req.MonthlyBudgetUSD != nil && *req.MonthlyBudgetUSD <= 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "monthly_budget_usd must be > 0 (omit or set to null to clear)")
+	}
+	enforcement := "warn"
+	if req.BudgetEnforcement != nil {
+		if *req.BudgetEnforcement != "warn" && *req.BudgetEnforcement != "block" {
+			return echo.NewHTTPError(http.StatusBadRequest, "budget_enforcement must be 'warn' or 'block'")
+		}
+		enforcement = *req.BudgetEnforcement
+	}
 
 	var p Project
 	err := h.pool.QueryRow(c.Request().Context(), `
 		UPDATE projects
-		SET name = $1, description = $2, updated_at = now()
-		WHERE id = $3 AND org_id = $4
-		RETURNING id, slug, name, COALESCE(description,''), created_at, updated_at
-	`, req.Name, req.Description, projectID, orgID).Scan(
+		SET name = $1, description = $2,
+		    monthly_budget_usd = $3, budget_enforcement = $4,
+		    updated_at = now()
+		WHERE id = $5 AND org_id = $6
+		RETURNING id, slug, name, COALESCE(description,''),
+		          created_at, updated_at,
+		          monthly_budget_usd, budget_enforcement
+	`, req.Name, req.Description, req.MonthlyBudgetUSD, enforcement,
+		projectID, orgID).Scan(
 		&p.ID, &p.Slug, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt,
+		&p.MonthlyBudgetUSD, &p.BudgetEnforcement,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return echo.ErrNotFound
