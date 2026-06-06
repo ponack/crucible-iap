@@ -53,6 +53,25 @@ var (
 		Name: "crucible_build_info",
 		Help: "Build metadata.",
 	}, []string{"version"})
+
+	// Per-pool gauges back operator auto-scaling: scrape these and wire
+	// HPA / Docker Compose scale / CloudWatch alarms against them. Crucible
+	// can't spawn agents on the operator's infra, so these surface demand
+	// signals; the operator's platform reacts.
+	WorkerPoolQueueDepth = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "crucible_worker_pool_queue_depth",
+		Help: "Runs in 'queued' status waiting for a worker pool agent.",
+	}, []string{"pool_id", "pool_name"})
+
+	WorkerPoolRunningRuns = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "crucible_worker_pool_running_runs",
+		Help: "Runs actively executing on a worker pool (preparing, planning, or applying).",
+	}, []string{"pool_id", "pool_name"})
+
+	WorkerPoolSeen = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "crucible_worker_pool_seen",
+		Help: "1 if at least one agent in the pool checked in within the last 60s, else 0.",
+	}, []string{"pool_id", "pool_name"})
 )
 
 // Middleware returns an Echo middleware that records HTTP request metrics.
@@ -137,5 +156,46 @@ func pollGauges(ctx context.Context, pool *pgxpool.Pool) {
 		StacksTotal.Set(float64(n))
 	} else {
 		slog.Debug("stacks total poll failed", "err", err)
+	}
+
+	pollWorkerPoolGauges(ctx, pool)
+}
+
+// pollWorkerPoolGauges resets the per-pool gauge label set then re-populates
+// it from the current state of worker_pools + runs. Resetting first prevents
+// stale labels lingering after a pool is deleted.
+func pollWorkerPoolGauges(ctx context.Context, pool *pgxpool.Pool) {
+	WorkerPoolQueueDepth.Reset()
+	WorkerPoolRunningRuns.Reset()
+	WorkerPoolSeen.Reset()
+
+	rows, err := pool.Query(ctx, `
+		SELECT
+			wp.id::text,
+			wp.name,
+			COALESCE(SUM(CASE WHEN r.status = 'queued' THEN 1 ELSE 0 END), 0) AS queued,
+			COALESCE(SUM(CASE WHEN r.status IN ('preparing','planning','applying') THEN 1 ELSE 0 END), 0) AS running,
+			CASE WHEN wp.last_seen_at IS NOT NULL AND wp.last_seen_at > now() - interval '60 seconds' THEN 1 ELSE 0 END AS seen
+		FROM worker_pools wp
+		LEFT JOIN runs r ON r.worker_pool_id = wp.id
+		WHERE wp.is_disabled = false
+		GROUP BY wp.id, wp.name, wp.last_seen_at
+	`)
+	if err != nil {
+		slog.Debug("worker pool gauges poll failed", "err", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, name string
+		var queued, running, seen int
+		if err := rows.Scan(&id, &name, &queued, &running, &seen); err != nil {
+			slog.Debug("worker pool gauge row scan failed", "err", err)
+			continue
+		}
+		WorkerPoolQueueDepth.WithLabelValues(id, name).Set(float64(queued))
+		WorkerPoolRunningRuns.WithLabelValues(id, name).Set(float64(running))
+		WorkerPoolSeen.WithLabelValues(id, name).Set(float64(seen))
 	}
 }
