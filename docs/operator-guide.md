@@ -795,6 +795,67 @@ Stacks assigned to a deleted pool fall back to the built-in runner automatically
 - Agents receive decrypted environment variables and VCS tokens at claim time over TLS. Ensure `CRUCIBLE_API_URL` uses HTTPS in production.
 - The agent host must be able to reach `CRUCIBLE_API_URL`. The Crucible server does not initiate outbound connections to agents.
 
+### Auto-scaling agents via Prometheus
+
+Crucible cannot spawn agent processes on your infrastructure — agents run wherever you deploy them. What Crucible can do is expose **per-pool demand signals** as Prometheus metrics so your platform (Kubernetes HPA, Docker Compose orchestration, CloudWatch alarms, etc.) can scale agents up and down automatically.
+
+Three gauges are published every 30 seconds at `/metrics`, labelled by `pool_id` and `pool_name`:
+
+| Metric | Meaning |
+| --- | --- |
+| `crucible_worker_pool_queue_depth` | Runs in `queued` status assigned to this pool, waiting for an agent to claim |
+| `crucible_worker_pool_running_runs` | Runs actively executing on this pool (`preparing`, `planning`, or `applying`) |
+| `crucible_worker_pool_seen` | `1` if any agent in the pool checked in within the last 60s, else `0` |
+
+Disabled pools are excluded from the scrape; deleted pools have their labels cleared on the next poll.
+
+#### Kubernetes — HorizontalPodAutoscaler
+
+With `prometheus-adapter` exposing `crucible_worker_pool_queue_depth` as a custom external metric, scale a Deployment of agent pods:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: crucible-agent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: crucible-agent
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+    - type: External
+      external:
+        metric:
+          name: crucible_worker_pool_queue_depth
+          selector:
+            matchLabels:
+              pool_name: production-pool
+        target:
+          type: AverageValue
+          averageValue: "2"   # add one agent for every 2 queued runs
+```
+
+#### Docker Compose — manual or scripted scale
+
+Compose doesn't autoscale natively. Either scale on demand:
+
+```bash
+docker compose -f docker-compose.agent.yml up -d --scale crucible-agent=N
+```
+
+…or wire a small script to a Prometheus alert (Alertmanager webhook → `docker compose up --scale`) that watches `crucible_worker_pool_queue_depth > threshold`.
+
+#### Designing your scaling rule
+
+Crucible publishes signals; the operator chooses policy. A reasonable starting point:
+
+- **Scale up** when `queue_depth > 0` AND `running_runs >= configured pool capacity`. Avoids over-provisioning during normal throughput.
+- **Scale down** to `min_replicas` when `queue_depth == 0` AND `running_runs == 0` for several consecutive intervals.
+- **Alert** (don't auto-scale below zero) when `crucible_worker_pool_seen == 0` for more than a few minutes — that means no agent is heart-beating and queued work will stall.
+
 ---
 
 ## Troubleshooting
