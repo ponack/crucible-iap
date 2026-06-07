@@ -119,6 +119,13 @@ jobs:
         working-directory: ui
         run: pnpm build
 
+      - name: Dependency CVE scan (cve-lite-cli)
+        working-directory: ui
+        # Fails the build only on critical findings — lower severities
+        # show up in the log but don't block. Bump the threshold once
+        # the medium/high backlog is closed.
+        run: pnpm exec cve-lite . --no-open --fail-on critical
+
       - name: Commit lockfile if changed
         if: github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != 'main'
         uses: stefanzweifel/git-auto-commit-action@04702edda442b2e678b25b537cec683a1493fcb9  # v7
