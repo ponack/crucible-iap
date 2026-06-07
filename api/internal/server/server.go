@@ -14,6 +14,7 @@ import (
 	"github.com/ponack/crucible-iap/internal/admin"
 	"github.com/ponack/crucible-iap/internal/audit"
 	"github.com/ponack/crucible-iap/internal/auth"
+	"github.com/ponack/crucible-iap/internal/compliance"
 	"github.com/ponack/crucible-iap/internal/config"
 	"github.com/ponack/crucible-iap/internal/deps"
 	"github.com/ponack/crucible-iap/internal/envvars"
@@ -161,6 +162,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	byokHandler := byok.NewHandler(s.pool, v, s.cfg.SecretKey)
 	adminHandler := admin.NewHandler(s.pool)
 	quotaHandler := quotas.NewHandler(s.pool)
+	complianceExportHandler := compliance.NewHandler(s.pool, s.cfg.SecretKey)
 
 	// Wire audit → SIEM delivery: every audit.Record call will enqueue a fan-out job.
 	audit.SetSIEMQueue(q)
@@ -185,6 +187,7 @@ func (s *Server) registerRoutes(store *storage.Client, q *queue.Client, policyHa
 	api.GET("/analytics/costs", analyticsHandler.GetCosts)
 	api.GET("/stacks/:stackID/analytics/costs", analyticsHandler.StackCostHistory)
 	s.registerComplianceRoutes(api, policyGitHandler, member, adminRole)
+	api.POST("/compliance/exports", complianceExportHandler.Export, adminRole)
 	s.registerValidationRoutes(api, validationHandler, member)
 	s.registerSIEMRoutes(api, siemHandler, adminRole)
 	s.registerBYOKRoutes(api, byokHandler, adminRole)

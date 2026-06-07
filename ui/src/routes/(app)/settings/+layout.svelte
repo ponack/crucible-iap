@@ -14,7 +14,8 @@
 		{ label: 'Export / Import', href: '/settings/export' },
 		{ label: 'SIEM Streaming', href: '/settings/siem' },
 		{ label: 'Resource Quotas', href: '/settings/quotas' },
-		{ label: 'BYOK', href: '/settings/byok' }
+		{ label: 'BYOK', href: '/settings/byok' },
+		{ label: 'Compliance export', href: '/settings/compliance-export' }
 	];
 
 	const activePath = $derived(page.url.pathname);
