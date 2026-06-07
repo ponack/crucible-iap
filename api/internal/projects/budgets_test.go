@@ -3,7 +3,9 @@ package projects_test
 
 import (
 	"context"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ponack/crucible-iap/internal/projects"
@@ -217,6 +219,115 @@ func TestCheckCostQuota_UnderBudget(t *testing.T) {
 	}
 	if res.Projected != 5.0 || res.Budget != 100.0 {
 		t.Errorf("Projected=%v Budget=%v, want 5 / 100", res.Projected, res.Budget)
+	}
+}
+
+// Pure tests of the run-rate forecast model. No DB.
+func TestForecastEndOfMonthSpend(t *testing.T) {
+	type tc struct {
+		name string
+		mtd  float64
+		now  time.Time
+		want float64
+	}
+	cases := []tc{
+		// Mid-month: doubles MTD (day 15 of 30 → ratio 2.0)
+		{"mid-30day", 100, time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC), 200},
+		// Last day: forecast equals MTD (day 30 of 30 → ratio 1.0)
+		{"end-30day", 100, time.Date(2026, 6, 30, 23, 59, 0, 0, time.UTC), 100},
+		// Day 1: full extrapolation (day 1 of 31 → ratio 31)
+		{"day1-31day", 10, time.Date(2026, 7, 1, 0, 0, 1, 0, time.UTC), 310},
+		// February non-leap: day 14 of 28 → ratio 2.0
+		{"mid-feb", 50, time.Date(2026, 2, 14, 12, 0, 0, 0, time.UTC), 100},
+		// Zero MTD → zero forecast
+		{"zero", 0, time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC), 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := projects.ForecastEndOfMonthSpend(c.mtd, c.now)
+			if math.Abs(got-c.want) > 0.0001 {
+				t.Errorf("ForecastEndOfMonthSpend(%v, %v) = %v, want %v", c.mtd, c.now, got, c.want)
+			}
+		})
+	}
+}
+
+// insertProjectWithForecast is the v0.9.7+ variant of insertProject that lets
+// the test seed the block_on_forecast column. Inlined locally — the existing
+// helper signature isn't changed so other tests stay terse.
+func insertProjectWithForecast(t *testing.T, pool *pgxpool.Pool, orgID string, budget float64, enforcement string, blockOnForecast bool) string {
+	t.Helper()
+	var id string
+	err := pool.QueryRow(context.Background(), `
+		INSERT INTO projects (org_id, slug, name, monthly_budget_usd, budget_enforcement, block_on_forecast)
+		VALUES ($1, gen_random_uuid()::text, 'test-project', $2, $3, $4)
+		RETURNING id
+	`, orgID, budget, enforcement, blockOnForecast).Scan(&id)
+	if err != nil {
+		t.Fatalf("insertProjectWithForecast: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM projects WHERE id = $1`, id)
+	})
+	return id
+}
+
+func TestCheckCostQuota_ForecastFieldsPopulated(t *testing.T) {
+	pool := testutil.Pool(t)
+	ctx := context.Background()
+
+	orgID := testutil.InsertOrg(t, pool)
+	projectID := insertProjectWithForecast(t, pool, orgID, 100, "block", true)
+	stackID := testutil.InsertStack(t, pool, orgID)
+	assignStackToProject(t, pool, stackID, projectID)
+
+	prior := testutil.InsertRun(t, pool, stackID, "finished", "tracked")
+	setRunCost(t, pool, prior, 25.0)
+
+	runID := testutil.InsertRun(t, pool, stackID, "planning", "tracked")
+	setRunCost(t, pool, runID, 5.0)
+
+	res, err := projects.CheckCostQuota(ctx, pool, runID)
+	if err != nil {
+		t.Fatalf("CheckCostQuota: %v", err)
+	}
+	if !res.HasQuota {
+		t.Fatal("HasQuota=false, want true")
+	}
+	if !res.BlockOnForecast {
+		t.Error("BlockOnForecast=false, want true (project has block_on_forecast=true)")
+	}
+	// Forecast must be ≥ Projected (run-rate extrapolation is never lower).
+	if res.Forecast < res.Projected {
+		t.Errorf("Forecast=%v < Projected=%v; forecast should never be lower than current projection", res.Forecast, res.Projected)
+	}
+	// Internal consistency: ForecastExceeded reflects Forecast vs Budget.
+	wantForecastExceeded := res.Forecast > res.Budget
+	if res.ForecastExceeded != wantForecastExceeded {
+		t.Errorf("ForecastExceeded=%v; expected %v (forecast %v vs budget %v)",
+			res.ForecastExceeded, wantForecastExceeded, res.Forecast, res.Budget)
+	}
+}
+
+func TestCheckCostQuota_BlockOnForecastMirrorsColumn(t *testing.T) {
+	pool := testutil.Pool(t)
+	ctx := context.Background()
+
+	orgID := testutil.InsertOrg(t, pool)
+	// Project with block_on_forecast = FALSE (default for projects already
+	// in the field before migration 080).
+	projectID := insertProjectWithForecast(t, pool, orgID, 100, "warn", false)
+	stackID := testutil.InsertStack(t, pool, orgID)
+	assignStackToProject(t, pool, stackID, projectID)
+	runID := testutil.InsertRun(t, pool, stackID, "planning", "tracked")
+	setRunCost(t, pool, runID, 5.0)
+
+	res, err := projects.CheckCostQuota(ctx, pool, runID)
+	if err != nil {
+		t.Fatalf("CheckCostQuota: %v", err)
+	}
+	if res.BlockOnForecast {
+		t.Error("BlockOnForecast=true, want false (project has block_on_forecast=false)")
 	}
 }
 

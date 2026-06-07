@@ -77,12 +77,26 @@ func (f *Finalizer) completePlanPhase(ctx context.Context, log *slog.Logger, org
 	// Per-project monthly cost quota — orthogonal to the stack-level budget
 	// threshold above. A 'block' enforcement inhibits auto-apply just like
 	// the stack's plan_block_on_alert; 'warn' notifies only.
-	if quota, err := projects.CheckCostQuota(ctx, f.pool, args.RunID); err == nil && quota.HasQuota && quota.Exceeded {
-		breach := fmt.Sprintf("project '%s' monthly cost: $%.2f projected (budget $%.2f, this run +$%.2f)",
-			quota.ProjectName, quota.Projected, quota.Budget, quota.RunCostChange)
-		go f.notifier.BudgetAlert(context.Background(), args.RunID, []string{breach})
-		if quota.Enforcement == "block" {
-			blockedByBudget = true
+	//
+	// Two trigger conditions: actuals already over budget (Exceeded), or
+	// the run-rate forecast trending over (ForecastExceeded) when the
+	// project opted into block_on_forecast.
+	if quota, err := projects.CheckCostQuota(ctx, f.pool, args.RunID); err == nil && quota.HasQuota {
+		actualsBreach := quota.Exceeded
+		forecastBreach := quota.BlockOnForecast && quota.ForecastExceeded && !quota.Exceeded
+		if actualsBreach || forecastBreach {
+			var breach string
+			if actualsBreach {
+				breach = fmt.Sprintf("project '%s' monthly cost: $%.2f projected (budget $%.2f, this run +$%.2f)",
+					quota.ProjectName, quota.Projected, quota.Budget, quota.RunCostChange)
+			} else {
+				breach = fmt.Sprintf("project '%s' forecast: $%.2f end-of-month at current rate (budget $%.2f, MTD $%.2f)",
+					quota.ProjectName, quota.Forecast, quota.Budget, quota.Spend)
+			}
+			go f.notifier.BudgetAlert(context.Background(), args.RunID, []string{breach})
+			if quota.Enforcement == "block" {
+				blockedByBudget = true
+			}
 		}
 	}
 

@@ -24,7 +24,8 @@
 		name: '',
 		description: '',
 		monthly_budget_usd: null as number | null,
-		budget_enforcement: 'warn' as 'warn' | 'block'
+		budget_enforcement: 'warn' as 'warn' | 'block',
+		block_on_forecast: false
 	});
 
 	// Add member
@@ -42,7 +43,8 @@
 			name: d.name,
 			description: d.description,
 			monthly_budget_usd: d.monthly_budget_usd ?? null,
-			budget_enforcement: d.budget_enforcement
+			budget_enforcement: d.budget_enforcement,
+			block_on_forecast: d.block_on_forecast
 		};
 	}
 
@@ -66,14 +68,16 @@
 				name: form.name,
 				description: form.description,
 				monthly_budget_usd: form.monthly_budget_usd,
-				budget_enforcement: form.budget_enforcement
+				budget_enforcement: form.budget_enforcement,
+				block_on_forecast: form.block_on_forecast
 			});
 			detail = {
 				...detail!,
 				name: updated.name,
 				description: updated.description,
 				monthly_budget_usd: updated.monthly_budget_usd,
-				budget_enforcement: updated.budget_enforcement
+				budget_enforcement: updated.budget_enforcement,
+				block_on_forecast: updated.block_on_forecast
 			};
 			editing = false;
 		} catch (e) {
@@ -202,19 +206,34 @@
 					{@const pct = Math.min(100, Math.max(0, ratio * 100))}
 					{@const over = ratio >= 1}
 					{@const near = !over && ratio >= 0.8}
+					{@const forecastRatio = detail.forecast_end_of_month_usd / detail.monthly_budget_usd}
+					{@const forecastPct = Math.min(100, Math.max(0, forecastRatio * 100))}
+					{@const forecastOver = forecastRatio > 1}
+					{@const showForecast = detail.forecast_end_of_month_usd > detail.month_to_date_spend_usd + 0.005}
 					<div class="mt-2 max-w-md">
 						<div class="flex items-center justify-between text-xs">
 							<span class="text-zinc-400">
 								${detail.month_to_date_spend_usd.toFixed(2)} of ${detail.monthly_budget_usd.toFixed(2)} this month
 							</span>
 							<span class="text-[10px] uppercase tracking-wide {over ? 'text-red-400' : near ? 'text-amber-400' : 'text-zinc-500'}">
-								{detail.budget_enforcement === 'block' ? 'block' : 'warn'}
+								{detail.budget_enforcement === 'block' ? 'block' : 'warn'}{detail.block_on_forecast ? ' + forecast' : ''}
 							</span>
 						</div>
-						<div class="mt-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+						<div class="relative mt-1 h-1.5 rounded-full bg-zinc-800 overflow-hidden">
 							<div class="h-full transition-all {over ? 'bg-red-500' : near ? 'bg-amber-500' : 'bg-teal-500'}"
 								style="width: {pct}%"></div>
+							{#if showForecast}
+								<div class="absolute top-0 h-full w-px {forecastOver ? 'bg-red-300' : 'bg-amber-300'}"
+									style="left: {forecastPct}%;"
+									title="Forecasted month-end at current rate"></div>
+							{/if}
 						</div>
+						{#if showForecast}
+							<p class="mt-1 text-[10px] {forecastOver ? 'text-red-400' : 'text-zinc-500'}">
+								On pace for ${detail.forecast_end_of_month_usd.toFixed(2)} by month-end
+								{detail.block_on_forecast ? '· apply will be blocked' : ''}
+							</p>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -275,6 +294,12 @@
 						<p class="text-xs text-zinc-500">
 							When set, the post-plan gate checks the month-to-date cost_change across this project's stacks plus the current run's projected change. Leave empty for no quota.
 						</p>
+						<label class="mt-2 flex items-start gap-2 text-xs text-zinc-300" class:opacity-50={form.monthly_budget_usd === null}>
+							<input type="checkbox" bind:checked={form.block_on_forecast} disabled={form.monthly_budget_usd === null} class="mt-0.5" />
+							<span>
+								Also act on run-rate forecast — if the month-end projection (MTD × days_in_month / days_elapsed) exceeds the budget, the gate fires even when actuals are still under. Useful for catching overage trends before they hit.
+							</span>
+						</label>
 					</div>
 					<div class="flex justify-end gap-3">
 						<button type="button" onclick={() => { editing = false; editError = null; form = formFromDetail(detail!); }} class="rounded-lg border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800">Cancel</button>

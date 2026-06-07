@@ -12,6 +12,7 @@ export interface Project {
 	member_count: number;
 	monthly_budget_usd?: number | null;
 	budget_enforcement: 'warn' | 'block';
+	block_on_forecast: boolean;
 }
 
 export interface ProjectStack {
@@ -36,6 +37,7 @@ export interface ProjectDetail extends Project {
 	stacks: ProjectStack[];
 	members: ProjectMember[];
 	month_to_date_spend_usd: number;
+	forecast_end_of_month_usd: number;
 }
 
 export const projects = {
@@ -50,6 +52,7 @@ export const projects = {
 			description?: string;
 			monthly_budget_usd?: number | null;
 			budget_enforcement?: 'warn' | 'block';
+			block_on_forecast?: boolean;
 		}
 	) => request<Project>(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 	delete: (id: string) => request<null>(`/projects/${id}`, { method: 'DELETE' }),

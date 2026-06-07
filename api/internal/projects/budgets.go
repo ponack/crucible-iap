@@ -4,6 +4,7 @@ package projects
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,6 +46,13 @@ type CostQuotaResult struct {
 	// Exceeded is true when Projected (month-to-date + this run's
 	// cost_change) is greater than Budget.
 	Exceeded bool
+	// ForecastExceeded is true when the run-rate end-of-month forecast
+	// (`forecast`, below) is greater than Budget. Distinct from Exceeded
+	// so callers can tell "you're already over" from "you're trending over".
+	ForecastExceeded bool
+	// BlockOnForecast mirrors the project setting; callers honouring it
+	// should treat ForecastExceeded the same as Exceeded for gating.
+	BlockOnForecast bool
 	// Enforcement is the project's configured policy: "warn" or "block".
 	// Only meaningful when HasQuota is true.
 	Enforcement string
@@ -55,11 +63,32 @@ type CostQuotaResult struct {
 	RunCostChange float64
 	// Projected = Spend + RunCostChange.
 	Projected float64
+	// Forecast is the run-rate-extrapolated end-of-month spend:
+	// (Spend + RunCostChange) × days_in_month / days_elapsed.
+	// Equal to Projected on the last day of the month.
+	Forecast float64
 	// Budget is the project's configured monthly_budget_usd.
 	Budget float64
 	// ProjectName is included so callers can build descriptive notification
 	// messages without re-querying.
 	ProjectName string
+}
+
+// ForecastEndOfMonthSpend extrapolates a month-to-date spend value to an
+// end-of-month estimate using the linear run-rate model. The result equals
+// the input on the last day of the month and is undefined for inputs of
+// zero (caller decides whether to suppress the meter in that case).
+//
+// `now` is parameterised for testability; production callers should pass
+// time.Now().UTC().
+func ForecastEndOfMonthSpend(mtd float64, now time.Time) float64 {
+	utc := now.UTC()
+	daysInMonth := time.Date(utc.Year(), utc.Month()+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	elapsed := utc.Day()
+	if elapsed < 1 {
+		elapsed = 1
+	}
+	return mtd * float64(daysInMonth) / float64(elapsed)
 }
 
 // CheckCostQuota evaluates a single run against its parent project's monthly
@@ -71,24 +100,26 @@ type CostQuotaResult struct {
 // Callers should treat HasQuota=false as "no enforcement action needed."
 func CheckCostQuota(ctx context.Context, pool *pgxpool.Pool, runID string) (CostQuotaResult, error) {
 	var (
-		res         CostQuotaResult
-		projectID   *string
-		budget      *float64
-		enforcement *string // LEFT JOIN: NULL when stack has no project
-		projectName *string
-		costChange  *float64
+		res             CostQuotaResult
+		projectID       *string
+		budget          *float64
+		enforcement     *string // LEFT JOIN: NULL when stack has no project
+		projectName     *string
+		blockOnForecast *bool
+		costChange      *float64
 	)
 	err := pool.QueryRow(ctx, `
 		SELECT s.project_id,
 		       p.monthly_budget_usd,
 		       p.budget_enforcement,
 		       p.name,
+		       p.block_on_forecast,
 		       r.cost_change
 		FROM runs r
 		JOIN stacks s ON s.id = r.stack_id
 		LEFT JOIN projects p ON p.id = s.project_id
 		WHERE r.id = $1
-	`, runID).Scan(&projectID, &budget, &enforcement, &projectName, &costChange)
+	`, runID).Scan(&projectID, &budget, &enforcement, &projectName, &blockOnForecast, &costChange)
 	if err != nil {
 		return res, err
 	}
@@ -106,13 +137,18 @@ func CheckCostQuota(ctx context.Context, pool *pgxpool.Pool, runID string) (Cost
 	if enforcement != nil {
 		res.Enforcement = *enforcement
 	}
+	if blockOnForecast != nil {
+		res.BlockOnForecast = *blockOnForecast
+	}
 	res.Spend = spend
 	res.RunCostChange = *costChange
 	res.Projected = spend + *costChange
+	res.Forecast = ForecastEndOfMonthSpend(res.Projected, time.Now())
 	res.Budget = *budget
 	if projectName != nil {
 		res.ProjectName = *projectName
 	}
 	res.Exceeded = res.Projected > res.Budget
+	res.ForecastExceeded = res.Forecast > res.Budget
 	return res, nil
 }
