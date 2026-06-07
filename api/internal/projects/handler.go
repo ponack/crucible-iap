@@ -34,6 +34,9 @@ type Project struct {
 	// Monthly cost quota — see migration 079. NULL = unlimited.
 	MonthlyBudgetUSD   *float64 `json:"monthly_budget_usd,omitempty"`
 	BudgetEnforcement  string   `json:"budget_enforcement"` // 'warn' | 'block' (only meaningful with a budget)
+	// Forecast gating — see migration 080. When TRUE the post-plan gate
+	// also fires on run-rate end-of-month projections exceeding the budget.
+	BlockOnForecast    bool     `json:"block_on_forecast"`
 }
 
 // ProjectStack is a slim stack summary embedded in project detail responses.
@@ -66,6 +69,10 @@ type ProjectDetail struct {
 	// Always present; 0 when there are no qualifying runs. Drives the UI's
 	// "$X of $Y this month" budget meter and feeds the post-plan gate.
 	MonthToDateSpendUSD float64 `json:"month_to_date_spend_usd"`
+	// ForecastEndOfMonthUSD is the run-rate-extrapolated end-of-month
+	// spend. Powers the secondary marker on the budget meter ("on pace
+	// for $X") so operators can see overage trending before it hits.
+	ForecastEndOfMonthUSD float64 `json:"forecast_end_of_month_usd"`
 }
 
 // List returns all projects for the caller's org with stack and member counts.
@@ -77,7 +84,7 @@ func (h *Handler) List(c echo.Context) error {
 		       p.created_at, p.updated_at,
 		       COUNT(DISTINCT s.id)  AS stack_count,
 		       COUNT(DISTINCT pm.user_id) AS member_count,
-		       p.monthly_budget_usd, p.budget_enforcement
+		       p.monthly_budget_usd, p.budget_enforcement, p.block_on_forecast
 		FROM projects p
 		LEFT JOIN stacks        s  ON s.project_id = p.id
 		LEFT JOIN project_members pm ON pm.project_id = p.id
@@ -95,7 +102,7 @@ func (h *Handler) List(c echo.Context) error {
 		var p Project
 		if err := rows.Scan(&p.ID, &p.Slug, &p.Name, &p.Description,
 			&p.CreatedAt, &p.UpdatedAt, &p.StackCount, &p.MemberCount,
-			&p.MonthlyBudgetUSD, &p.BudgetEnforcement); err != nil {
+			&p.MonthlyBudgetUSD, &p.BudgetEnforcement, &p.BlockOnForecast); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, "scan error")
 		}
 		out = append(out, p)
@@ -159,7 +166,7 @@ func (h *Handler) Get(c echo.Context) error {
 		       p.created_at, p.updated_at,
 		       COUNT(DISTINCT s.id),
 		       COUNT(DISTINCT pm.user_id),
-		       p.monthly_budget_usd, p.budget_enforcement
+		       p.monthly_budget_usd, p.budget_enforcement, p.block_on_forecast
 		FROM projects p
 		LEFT JOIN stacks          s  ON s.project_id = p.id
 		LEFT JOIN project_members pm ON pm.project_id = p.id
@@ -168,7 +175,7 @@ func (h *Handler) Get(c echo.Context) error {
 	`, projectID, orgID).Scan(
 		&d.ID, &d.Slug, &d.Name, &d.Description,
 		&d.CreatedAt, &d.UpdatedAt, &d.StackCount, &d.MemberCount,
-		&d.MonthlyBudgetUSD, &d.BudgetEnforcement,
+		&d.MonthlyBudgetUSD, &d.BudgetEnforcement, &d.BlockOnForecast,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return echo.ErrNotFound
@@ -180,6 +187,7 @@ func (h *Handler) Get(c echo.Context) error {
 	spend, err := MonthToDateSpend(ctx, h.pool, projectID)
 	if err == nil {
 		d.MonthToDateSpendUSD = spend
+		d.ForecastEndOfMonthUSD = ForecastEndOfMonthSpend(spend, time.Now())
 	}
 
 	// Stacks
@@ -244,6 +252,7 @@ func (h *Handler) Update(c echo.Context) error {
 		Description       string   `json:"description"`
 		MonthlyBudgetUSD  *float64 `json:"monthly_budget_usd"`
 		BudgetEnforcement *string  `json:"budget_enforcement"`
+		BlockOnForecast   *bool    `json:"block_on_forecast"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
@@ -261,21 +270,26 @@ func (h *Handler) Update(c echo.Context) error {
 		}
 		enforcement = *req.BudgetEnforcement
 	}
+	blockOnForecast := false
+	if req.BlockOnForecast != nil {
+		blockOnForecast = *req.BlockOnForecast
+	}
 
 	var p Project
 	err := h.pool.QueryRow(c.Request().Context(), `
 		UPDATE projects
 		SET name = $1, description = $2,
 		    monthly_budget_usd = $3, budget_enforcement = $4,
+		    block_on_forecast = $5,
 		    updated_at = now()
-		WHERE id = $5 AND org_id = $6
+		WHERE id = $6 AND org_id = $7
 		RETURNING id, slug, name, COALESCE(description,''),
 		          created_at, updated_at,
-		          monthly_budget_usd, budget_enforcement
-	`, req.Name, req.Description, req.MonthlyBudgetUSD, enforcement,
+		          monthly_budget_usd, budget_enforcement, block_on_forecast
+	`, req.Name, req.Description, req.MonthlyBudgetUSD, enforcement, blockOnForecast,
 		projectID, orgID).Scan(
 		&p.ID, &p.Slug, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt,
-		&p.MonthlyBudgetUSD, &p.BudgetEnforcement,
+		&p.MonthlyBudgetUSD, &p.BudgetEnforcement, &p.BlockOnForecast,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return echo.ErrNotFound
