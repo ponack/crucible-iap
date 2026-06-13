@@ -62,7 +62,7 @@ func insertPool(t *testing.T, pool *pgxpool.Pool, orgID string) string {
 func setRunFinishedAt(t *testing.T, pool *pgxpool.Pool, runID string, finishedAt time.Time) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(),
-		`UPDATE runs SET status = 'finished', finished_at = $1, started_at = $1 - interval '1 minute' WHERE id = $2`,
+		`UPDATE runs SET status = 'finished', finished_at = $1::timestamptz, started_at = $1::timestamptz - interval '1 minute' WHERE id = $2`,
 		finishedAt, runID)
 	if err != nil {
 		t.Fatalf("setRunFinishedAt: %v", err)
