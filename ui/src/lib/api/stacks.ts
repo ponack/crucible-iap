@@ -170,6 +170,13 @@ export interface StackDep {
 	trigger_when_field?: string;
 	trigger_when_op?: string;
 	trigger_when_value?: string;
+	retry_count: number;
+	retry_backoff_seconds: number;
+}
+
+export interface DepRetryConfig {
+	retry_count: number;
+	retry_backoff_seconds: number;
 }
 
 export interface DepPredicate {
@@ -535,6 +542,11 @@ export const deps = {
 		request<StackDep | null>(`/stacks/${stackID}/downstream/${downstreamID}`, { method: 'PUT' }),
 	setPredicate: (stackID: string, downstreamID: string, body: DepPredicate) =>
 		request<null>(`/stacks/${stackID}/downstream/${downstreamID}/predicate`, {
+			method: 'PUT',
+			body: JSON.stringify(body)
+		}),
+	setRetry: (stackID: string, downstreamID: string, body: DepRetryConfig) =>
+		request<null>(`/stacks/${stackID}/downstream/${downstreamID}/retry`, {
 			method: 'PUT',
 			body: JSON.stringify(body)
 		}),

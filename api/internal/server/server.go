@@ -409,6 +409,7 @@ func (s *Server) registerStackRoutes(
 	api.GET("/stacks/:id/downstream", depsHandler.ListDownstream)
 	api.PUT("/stacks/:id/downstream/:downstreamID", depsHandler.AddDownstream, member)
 	api.PUT("/stacks/:id/downstream/:downstreamID/predicate", depsHandler.SetPredicate, member)
+	api.PUT("/stacks/:id/downstream/:downstreamID/retry", depsHandler.SetRetry, member)
 	api.DELETE("/stacks/:id/downstream/:downstreamID", depsHandler.RemoveDownstream, member)
 
 	api.PUT("/stacks/:id/integrations", stackHandler.SetIntegrations, member)

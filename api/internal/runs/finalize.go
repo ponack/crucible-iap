@@ -114,7 +114,92 @@ func (f *Finalizer) Fail(ctx context.Context, orgID, runID string, cause error) 
 		ResourceType: "run",
 		OrgID:        orgID,
 	})
+	// Best-effort dep-retry. Fires on a background goroutine so the
+	// failure path doesn't block on River insertion; errors are logged
+	// but don't bubble up since the original failure is already recorded.
+	go f.maybeRetryDepRun(context.Background(), orgID, runID)
 	return cause
+}
+
+// maybeRetryDepRun checks if the just-failed run was dependency-triggered
+// AND its edge has retries remaining; if so, schedules another attempt via
+// EnqueueRunDelayed with exponential backoff.
+//
+// Schedule semantics: delay = backoff_seconds × 2^retry_attempt. Caps the
+// exponent at the edge's CHECK(retry_count <= 10) so the delay can't exceed
+// backoff × 1024 (≈ 17 hrs at default 60s backoff).
+func (f *Finalizer) maybeRetryDepRun(ctx context.Context, orgID, runID string) {
+	var (
+		depID          *string
+		attempt        int
+		stackID        string
+		retryCount     int
+		retryBackoff   int
+		tool           string
+		toolVersion    string
+		runnerImage    string
+		repoURL        string
+		repoBranch     string
+		projectRoot    string
+		autoApply      bool
+		poolID         *string
+	)
+	err := f.pool.QueryRow(ctx, `
+		SELECT r.triggered_by_dep_id::text, r.retry_attempt,
+		       r.stack_id::text,
+		       d.retry_count, d.retry_backoff_seconds,
+		       s.tool, COALESCE(s.tool_version,''), COALESCE(s.runner_image,''),
+		       s.repo_url, s.repo_branch, s.project_root, s.auto_apply, s.worker_pool_id
+		FROM runs r
+		JOIN stack_dependencies d ON d.id = r.triggered_by_dep_id
+		JOIN stacks s ON s.id = r.stack_id
+		WHERE r.id = $1
+	`, runID).Scan(&depID, &attempt, &stackID, &retryCount, &retryBackoff,
+		&tool, &toolVersion, &runnerImage, &repoURL, &repoBranch, &projectRoot, &autoApply, &poolID)
+	if err != nil {
+		// No dep linkage (most runs) or row gone — nothing to do.
+		return
+	}
+	if depID == nil || attempt >= retryCount {
+		return
+	}
+
+	exp := attempt
+	if exp > 10 {
+		exp = 10
+	}
+	delay := time.Duration(retryBackoff) * time.Second * (1 << exp)
+	runAt := time.Now().Add(delay)
+
+	var newRunID string
+	if err := f.pool.QueryRow(ctx, `
+		INSERT INTO runs (stack_id, worker_pool_id, type, trigger, triggered_by_dep_id, retry_attempt)
+		VALUES ($1, $2, 'tracked', 'dependency', $3, $4)
+		RETURNING id
+	`, stackID, poolID, *depID, attempt+1).Scan(&newRunID); err != nil {
+		slog.Error("dep retry: insert run failed", "run_id", runID, "err", err)
+		return
+	}
+
+	audit.Record(ctx, f.pool, audit.Event{
+		ActorType: "runner", Action: "run.dep_retry_scheduled",
+		ResourceID: newRunID, ResourceType: "run", OrgID: orgID,
+	})
+
+	if poolID != nil {
+		// External agents pick up scheduled work via poll; the run row
+		// is already there. The agent doesn't honour ScheduledAt — for
+		// pool runs, the backoff is best-effort (immediate-on-next-poll).
+		return
+	}
+	if _, err := f.queue.EnqueueRunDelayed(ctx, queue.RunJobArgs{
+		RunID: newRunID, StackID: stackID,
+		Tool: tool, ToolVersion: toolVersion, RunnerImage: runnerImage,
+		RepoURL: repoURL, RepoBranch: repoBranch, ProjectRoot: projectRoot,
+		RunType: "tracked", AutoApply: autoApply,
+	}, runAt); err != nil {
+		slog.Error("dep retry: enqueue failed", "run_id", newRunID, "err", err)
+	}
 }
 
 // SetStatus updates run status, setting started_at on the first transition.
@@ -285,6 +370,7 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 		autoApply                                                                 bool
 		poolID                                                                    *string
 		predicate                                                                 deps.Predicate
+		depID                                                                     string // stack_dependencies.id — wired into runs.triggered_by_dep_id so the failure path can find the edge's retry config
 	}
 
 	// Per-edge conditional triggers: load the upstream run's predicate-
@@ -312,7 +398,8 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 	rows, err := f.pool.Query(ctx, `
 		SELECT s.id, s.tool, COALESCE(s.tool_version,''), COALESCE(s.runner_image,''), s.repo_url, s.repo_branch,
 		       s.project_root, s.auto_apply, s.worker_pool_id,
-		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,'')
+		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,''),
+		       d.id::text
 		FROM stack_dependencies d
 		JOIN stacks s ON s.id = d.downstream_id
 		WHERE d.upstream_id = $1 AND s.is_disabled = false AND s.is_locked = false AND s.org_id = $2
@@ -353,7 +440,7 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 	for rows.Next() {
 		var t target
 		if err := rows.Scan(&t.stackID, &t.tool, &t.toolVersion, &t.runnerImage, &t.repoURL, &t.repoBranch, &t.projectRoot, &t.autoApply, &t.poolID,
-			&t.predicate.Field, &t.predicate.Op, &t.predicate.Value); err != nil {
+			&t.predicate.Field, &t.predicate.Op, &t.predicate.Value, &t.depID); err != nil {
 			continue
 		}
 		targets = append(targets, t)
@@ -370,10 +457,10 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 		}
 		var runID string
 		if err := f.pool.QueryRow(ctx, `
-			INSERT INTO runs (stack_id, worker_pool_id, type, trigger)
-			VALUES ($1, $2, 'tracked', 'dependency')
+			INSERT INTO runs (stack_id, worker_pool_id, type, trigger, triggered_by_dep_id)
+			VALUES ($1, $2, 'tracked', 'dependency', $3)
 			RETURNING id
-		`, t.stackID, t.poolID).Scan(&runID); err != nil {
+		`, t.stackID, t.poolID, t.depID).Scan(&runID); err != nil {
 			slog.Error("trigger downstream: failed to insert run", "stack_id", t.stackID, "err", err)
 			continue
 		}

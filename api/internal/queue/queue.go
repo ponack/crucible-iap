@@ -76,6 +76,18 @@ func (c *Client) EnqueueRun(ctx context.Context, args RunJobArgs) (int64, error)
 	return job.Job.ID, nil
 }
 
+// EnqueueRunDelayed adds a run job that River will hold until `runAt`.
+// Used for per-edge dependency retries — back-off delay calculated by the
+// caller so this method stays neutral about retry policy.
+func (c *Client) EnqueueRunDelayed(ctx context.Context, args RunJobArgs, runAt time.Time) (int64, error) {
+	job, err := c.river.Insert(ctx, args, &river.InsertOpts{ScheduledAt: runAt})
+	if err != nil {
+		return 0, fmt.Errorf("enqueue delayed run job: %w", err)
+	}
+	slog.Info("delayed run job enqueued", "job_id", job.Job.ID, "run_id", args.RunID, "scheduled_at", runAt)
+	return job.Job.ID, nil
+}
+
 // EnqueueModulePublish queues a git-tag triggered module publish job.
 func (c *Client) EnqueueModulePublish(ctx context.Context, args ModulePublishArgs) error {
 	_, err := c.river.Insert(ctx, args, nil)
