@@ -1185,6 +1185,57 @@
 		}
 	}
 
+	// Per-edge conditional-trigger predicate editor. Only one row may be
+	// edited at a time; saving issues a PUT and refreshes the dependency
+	// list so the UI reflects the persisted state.
+	let editingPredicateID = $state<string | null>(null);
+	let predicateForm = $state({ trigger_when_field: '', trigger_when_op: '==', trigger_when_value: '' });
+	let savingPredicate = $state(false);
+
+	function openPredicateEditor(dep: StackDep) {
+		editingPredicateID = dep.id;
+		predicateForm = {
+			trigger_when_field: dep.trigger_when_field ?? '',
+			trigger_when_op: dep.trigger_when_op ?? '==',
+			trigger_when_value: dep.trigger_when_value ?? ''
+		};
+	}
+
+	async function savePredicate(downstreamID: string) {
+		savingPredicate = true;
+		depsError = null;
+		try {
+			await deps.setPredicate(stackID, downstreamID, predicateForm);
+			downstreamDeps = await deps.downstream(stackID);
+			editingPredicateID = null;
+		} catch (e) {
+			depsError = (e as Error).message;
+		} finally {
+			savingPredicate = false;
+		}
+	}
+
+	async function clearPredicate(downstreamID: string) {
+		savingPredicate = true;
+		depsError = null;
+		try {
+			await deps.setPredicate(stackID, downstreamID, {
+				trigger_when_field: '', trigger_when_op: '', trigger_when_value: ''
+			});
+			downstreamDeps = await deps.downstream(stackID);
+			editingPredicateID = null;
+		} catch (e) {
+			depsError = (e as Error).message;
+		} finally {
+			savingPredicate = false;
+		}
+	}
+
+	function predicateLabel(dep: StackDep): string {
+		if (!dep.trigger_when_field) return 'always triggers';
+		return `${dep.trigger_when_field} ${dep.trigger_when_op} ${dep.trigger_when_value}`;
+	}
+
 	async function removeUpstreamDep(upstreamID: string) {
 		depsError = null;
 		try {
@@ -2627,11 +2678,67 @@
 								<td class="px-4 py-2.5">
 									<a href="/stacks/{dep.id}" class="text-zinc-300 hover:text-white transition-colors">{dep.name}</a>
 									<span class="text-zinc-600 text-xs ml-2">{dep.slug}</span>
+									<button onclick={() => openPredicateEditor(dep)}
+										class="ml-2 text-xs px-1.5 py-0.5 rounded transition-colors"
+										style={dep.trigger_when_field
+											? 'background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);'
+											: 'color: var(--color-zinc-500); border: 1px solid var(--color-zinc-700);'}>
+										{predicateLabel(dep)}
+									</button>
 								</td>
 								<td class="px-4 py-2.5 text-right">
 									<button onclick={() => removeDownstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
 								</td>
 							</tr>
+							{#if editingPredicateID === dep.id}
+								<tr>
+									<td colspan="3" class="px-4 py-3 bg-zinc-900/60">
+										<div class="flex items-end gap-2 flex-wrap">
+											<div class="space-y-1">
+												<label class="block text-[10px] uppercase tracking-wide text-zinc-500" for="pred-field-{dep.id}">Field</label>
+												<select id="pred-field-{dep.id}" class="field-input py-1 text-sm" bind:value={predicateForm.trigger_when_field}>
+													<option value="">— always trigger —</option>
+													<option value="type">type</option>
+													<option value="plan_add">plan_add</option>
+													<option value="plan_change">plan_change</option>
+													<option value="plan_destroy">plan_destroy</option>
+													<option value="cost_change">cost_change</option>
+													<option value="is_drift">is_drift</option>
+												</select>
+											</div>
+											<div class="space-y-1">
+												<label class="block text-[10px] uppercase tracking-wide text-zinc-500" for="pred-op-{dep.id}">Op</label>
+												<select id="pred-op-{dep.id}" class="field-input py-1 text-sm" bind:value={predicateForm.trigger_when_op} disabled={!predicateForm.trigger_when_field}>
+													<option value="==">==</option>
+													<option value="!=">!=</option>
+													<option value="&gt;">&gt;</option>
+													<option value="&lt;">&lt;</option>
+													<option value="&gt;=">&gt;=</option>
+													<option value="&lt;=">&lt;=</option>
+												</select>
+											</div>
+											<div class="space-y-1 flex-1 min-w-40">
+												<label class="block text-[10px] uppercase tracking-wide text-zinc-500" for="pred-value-{dep.id}">Value</label>
+												<input id="pred-value-{dep.id}" class="field-input py-1 text-sm" bind:value={predicateForm.trigger_when_value} disabled={!predicateForm.trigger_when_field}
+													placeholder={predicateForm.trigger_when_field === 'is_drift' ? 'true / false' : predicateForm.trigger_when_field === 'type' ? 'tracked / destroy / proposed' : 'number'} />
+											</div>
+											<div class="flex items-center gap-2">
+												<button type="button" onclick={() => savePredicate(dep.id)} disabled={savingPredicate}
+													class="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50">
+													{savingPredicate ? 'Saving…' : 'Save'}
+												</button>
+												{#if dep.trigger_when_field}
+													<button type="button" onclick={() => clearPredicate(dep.id)} disabled={savingPredicate}
+														class="text-xs text-zinc-500 hover:text-zinc-300">Clear</button>
+												{/if}
+												<button type="button" onclick={() => (editingPredicateID = null)}
+													class="text-xs text-zinc-500 hover:text-zinc-300">Cancel</button>
+											</div>
+										</div>
+										<p class="mt-2 text-[11px] text-zinc-500">Triggers this downstream only when the upstream's just-finished run matches the predicate. Empty field = always trigger.</p>
+									</td>
+								</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>

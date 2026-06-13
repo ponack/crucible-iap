@@ -167,6 +167,15 @@ export interface StackDep {
 	name: string;
 	slug: string;
 	created_at: string;
+	trigger_when_field?: string;
+	trigger_when_op?: string;
+	trigger_when_value?: string;
+}
+
+export interface DepPredicate {
+	trigger_when_field: string;
+	trigger_when_op: string;
+	trigger_when_value: string;
 }
 
 export interface RemoteStateSource {
@@ -524,6 +533,11 @@ export const deps = {
 	downstream: (stackID: string) => request<StackDep[]>(`/stacks/${stackID}/downstream`),
 	addDownstream: (stackID: string, downstreamID: string) =>
 		request<StackDep | null>(`/stacks/${stackID}/downstream/${downstreamID}`, { method: 'PUT' }),
+	setPredicate: (stackID: string, downstreamID: string, body: DepPredicate) =>
+		request<null>(`/stacks/${stackID}/downstream/${downstreamID}/predicate`, {
+			method: 'PUT',
+			body: JSON.stringify(body)
+		}),
 	removeDownstream: (stackID: string, downstreamID: string) =>
 		request<null>(`/stacks/${stackID}/downstream/${downstreamID}`, { method: 'DELETE' })
 };

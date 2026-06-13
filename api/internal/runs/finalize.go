@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/ponack/crucible-iap/internal/audit"
+	"github.com/ponack/crucible-iap/internal/deps"
 	"github.com/ponack/crucible-iap/internal/notify"
 	"github.com/ponack/crucible-iap/internal/policy"
 	"github.com/ponack/crucible-iap/internal/projects"
@@ -283,6 +284,21 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 		stackID, tool, toolVersion, runnerImage, repoURL, repoBranch, projectRoot string
 		autoApply                                                                 bool
 		poolID                                                                    *string
+		predicate                                                                 deps.Predicate
+	}
+
+	// Per-edge conditional triggers: load the upstream run's predicate-
+	// relevant fields once; each candidate downstream's edge predicate is
+	// evaluated against them in Go after the eligibility query returns.
+	// Edges without a predicate match unconditionally.
+	//
+	// If loading fields fails, fall back to permissive — predicates are
+	// skipped for this trigger event so a transient DB hiccup doesn't
+	// silently block downstream work that would normally run.
+	upstreamFields, predicateLoadErr := f.loadRunFieldsForPredicate(ctx, args.RunID)
+	if predicateLoadErr != nil {
+		slog.Warn("trigger downstream: load run fields failed; per-edge predicates skipped",
+			"run_id", args.RunID, "err", predicateLoadErr)
 	}
 
 	// Fan-in coordination:
@@ -295,7 +311,8 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 	//     don't perpetually wait.
 	rows, err := f.pool.Query(ctx, `
 		SELECT s.id, s.tool, COALESCE(s.tool_version,''), COALESCE(s.runner_image,''), s.repo_url, s.repo_branch,
-		       s.project_root, s.auto_apply, s.worker_pool_id
+		       s.project_root, s.auto_apply, s.worker_pool_id,
+		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,'')
 		FROM stack_dependencies d
 		JOIN stacks s ON s.id = d.downstream_id
 		WHERE d.upstream_id = $1 AND s.is_disabled = false AND s.is_locked = false AND s.org_id = $2
@@ -335,7 +352,8 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 	var targets []target
 	for rows.Next() {
 		var t target
-		if err := rows.Scan(&t.stackID, &t.tool, &t.toolVersion, &t.runnerImage, &t.repoURL, &t.repoBranch, &t.projectRoot, &t.autoApply, &t.poolID); err != nil {
+		if err := rows.Scan(&t.stackID, &t.tool, &t.toolVersion, &t.runnerImage, &t.repoURL, &t.repoBranch, &t.projectRoot, &t.autoApply, &t.poolID,
+			&t.predicate.Field, &t.predicate.Op, &t.predicate.Value); err != nil {
 			continue
 		}
 		targets = append(targets, t)
@@ -343,6 +361,13 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 	rows.Close()
 
 	for _, t := range targets {
+		// Skip downstreams whose conditional-trigger predicate doesn't
+		// match the upstream's run. Predicates are evaluated only when
+		// run fields loaded successfully; on load failure we fall back
+		// to firing every eligible downstream.
+		if predicateLoadErr == nil && !t.predicate.Matches(upstreamFields) {
+			continue
+		}
 		var runID string
 		if err := f.pool.QueryRow(ctx, `
 			INSERT INTO runs (stack_id, worker_pool_id, type, trigger)
@@ -401,6 +426,37 @@ func (f *Finalizer) checkBudgetThresholds(ctx context.Context, runID string) []s
 		exceeded = append(exceeded, fmt.Sprintf("estimated cost add: $%.2f (limit $%.2f)", *costAdd, *budgetThreshold))
 	}
 	return exceeded
+}
+
+// loadRunFieldsForPredicate fetches the upstream run's fields that
+// per-edge conditional triggers can reference. Returns zero values + error
+// if the row can't be loaded (caller treats that as "predicates skipped").
+func (f *Finalizer) loadRunFieldsForPredicate(ctx context.Context, runID string) (deps.RunFields, error) {
+	var (
+		fields  deps.RunFields
+		planAdd, planChange, planDestroy *int
+		costChange                       *float64
+	)
+	err := f.pool.QueryRow(ctx, `
+		SELECT type, plan_add, plan_change, plan_destroy, cost_change, is_drift
+		FROM runs WHERE id = $1
+	`, runID).Scan(&fields.Type, &planAdd, &planChange, &planDestroy, &costChange, &fields.IsDrift)
+	if err != nil {
+		return fields, err
+	}
+	if planAdd != nil {
+		fields.PlanAdd = *planAdd
+	}
+	if planChange != nil {
+		fields.PlanChange = *planChange
+	}
+	if planDestroy != nil {
+		fields.PlanDestroy = *planDestroy
+	}
+	if costChange != nil {
+		fields.CostChange = *costChange
+	}
+	return fields, nil
 }
 
 // applyProjectCostQuota evaluates the run against its project's monthly cost
