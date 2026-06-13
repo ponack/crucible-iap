@@ -85,8 +85,16 @@ func downstreamRunCount(t *testing.T, pool *pgxpool.Pool, stackID string) int {
 
 func runTrigger(t *testing.T, pool *pgxpool.Pool, upstreamID, orgID string) {
 	t.Helper()
+	runTriggerWithRunID(t, pool, upstreamID, orgID, "")
+}
+
+// runTriggerWithRunID invokes the downstream-trigger flow with an explicit
+// upstream RunID so predicate evaluation has real fields to read. Pass ""
+// to exercise the permissive fallback path.
+func runTriggerWithRunID(t *testing.T, pool *pgxpool.Pool, upstreamID, orgID, upstreamRunID string) {
+	t.Helper()
 	f := &Finalizer{pool: pool}
-	f.triggerDownstreamStacks(context.Background(), orgID, queue.RunJobArgs{StackID: upstreamID})
+	f.triggerDownstreamStacks(context.Background(), orgID, queue.RunJobArgs{StackID: upstreamID, RunID: upstreamRunID})
 }
 
 // Linear: A → D. A finishes; D has no prior runs. Expect D triggered.
@@ -196,6 +204,113 @@ func TestFanIn_UninitialisedSiblingIsNonBlocking(t *testing.T) {
 
 	if got := downstreamRunCount(t, pool, stackD); got != 1 {
 		t.Errorf("downstream run count = %d, want 1 (uninitialised B should not block)", got)
+	}
+}
+
+// setRunPlanCounts populates plan_add/change/destroy on a run; used to
+// exercise per-edge predicate filtering against real run data.
+func setRunPlanCounts(t *testing.T, pool *pgxpool.Pool, runID string, add, change, destroy int) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`UPDATE runs SET plan_add = $1, plan_change = $2, plan_destroy = $3 WHERE id = $4`,
+		add, change, destroy, runID)
+	if err != nil {
+		t.Fatalf("setRunPlanCounts: %v", err)
+	}
+}
+
+// setEdgePredicate stores a conditional-trigger predicate on a dependency
+// edge. Empty strings clear it (NULLs in DB).
+func setEdgePredicate(t *testing.T, pool *pgxpool.Pool, upstreamID, downstreamID, field, op, value string) {
+	t.Helper()
+	var f, o, v any
+	if field != "" {
+		f, o, v = field, op, value
+	}
+	_, err := pool.Exec(context.Background(),
+		`UPDATE stack_dependencies
+		 SET trigger_when_field = $3, trigger_when_op = $4, trigger_when_value = $5
+		 WHERE upstream_id = $1 AND downstream_id = $2`,
+		upstreamID, downstreamID, f, o, v)
+	if err != nil {
+		t.Fatalf("setEdgePredicate: %v", err)
+	}
+}
+
+// Predicate matches: A → D with predicate "plan_change > 0". A finishes
+// with plan_change=5 → D triggers.
+func TestPredicate_MatchTriggersDownstream(t *testing.T) {
+	pool := testutil.Pool(t)
+	orgID := testutil.InsertOrg(t, pool)
+	poolID := insertPool(t, pool, orgID)
+	stackA := testutil.InsertStack(t, pool, orgID)
+	stackD := testutil.InsertStack(t, pool, orgID)
+	assignPool(t, pool, stackD, poolID)
+	addDep(t, pool, stackA, stackD)
+	setEdgePredicate(t, pool, stackA, stackD, "plan_change", ">", "0")
+
+	runA := testutil.InsertRun(t, pool, stackA, "finished", "tracked")
+	setRunFinishedAt(t, pool, runA, time.Now())
+	setRunPlanCounts(t, pool, runA, 0, 5, 0)
+
+	runTriggerWithRunID(t, pool, stackA, orgID, runA)
+
+	if got := downstreamRunCount(t, pool, stackD); got != 1 {
+		t.Errorf("downstream run count = %d, want 1 (predicate plan_change > 0 with value 5 should match)", got)
+	}
+}
+
+// Predicate doesn't match: A → D with predicate "plan_change > 0". A
+// finishes with plan_change=0 → D does NOT trigger.
+func TestPredicate_NoMatchSuppressesDownstream(t *testing.T) {
+	pool := testutil.Pool(t)
+	orgID := testutil.InsertOrg(t, pool)
+	poolID := insertPool(t, pool, orgID)
+	stackA := testutil.InsertStack(t, pool, orgID)
+	stackD := testutil.InsertStack(t, pool, orgID)
+	assignPool(t, pool, stackD, poolID)
+	addDep(t, pool, stackA, stackD)
+	setEdgePredicate(t, pool, stackA, stackD, "plan_change", ">", "0")
+
+	runA := testutil.InsertRun(t, pool, stackA, "finished", "tracked")
+	setRunFinishedAt(t, pool, runA, time.Now())
+	setRunPlanCounts(t, pool, runA, 0, 0, 0)
+
+	priorCount := downstreamRunCount(t, pool, stackD)
+	runTriggerWithRunID(t, pool, stackA, orgID, runA)
+
+	if got := downstreamRunCount(t, pool, stackD); got != priorCount {
+		t.Errorf("downstream run count = %d, want %d (predicate should suppress when plan_change == 0)", got, priorCount)
+	}
+}
+
+// Predicate is per-edge: A has two downstreams D1 and D2. Edge to D1 has a
+// matching predicate, edge to D2 has a non-matching one. Only D1 triggers.
+func TestPredicate_PerEdgeIndependent(t *testing.T) {
+	pool := testutil.Pool(t)
+	orgID := testutil.InsertOrg(t, pool)
+	poolID := insertPool(t, pool, orgID)
+	stackA := testutil.InsertStack(t, pool, orgID)
+	stackD1 := testutil.InsertStack(t, pool, orgID)
+	stackD2 := testutil.InsertStack(t, pool, orgID)
+	assignPool(t, pool, stackD1, poolID)
+	assignPool(t, pool, stackD2, poolID)
+	addDep(t, pool, stackA, stackD1)
+	addDep(t, pool, stackA, stackD2)
+	setEdgePredicate(t, pool, stackA, stackD1, "plan_change", ">", "0")
+	setEdgePredicate(t, pool, stackA, stackD2, "type", "==", "destroy")
+
+	runA := testutil.InsertRun(t, pool, stackA, "finished", "tracked")
+	setRunFinishedAt(t, pool, runA, time.Now())
+	setRunPlanCounts(t, pool, runA, 0, 3, 0)
+
+	runTriggerWithRunID(t, pool, stackA, orgID, runA)
+
+	if got := downstreamRunCount(t, pool, stackD1); got != 1 {
+		t.Errorf("D1 (plan_change > 0 matches): got %d, want 1", got)
+	}
+	if got := downstreamRunCount(t, pool, stackD2); got != 0 {
+		t.Errorf("D2 (type == destroy doesn't match 'tracked'): got %d, want 0", got)
 	}
 }
 
