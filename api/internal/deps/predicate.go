@@ -71,26 +71,51 @@ func (p Predicate) Validate() error {
 	if !supportedOps[p.Op] {
 		return errors.New("trigger_when_op: must be one of == != > < >= <=")
 	}
-	switch p.Field {
-	case "plan_add", "plan_change", "plan_destroy":
-		if _, err := strconv.Atoi(p.Value); err != nil {
-			return errors.New("trigger_when_value: plan_* fields require an integer")
-		}
-	case "cost_change":
-		if _, err := strconv.ParseFloat(p.Value, 64); err != nil {
-			return errors.New("trigger_when_value: cost_change requires a number")
-		}
-	case "is_drift":
-		if p.Op != "==" && p.Op != "!=" {
-			return errors.New("trigger_when_op: is_drift only supports == / !=")
-		}
-		if p.Value != "true" && p.Value != "false" {
-			return errors.New("trigger_when_value: is_drift requires 'true' or 'false'")
-		}
-	case "type":
-		if p.Op != "==" && p.Op != "!=" {
-			return errors.New("trigger_when_op: type only supports == / !=")
-		}
+	if v, ok := fieldValidators[p.Field]; ok {
+		return v(p.Op, p.Value)
+	}
+	return nil
+}
+
+// fieldValidators dispatches per-field operand and operator checks. Kept
+// as a map (rather than inline in Validate) so each field's rule sits
+// next to its sibling and gocyclo doesn't trip on a wide switch.
+var fieldValidators = map[string]func(op, value string) error{
+	"plan_add":     validateIntValue,
+	"plan_change":  validateIntValue,
+	"plan_destroy": validateIntValue,
+	"cost_change":  validateFloatValue,
+	"is_drift":     validateBoolValue,
+	"type":         validateStringEquality,
+}
+
+func validateIntValue(_, value string) error {
+	if _, err := strconv.Atoi(value); err != nil {
+		return errors.New("trigger_when_value: plan_* fields require an integer")
+	}
+	return nil
+}
+
+func validateFloatValue(_, value string) error {
+	if _, err := strconv.ParseFloat(value, 64); err != nil {
+		return errors.New("trigger_when_value: cost_change requires a number")
+	}
+	return nil
+}
+
+func validateBoolValue(op, value string) error {
+	if op != "==" && op != "!=" {
+		return errors.New("trigger_when_op: is_drift only supports == / !=")
+	}
+	if value != "true" && value != "false" {
+		return errors.New("trigger_when_value: is_drift requires 'true' or 'false'")
+	}
+	return nil
+}
+
+func validateStringEquality(op, _ string) error {
+	if op != "==" && op != "!=" {
+		return errors.New("trigger_when_op: type only supports == / !=")
 	}
 	return nil
 }

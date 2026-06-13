@@ -85,8 +85,16 @@ func downstreamRunCount(t *testing.T, pool *pgxpool.Pool, stackID string) int {
 
 func runTrigger(t *testing.T, pool *pgxpool.Pool, upstreamID, orgID string) {
 	t.Helper()
+	runTriggerWithRunID(t, pool, upstreamID, orgID, "")
+}
+
+// runTriggerWithRunID invokes the downstream-trigger flow with an explicit
+// upstream RunID so predicate evaluation has real fields to read. Pass ""
+// to exercise the permissive fallback path.
+func runTriggerWithRunID(t *testing.T, pool *pgxpool.Pool, upstreamID, orgID, upstreamRunID string) {
+	t.Helper()
 	f := &Finalizer{pool: pool}
-	f.triggerDownstreamStacks(context.Background(), orgID, queue.RunJobArgs{StackID: upstreamID})
+	f.triggerDownstreamStacks(context.Background(), orgID, queue.RunJobArgs{StackID: upstreamID, RunID: upstreamRunID})
 }
 
 // Linear: A → D. A finishes; D has no prior runs. Expect D triggered.
@@ -245,7 +253,7 @@ func TestPredicate_MatchTriggersDownstream(t *testing.T) {
 	setRunFinishedAt(t, pool, runA, time.Now())
 	setRunPlanCounts(t, pool, runA, 0, 5, 0)
 
-	runTrigger(t, pool, stackA, orgID)
+	runTriggerWithRunID(t, pool, stackA, orgID, runA)
 
 	if got := downstreamRunCount(t, pool, stackD); got != 1 {
 		t.Errorf("downstream run count = %d, want 1 (predicate plan_change > 0 with value 5 should match)", got)
@@ -269,7 +277,7 @@ func TestPredicate_NoMatchSuppressesDownstream(t *testing.T) {
 	setRunPlanCounts(t, pool, runA, 0, 0, 0)
 
 	priorCount := downstreamRunCount(t, pool, stackD)
-	runTrigger(t, pool, stackA, orgID)
+	runTriggerWithRunID(t, pool, stackA, orgID, runA)
 
 	if got := downstreamRunCount(t, pool, stackD); got != priorCount {
 		t.Errorf("downstream run count = %d, want %d (predicate should suppress when plan_change == 0)", got, priorCount)
@@ -296,7 +304,7 @@ func TestPredicate_PerEdgeIndependent(t *testing.T) {
 	setRunFinishedAt(t, pool, runA, time.Now())
 	setRunPlanCounts(t, pool, runA, 0, 3, 0)
 
-	runTrigger(t, pool, stackA, orgID)
+	runTriggerWithRunID(t, pool, stackA, orgID, runA)
 
 	if got := downstreamRunCount(t, pool, stackD1); got != 1 {
 		t.Errorf("D1 (plan_change > 0 matches): got %d, want 1", got)
