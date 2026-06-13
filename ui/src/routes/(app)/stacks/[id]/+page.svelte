@@ -1194,6 +1194,7 @@
 
 	function openPredicateEditor(dep: StackDep) {
 		editingPredicateID = dep.id;
+		editingRetryID = null;
 		predicateForm = {
 			trigger_when_field: dep.trigger_when_field ?? '',
 			trigger_when_op: dep.trigger_when_op ?? '==',
@@ -1234,6 +1235,41 @@
 	function predicateLabel(dep: StackDep): string {
 		if (!dep.trigger_when_field) return 'always triggers';
 		return `${dep.trigger_when_field} ${dep.trigger_when_op} ${dep.trigger_when_value}`;
+	}
+
+	// Per-edge retry policy editor — shares the same one-row-at-a-time
+	// pattern as the predicate editor above. Both can't be open at once;
+	// opening one closes the other for layout clarity.
+	let editingRetryID = $state<string | null>(null);
+	let retryForm = $state({ retry_count: 0, retry_backoff_seconds: 60 });
+	let savingRetry = $state(false);
+
+	function openRetryEditor(dep: StackDep) {
+		editingRetryID = dep.id;
+		editingPredicateID = null;
+		retryForm = {
+			retry_count: dep.retry_count,
+			retry_backoff_seconds: dep.retry_backoff_seconds
+		};
+	}
+
+	async function saveRetry(downstreamID: string) {
+		savingRetry = true;
+		depsError = null;
+		try {
+			await deps.setRetry(stackID, downstreamID, retryForm);
+			downstreamDeps = await deps.downstream(stackID);
+			editingRetryID = null;
+		} catch (e) {
+			depsError = (e as Error).message;
+		} finally {
+			savingRetry = false;
+		}
+	}
+
+	function retryLabel(dep: StackDep): string {
+		if (dep.retry_count === 0) return 'no retry';
+		return `retry ×${dep.retry_count}, backoff ${dep.retry_backoff_seconds}s`;
 	}
 
 	async function removeUpstreamDep(upstreamID: string) {
@@ -2685,11 +2721,45 @@
 											: 'color: var(--color-zinc-500); border: 1px solid var(--color-zinc-700);'}>
 										{predicateLabel(dep)}
 									</button>
+									<button onclick={() => openRetryEditor(dep)}
+										class="ml-1 text-xs px-1.5 py-0.5 rounded transition-colors"
+										style={dep.retry_count > 0
+											? 'background: var(--accent-muted); color: var(--accent); border: 1px solid var(--accent-border);'
+											: 'color: var(--color-zinc-500); border: 1px solid var(--color-zinc-700);'}>
+										{retryLabel(dep)}
+									</button>
 								</td>
 								<td class="px-4 py-2.5 text-right">
 									<button onclick={() => removeDownstreamDep(dep.id)} class="text-xs text-zinc-500 hover:text-red-400">Remove</button>
 								</td>
 							</tr>
+							{#if editingRetryID === dep.id}
+								<tr>
+									<td colspan="3" class="px-4 py-3 bg-zinc-900/60">
+										<div class="flex items-end gap-2 flex-wrap">
+											<div class="space-y-1">
+												<label class="block text-[10px] uppercase tracking-wide text-zinc-500" for="retry-count-{dep.id}">Retries (0–10)</label>
+												<input id="retry-count-{dep.id}" type="number" min="0" max="10" class="field-input py-1 text-sm w-24"
+													bind:value={retryForm.retry_count} />
+											</div>
+											<div class="space-y-1">
+												<label class="block text-[10px] uppercase tracking-wide text-zinc-500" for="retry-backoff-{dep.id}">Backoff (s, 1–3600)</label>
+												<input id="retry-backoff-{dep.id}" type="number" min="1" max="3600" class="field-input py-1 text-sm w-28"
+													bind:value={retryForm.retry_backoff_seconds} disabled={retryForm.retry_count === 0} />
+											</div>
+											<div class="flex items-center gap-2">
+												<button type="button" onclick={() => saveRetry(dep.id)} disabled={savingRetry}
+													class="text-xs px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white disabled:opacity-50">
+													{savingRetry ? 'Saving…' : 'Save'}
+												</button>
+												<button type="button" onclick={() => (editingRetryID = null)}
+													class="text-xs text-zinc-500 hover:text-zinc-300">Cancel</button>
+											</div>
+										</div>
+										<p class="mt-2 text-[11px] text-zinc-500">Auto-retry dependency-triggered runs on failure. Backoff uses exponential growth: delay = backoff × 2<sup>attempt</sup>. Retry count 0 disables auto-retry on this edge.</p>
+									</td>
+								</tr>
+							{/if}
 							{#if editingPredicateID === dep.id}
 								<tr>
 									<td colspan="3" class="px-4 py-3 bg-zinc-900/60">

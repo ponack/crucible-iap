@@ -314,6 +314,165 @@ func TestPredicate_PerEdgeIndependent(t *testing.T) {
 	}
 }
 
+// markRunDepTriggered backfills triggered_by_dep_id + retry_attempt on a
+// run so the failure path can find the edge and decide whether to retry.
+// Used to seed the "this run is dep-triggered, with N retries already done"
+// fixture.
+func markRunDepTriggered(t *testing.T, pool *pgxpool.Pool, runID, upstreamID, downstreamID string, attempt int) {
+	t.Helper()
+	var depID string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT id::text FROM stack_dependencies WHERE upstream_id = $1 AND downstream_id = $2`,
+		upstreamID, downstreamID).Scan(&depID); err != nil {
+		t.Fatalf("locate dep edge: %v", err)
+	}
+	if _, err := pool.Exec(context.Background(),
+		`UPDATE runs SET triggered_by_dep_id = $1, retry_attempt = $2 WHERE id = $3`,
+		depID, attempt, runID); err != nil {
+		t.Fatalf("markRunDepTriggered: %v", err)
+	}
+}
+
+func setEdgeRetry(t *testing.T, pool *pgxpool.Pool, upstreamID, downstreamID string, count, backoffSeconds int) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`UPDATE stack_dependencies SET retry_count = $3, retry_backoff_seconds = $4
+		 WHERE upstream_id = $1 AND downstream_id = $2`,
+		upstreamID, downstreamID, count, backoffSeconds)
+	if err != nil {
+		t.Fatalf("setEdgeRetry: %v", err)
+	}
+}
+
+// Retry sentinel: maybeRetryDepRun should be a no-op when the failed run
+// has no triggered_by_dep_id. The Fail() path always calls it, so we
+// exercise it directly here with a non-dep run.
+func TestRetry_NonDepRunNoop(t *testing.T) {
+	pool := testutil.Pool(t)
+	orgID := testutil.InsertOrg(t, pool)
+	stackA := testutil.InsertStack(t, pool, orgID)
+	runA := testutil.InsertRun(t, pool, stackA, "failed", "tracked")
+
+	// Should not panic, should not insert anything new.
+	f := &Finalizer{pool: pool}
+	f.maybeRetryDepRun(context.Background(), orgID, runA)
+
+	var newCount int
+	if err := pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM runs WHERE stack_id = $1`, stackA).Scan(&newCount); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if newCount != 1 {
+		t.Errorf("expected 1 run (the failed one), got %d — non-dep run should not retry", newCount)
+	}
+}
+
+// Retry inserts a new dep-triggered run with retry_attempt incremented when
+// the edge has retry_count > 0 and the failed run hasn't exhausted attempts.
+// We can't construct a real river queue in tests, so the downstream is
+// pool-assigned (the queue path short-circuits). Assert on the new runs row.
+func TestRetry_InsertsNewAttemptWhenUnderLimit(t *testing.T) {
+	pool := testutil.Pool(t)
+	ctx := context.Background()
+
+	orgID := testutil.InsertOrg(t, pool)
+	workerPoolID := insertPool(t, pool, orgID)
+	stackA := testutil.InsertStack(t, pool, orgID)
+	stackD := testutil.InsertStack(t, pool, orgID)
+	assignPool(t, pool, stackD, workerPoolID)
+	addDep(t, pool, stackA, stackD)
+	setEdgeRetry(t, pool, stackA, stackD, 3, 1) // up to 3 retries, 1s backoff
+
+	// Original dep-triggered run that just failed
+	depRun := testutil.InsertRun(t, pool, stackD, "failed", "tracked")
+	markRunDepTriggered(t, pool, depRun, stackA, stackD, 0)
+
+	f := &Finalizer{pool: pool}
+	f.maybeRetryDepRun(ctx, orgID, depRun)
+
+	var attempts []int
+	rows, err := pool.Query(ctx,
+		`SELECT retry_attempt FROM runs WHERE stack_id = $1 AND triggered_by_dep_id IS NOT NULL ORDER BY queued_at`, stackD)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a int
+		if err := rows.Scan(&a); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		attempts = append(attempts, a)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("expected 2 dep-triggered runs (original + retry), got %d", len(attempts))
+	}
+	if attempts[0] != 0 || attempts[1] != 1 {
+		t.Errorf("expected retry_attempt progression [0,1], got %v", attempts)
+	}
+}
+
+// Retry stops when the failed run has retry_attempt == retry_count — the
+// last allowed attempt has already happened. No new run inserted.
+func TestRetry_StopsAtLimit(t *testing.T) {
+	pool := testutil.Pool(t)
+	ctx := context.Background()
+
+	orgID := testutil.InsertOrg(t, pool)
+	workerPoolID := insertPool(t, pool, orgID)
+	stackA := testutil.InsertStack(t, pool, orgID)
+	stackD := testutil.InsertStack(t, pool, orgID)
+	assignPool(t, pool, stackD, workerPoolID)
+	addDep(t, pool, stackA, stackD)
+	setEdgeRetry(t, pool, stackA, stackD, 2, 1) // 2 retries allowed
+
+	// Failed run that is already attempt #2 (the last allowed)
+	depRun := testutil.InsertRun(t, pool, stackD, "failed", "tracked")
+	markRunDepTriggered(t, pool, depRun, stackA, stackD, 2)
+
+	f := &Finalizer{pool: pool}
+	f.maybeRetryDepRun(ctx, orgID, depRun)
+
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM runs WHERE stack_id = $1 AND triggered_by_dep_id IS NOT NULL`, stackD).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected only the original failed run (no retry), got %d", n)
+	}
+}
+
+// Retry skips when the edge has retry_count = 0 (the default; backward
+// compatible).
+func TestRetry_SkipsWhenEdgeDisabled(t *testing.T) {
+	pool := testutil.Pool(t)
+	ctx := context.Background()
+
+	orgID := testutil.InsertOrg(t, pool)
+	workerPoolID := insertPool(t, pool, orgID)
+	stackA := testutil.InsertStack(t, pool, orgID)
+	stackD := testutil.InsertStack(t, pool, orgID)
+	assignPool(t, pool, stackD, workerPoolID)
+	addDep(t, pool, stackA, stackD)
+	// retry_count = 0 (default)
+
+	depRun := testutil.InsertRun(t, pool, stackD, "failed", "tracked")
+	markRunDepTriggered(t, pool, depRun, stackA, stackD, 0)
+
+	f := &Finalizer{pool: pool}
+	f.maybeRetryDepRun(ctx, orgID, depRun)
+
+	var n int
+	if err := pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM runs WHERE stack_id = $1 AND triggered_by_dep_id IS NOT NULL`, stackD).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("expected only the original failed run (retries disabled), got %d", n)
+	}
+}
+
 // Dedup: A → D. D already has a planning run in flight. A finishes. Expect
 // NO trigger — fan-in dedup prevents stacking parallel runs on D.
 func TestFanIn_DedupSkipsWhenDownstreamInFlight(t *testing.T) {

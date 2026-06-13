@@ -22,15 +22,18 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 // StackRef is the API representation of a stack in a dependency relationship.
 // The trigger_when_* fields carry the optional per-edge conditional predicate;
 // all three are non-empty together or all empty (CHECK constraint, migration
-// 081).
+// 081). retry_count + retry_backoff_seconds (migration 082) drive the
+// dep-retry policy: retry_count=0 means no auto-retry on dep failure.
 type StackRef struct {
-	ID               string    `json:"id"`
-	Name             string    `json:"name"`
-	Slug             string    `json:"slug"`
-	CreatedAt        time.Time `json:"created_at"`
-	TriggerWhenField string    `json:"trigger_when_field,omitempty"`
-	TriggerWhenOp    string    `json:"trigger_when_op,omitempty"`
-	TriggerWhenValue string    `json:"trigger_when_value,omitempty"`
+	ID                  string    `json:"id"`
+	Name                string    `json:"name"`
+	Slug                string    `json:"slug"`
+	CreatedAt           time.Time `json:"created_at"`
+	TriggerWhenField    string    `json:"trigger_when_field,omitempty"`
+	TriggerWhenOp       string    `json:"trigger_when_op,omitempty"`
+	TriggerWhenValue    string    `json:"trigger_when_value,omitempty"`
+	RetryCount          int       `json:"retry_count"`
+	RetryBackoffSeconds int       `json:"retry_backoff_seconds"`
 }
 
 // ListUpstream returns the stacks that must successfully apply before the given stack runs.
@@ -47,7 +50,8 @@ func (h *Handler) ListUpstream(c echo.Context) error {
 
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT s.id, s.name, s.slug, d.created_at,
-		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,'')
+		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,''),
+		       d.retry_count, d.retry_backoff_seconds
 		FROM stack_dependencies d
 		JOIN stacks s ON s.id = d.upstream_id
 		WHERE d.downstream_id = $1
@@ -62,7 +66,8 @@ func (h *Handler) ListUpstream(c echo.Context) error {
 	for rows.Next() {
 		var r StackRef
 		if err := rows.Scan(&r.ID, &r.Name, &r.Slug, &r.CreatedAt,
-			&r.TriggerWhenField, &r.TriggerWhenOp, &r.TriggerWhenValue); err != nil {
+			&r.TriggerWhenField, &r.TriggerWhenOp, &r.TriggerWhenValue,
+			&r.RetryCount, &r.RetryBackoffSeconds); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		out = append(out, r)
@@ -84,7 +89,8 @@ func (h *Handler) ListDownstream(c echo.Context) error {
 
 	rows, err := h.pool.Query(c.Request().Context(), `
 		SELECT s.id, s.name, s.slug, d.created_at,
-		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,'')
+		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,''),
+		       d.retry_count, d.retry_backoff_seconds
 		FROM stack_dependencies d
 		JOIN stacks s ON s.id = d.downstream_id
 		WHERE d.upstream_id = $1
@@ -99,7 +105,8 @@ func (h *Handler) ListDownstream(c echo.Context) error {
 	for rows.Next() {
 		var r StackRef
 		if err := rows.Scan(&r.ID, &r.Name, &r.Slug, &r.CreatedAt,
-			&r.TriggerWhenField, &r.TriggerWhenOp, &r.TriggerWhenValue); err != nil {
+			&r.TriggerWhenField, &r.TriggerWhenOp, &r.TriggerWhenValue,
+			&r.RetryCount, &r.RetryBackoffSeconds); err != nil {
 			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 		}
 		out = append(out, r)
@@ -212,6 +219,50 @@ func (h *Handler) SetPredicate(c echo.Context) error {
 	audit.Record(c.Request().Context(), h.pool, audit.Event{
 		ActorID:      userID,
 		Action:       "stack.dependency.predicate_set",
+		ResourceID:   stackID,
+		ResourceType: "stack",
+		OrgID:        orgID,
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
+// SetRetry sets the per-edge retry policy. retry_count=0 (the default)
+// disables auto-retry. retry_backoff_seconds is the initial backoff;
+// successive retries use exponential backoff (handled by the run-failure
+// path, not stored).
+func (h *Handler) SetRetry(c echo.Context) error {
+	stackID := c.Param("id")
+	downstreamID := c.Param("downstreamID")
+	orgID := c.Get("orgID").(string)
+	userID, _ := c.Get("userID").(string)
+
+	var req struct {
+		RetryCount          int `json:"retry_count"`
+		RetryBackoffSeconds int `json:"retry_backoff_seconds"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	if req.RetryCount < 0 || req.RetryCount > 10 {
+		return echo.NewHTTPError(http.StatusBadRequest, "retry_count must be between 0 and 10")
+	}
+	if req.RetryBackoffSeconds < 1 || req.RetryBackoffSeconds > 3600 {
+		return echo.NewHTTPError(http.StatusBadRequest, "retry_backoff_seconds must be between 1 and 3600")
+	}
+
+	tag, err := h.pool.Exec(c.Request().Context(), `
+		UPDATE stack_dependencies
+		SET retry_count = $3, retry_backoff_seconds = $4
+		WHERE upstream_id = $1 AND downstream_id = $2
+		  AND EXISTS(SELECT 1 FROM stacks WHERE id = $1 AND org_id = $5)
+	`, stackID, downstreamID, req.RetryCount, req.RetryBackoffSeconds, orgID)
+	if err != nil || tag.RowsAffected() == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "dependency not found")
+	}
+
+	audit.Record(c.Request().Context(), h.pool, audit.Event{
+		ActorID:      userID,
+		Action:       "stack.dependency.retry_set",
 		ResourceID:   stackID,
 		ResourceType: "stack",
 		OrgID:        orgID,
