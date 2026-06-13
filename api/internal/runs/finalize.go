@@ -285,12 +285,47 @@ func (f *Finalizer) triggerDownstreamStacks(ctx context.Context, orgID string, a
 		poolID                                                                    *string
 	}
 
+	// Fan-in coordination:
+	//   - Dedup: skip downstream if it already has an in-flight run.
+	//   - Readiness: skip downstream when at least one OTHER upstream still
+	//     has a finished_at older than the downstream's last run-start
+	//     (meaning the downstream hasn't yet incorporated that upstream's
+	//     latest state in this wave). Upstreams that have never produced a
+	//     successful run are treated as non-blocking so newly-added edges
+	//     don't perpetually wait.
 	rows, err := f.pool.Query(ctx, `
 		SELECT s.id, s.tool, COALESCE(s.tool_version,''), COALESCE(s.runner_image,''), s.repo_url, s.repo_branch,
 		       s.project_root, s.auto_apply, s.worker_pool_id
 		FROM stack_dependencies d
 		JOIN stacks s ON s.id = d.downstream_id
 		WHERE d.upstream_id = $1 AND s.is_disabled = false AND s.is_locked = false AND s.org_id = $2
+		  AND NOT EXISTS (
+		      SELECT 1 FROM runs r
+		      WHERE r.stack_id = s.id
+		        AND r.status IN ('queued','preparing','planning','applying','unconfirmed','pending_approval')
+		  )
+		  AND COALESCE(
+		      (
+		          SELECT bool_and(
+		              latest_up.finished_at IS NULL
+		              OR latest_up.finished_at > COALESCE(latest_down.started_at, '-infinity'::timestamptz)
+		          )
+		          FROM stack_dependencies sd2
+		          LEFT JOIN LATERAL (
+		              SELECT MAX(finished_at) AS finished_at FROM runs
+		              WHERE stack_id = sd2.upstream_id
+		                AND status = 'finished'
+		                AND type IN ('tracked','destroy')
+		          ) latest_up ON true
+		          LEFT JOIN LATERAL (
+		              SELECT MAX(started_at) AS started_at FROM runs
+		              WHERE stack_id = s.id
+		          ) latest_down ON true
+		          WHERE sd2.downstream_id = s.id
+		            AND sd2.upstream_id != $1
+		      ),
+		      true  -- linear dep (no other upstreams) → always ready
+		  )
 	`, args.StackID, orgID)
 	if err != nil {
 		slog.Error("trigger downstream: query failed", "stack_id", args.StackID, "err", err)
