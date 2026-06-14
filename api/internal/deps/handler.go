@@ -178,6 +178,81 @@ func (h *Handler) AddDownstream(c echo.Context) error {
 	return c.JSON(http.StatusCreated, rel)
 }
 
+// GraphNode is a stack rendered as a node in the org-wide DAG view.
+type GraphNode struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Slug string `json:"slug"`
+}
+
+// GraphEdge is a single upstream → downstream relationship plus the
+// per-edge predicate and retry config from migrations 081 + 082.
+type GraphEdge struct {
+	UpstreamID          string `json:"upstream_id"`
+	DownstreamID        string `json:"downstream_id"`
+	TriggerWhenField    string `json:"trigger_when_field,omitempty"`
+	TriggerWhenOp       string `json:"trigger_when_op,omitempty"`
+	TriggerWhenValue    string `json:"trigger_when_value,omitempty"`
+	RetryCount          int    `json:"retry_count"`
+	RetryBackoffSeconds int    `json:"retry_backoff_seconds"`
+}
+
+// Graph returns every stack in the caller's org plus every dependency
+// edge, in a single response so the visual DAG view can lay everything
+// out in one fetch. Disabled stacks are included so the graph stays
+// connected; the UI dims them.
+func (h *Handler) Graph(c echo.Context) error {
+	orgID := c.Get("orgID").(string)
+	ctx := c.Request().Context()
+
+	nodeRows, err := h.pool.Query(ctx, `
+		SELECT id::text, name, slug
+		FROM stacks
+		WHERE org_id = $1
+		ORDER BY name
+	`, orgID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer nodeRows.Close()
+	nodes := []GraphNode{}
+	for nodeRows.Next() {
+		var n GraphNode
+		if err := nodeRows.Scan(&n.ID, &n.Name, &n.Slug); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		nodes = append(nodes, n)
+	}
+
+	edgeRows, err := h.pool.Query(ctx, `
+		SELECT d.upstream_id::text, d.downstream_id::text,
+		       COALESCE(d.trigger_when_field,''), COALESCE(d.trigger_when_op,''), COALESCE(d.trigger_when_value,''),
+		       d.retry_count, d.retry_backoff_seconds
+		FROM stack_dependencies d
+		JOIN stacks u ON u.id = d.upstream_id
+		WHERE u.org_id = $1
+	`, orgID)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+	}
+	defer edgeRows.Close()
+	edges := []GraphEdge{}
+	for edgeRows.Next() {
+		var e GraphEdge
+		if err := edgeRows.Scan(&e.UpstreamID, &e.DownstreamID,
+			&e.TriggerWhenField, &e.TriggerWhenOp, &e.TriggerWhenValue,
+			&e.RetryCount, &e.RetryBackoffSeconds); err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
+		}
+		edges = append(edges, e)
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"nodes": nodes,
+		"edges": edges,
+	})
+}
+
 // SetPredicate sets (or clears) the per-edge conditional trigger predicate
 // on a downstream dependency edge. Sending all three fields empty / null
 // clears the predicate; partial input is rejected via Predicate.Validate.
