@@ -535,9 +535,31 @@ export const stackMembers = {
 		request<null>(`/stacks/${stackID}/members/${userID}`, { method: 'DELETE' })
 };
 
+export interface DagNode {
+	id: string;
+	name: string;
+	slug: string;
+}
+
+export interface DagEdge {
+	upstream_id: string;
+	downstream_id: string;
+	trigger_when_field?: string;
+	trigger_when_op?: string;
+	trigger_when_value?: string;
+	retry_count: number;
+	retry_backoff_seconds: number;
+}
+
+export interface DagPayload {
+	nodes: DagNode[];
+	edges: DagEdge[];
+}
+
 export const deps = {
 	upstream: (stackID: string) => request<StackDep[]>(`/stacks/${stackID}/upstream`),
 	downstream: (stackID: string) => request<StackDep[]>(`/stacks/${stackID}/downstream`),
+	graph: () => request<DagPayload>('/deps/graph'),
 	addDownstream: (stackID: string, downstreamID: string) =>
 		request<StackDep | null>(`/stacks/${stackID}/downstream/${downstreamID}`, { method: 'PUT' }),
 	setPredicate: (stackID: string, downstreamID: string, body: DepPredicate) =>

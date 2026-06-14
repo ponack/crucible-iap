@@ -407,6 +407,7 @@ func (s *Server) registerStackRoutes(
 
 	api.GET("/stacks/:id/upstream", depsHandler.ListUpstream)
 	api.GET("/stacks/:id/downstream", depsHandler.ListDownstream)
+	api.GET("/deps/graph", depsHandler.Graph)
 	api.PUT("/stacks/:id/downstream/:downstreamID", depsHandler.AddDownstream, member)
 	api.PUT("/stacks/:id/downstream/:downstreamID/predicate", depsHandler.SetPredicate, member)
 	api.PUT("/stacks/:id/downstream/:downstreamID/retry", depsHandler.SetRetry, member)
