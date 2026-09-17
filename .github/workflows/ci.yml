@@ -153,7 +153,8 @@ jobs:
         run: |
           go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
           go install github.com/client9/misspell/cmd/misspell@latest
-          go install honnef.co/go/tools/cmd/staticcheck@latest
+          # Pinned: v0.8.x requires Go >= 1.26; CI runs Go 1.25 (GOTOOLCHAIN=local)
+          go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
           go install github.com/gordonklaus/ineffassign@latest
 
       - name: gofmt
