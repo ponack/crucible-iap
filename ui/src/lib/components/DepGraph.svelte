@@ -132,5 +132,5 @@
 <style>
 	.dep-graph { display: block; }
 	.dep-node rect { transition: stroke 0.12s, fill 0.12s; }
-	.dep-node:hover rect { stroke: #71717a; fill: #27272a; }
+	.dep-node:hover rect { stroke: var(--color-zinc-500); fill: var(--color-zinc-800); }
 </style>

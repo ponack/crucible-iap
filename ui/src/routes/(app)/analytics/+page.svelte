@@ -270,21 +270,3 @@
 		{/if}
 	{/if}
 </div>
-
-<style>
-	:global(.field-input) {
-		display: block;
-		width: 100%;
-		padding: 0.375rem 0.625rem;
-		background: var(--color-zinc-900);
-		border: 1px solid var(--color-zinc-700);
-		border-radius: 0.5rem;
-		color: #fff;
-		font-size: 0.875rem;
-		outline: none;
-		transition: border-color 0.1s;
-	}
-	:global(.field-input:focus) {
-		border-color: var(--color-teal-500, #6366f1);
-	}
-</style>

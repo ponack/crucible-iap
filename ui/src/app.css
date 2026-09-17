@@ -249,7 +249,15 @@
 	}
 }
 
-/* Shared form input style used across many pages */
+/* Shared form label style used across many pages */
+@utility field-label {
+	display: block;
+	font-size: 0.75rem;
+	color: var(--color-zinc-400);
+}
+
+/* Shared form input style used across many pages.
+   Keep colours on theme variables — hardcoded #fff breaks the light theme (#384). */
 @utility field-input {
 	display: block;
 	width: 100%;
@@ -268,7 +276,7 @@
 	}
 
 	&::placeholder {
-		color: var(--color-zinc-600);
+		color: var(--color-zinc-500);
 	}
 
 	&:disabled {
