@@ -185,7 +185,7 @@
 		padding: 0.125rem 0.4rem;
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 		font-size: 0.75rem;
-		color: #fff;
+		color: var(--color-zinc-100);
 		background: var(--color-zinc-800);
 		border: 1px solid var(--color-zinc-700);
 		border-bottom-width: 2px;
