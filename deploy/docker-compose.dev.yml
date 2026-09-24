@@ -16,7 +16,11 @@ services:
       - postgres_dev:/var/lib/postgresql/data
 
   minio:
-    image: minio/minio:latest
+    # MinIO went source-only on 2025-10-15 and removed its published images from
+    # Docker Hub and quay.io (minio/minio#21647), which broke every fresh install.
+    # This is a community rebuild of the final upstream release, pinned by tag.
+    # Stopgap only — it receives no further security fixes. See issue #387.
+    image: coollabsio/minio:RELEASE.2025-10-15T17-29-55Z
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"   # S3 API
