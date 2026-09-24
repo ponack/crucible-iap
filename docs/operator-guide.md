@@ -659,13 +659,35 @@ gunzip -c crucible_20260101.sql.gz | docker compose exec -T postgres psql -U cru
 
 ### MinIO backup
 
-Using the MinIO client (`mc`):
+Using the MinIO client (`mc`). MinIO no longer publishes `mc` for download (see
+[Object storage: MinIO image pinning](#object-storage-minio-image-pinning)), so run it from
+inside the container — the image ships the binary:
 
 ```bash
-mc alias set crucible http://localhost:9000 minioadmin <MINIO_SECRET_KEY>
-mc mirror crucible/crucible-state    ./backup/state
-mc mirror crucible/crucible-artifacts ./backup/artifacts
+docker compose exec minio mc alias set crucible http://localhost:9000 minioadmin <MINIO_SECRET_KEY>
+docker compose exec minio mc mirror crucible/crucible-state     /backup/state
+docker compose exec minio mc mirror crucible/crucible-artifacts /backup/artifacts
 ```
+
+Mount a host directory at `/backup` in the `minio` service first, or use `docker compose cp`
+to retrieve the files afterwards.
+
+### Object storage: MinIO image pinning
+
+On 2025-10-15 MinIO became a source-only distribution and removed its published container
+images from Docker Hub and quay.io ([minio/minio#21647](https://github.com/minio/minio/issues/21647)).
+`minio/minio`, `minio/mc`, and `bitnami/minio` can no longer be pulled.
+
+Crucible therefore pins `coollabsio/minio:RELEASE.2025-10-15T17-29-55Z`, a community rebuild of
+the final upstream release. It is byte-for-byte that release: same entrypoint, same environment
+variables, both `minio` and `mc` binaries, amd64 and arm64.
+
+**This is a stopgap.** The mirror is frozen at October 2025 and will receive no further security
+fixes. Crucible's application code is unaffected either way — the API talks plain S3 via
+`minio-go`, so any S3-compatible server works. Operators who would rather not run a frozen image
+can point `MINIO_ENDPOINT` at their own S3-compatible storage (AWS S3, Garage, RustFS, SeaweedFS,
+Ceph RGW) and remove the `minio` service entirely. Tracking a durable default in
+[issue #387](https://github.com/ponack/crucible-iap/issues/387).
 
 ### Full restore procedure
 
@@ -872,6 +894,8 @@ Common causes:
 
 - `CRUCIBLE_SECRET_KEY` shorter than 32 characters → extend it
 - `MINIO_ENDPOINT` not reachable → ensure MinIO is healthy: `docker compose ps`
+- `pull access denied for minio/minio` on `docker compose pull` → you are on a compose file predating
+  the image pin; upstream removed the image. See [Object storage: MinIO image pinning](#object-storage-minio-image-pinning)
 - `POSTGRES_PASSWORD` mismatch → check `.env` matches the volume's initialised password
 
 ### Migrations fail on startup
